@@ -1162,12 +1162,17 @@ function Root() {
   const [checking, setChecking] = useState(true);
   const [currentUser, setCurrentUser] = useState(null);
 
-  useEffect(() => {
-    fetch("/api/auth?action=me")
+  const checkSession = useCallback(() => {
+    return fetch("/api/auth?action=me")
       .then((r) => (r.ok ? r.json() : null))
-      .then(setCurrentUser)
-      .finally(() => setChecking(false));
+      .then(setCurrentUser);
   }, []);
+
+  useEffect(() => {
+    checkSession().finally(() => setChecking(false));
+    const interval = setInterval(checkSession, 5 * 60 * 1000); // cada 5 min: detecta cierre por inactividad (4h) o medianoche
+    return () => clearInterval(interval);
+  }, [checkSession]);
 
   const onLogout = () => {
     fetch("/api/auth?action=logout").finally(() => setCurrentUser(null));

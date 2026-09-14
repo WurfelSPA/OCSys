@@ -49,6 +49,13 @@ export function nextMidnightEpochSeconds(tz = "America/Santiago") {
   return Math.floor((tomorrowUTCGuess - offsetMin * 60000) / 1000);
 }
 
+const IDLE_TIMEOUT_SECONDS = 4 * 60 * 60; // 4 horas sin uso
+
+export function computeExpiry() {
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  return Math.min(nowSeconds + IDLE_TIMEOUT_SECONDS, nextMidnightEpochSeconds());
+}
+
 export function makeCookie(token, maxAgeSeconds) {
   return `${COOKIE_NAME}=${token}; HttpOnly; Secure; SameSite=Strict; Max-Age=${maxAgeSeconds}; Path=/`;
 }

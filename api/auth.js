@@ -1,6 +1,6 @@
 import { supabase, readJsonBody } from "./_supabase.js";
 import { verifyPassword } from "./_auth.js";
-import { signToken, verifyToken, nextMidnightEpochSeconds, makeCookie, clearCookie, parseCookie } from "./_session.js";
+import { signToken, verifyToken, computeExpiry, makeCookie, clearCookie, parseCookie } from "./_session.js";
 
 export default async function handler(req, res) {
   const action = req.query.action || "";
@@ -24,7 +24,7 @@ export default async function handler(req, res) {
       return res.status(401).json({ error: "Usuario o contraseña incorrectos" });
     }
 
-    const exp = nextMidnightEpochSeconds();
+    const exp = computeExpiry();
     const payload = {
       id: user.id, usuario: user.usuario,
       nombre: user.nombre, apellido: user.apellido,
@@ -44,7 +44,13 @@ export default async function handler(req, res) {
     const token = parseCookie(req.headers.cookie, "ocsys_token");
     const payload = verifyToken(token, SESSION_SECRET);
     if (!payload) return res.status(401).json({ error: "No autenticado" });
-    return res.status(200).json(payload);
+
+    // Ventana deslizante: cada chequeo de actividad renueva la sesión (tope: medianoche)
+    const exp = computeExpiry();
+    const refreshed = { ...payload, exp };
+    const newToken = signToken(refreshed, SESSION_SECRET);
+    res.setHeader("Set-Cookie", makeCookie(newToken, exp - Math.floor(Date.now() / 1000)));
+    return res.status(200).json(refreshed);
   }
 
   return res.status(400).json({ error: "Acción desconocida: " + action });
