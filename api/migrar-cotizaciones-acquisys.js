@@ -9,15 +9,19 @@ import { verifyToken, parseCookie } from "./_session.js";
 
 async function procesarUno(db, o, userToken) {
   const filename = o.cotizacion.split("/").pop();
+  // El numero_oc de los historicos migrados es el N° de Memorandum de
+  // Acquisys (ej. GEOP-09-2026-00312), no el num_order (OC-000XX) — y el
+  // nombre del archivo de cotizacion es justamente "<memorandum>-<ts>.pdf".
+  const memoNumero = filename.replace(/-\d+\.(pdf|xlsx?|docx?|jpe?g|png)$/i, "");
+
   const r = await fetch(o.cotizacion, { headers: { user_token: userToken } });
   if (!r.ok) throw new Error("descarga falló: " + r.status);
-  const contentType = r.headers.get("content-type") || "";
-  if (!contentType.includes("pdf")) throw new Error("respuesta no es un PDF (" + contentType + ")");
+  const contentType = r.headers.get("content-type") || "application/octet-stream";
   const buf = Buffer.from(await r.arrayBuffer());
 
   const path = "acquisys-historico/" + filename;
   const { error: upErr } = await db.storage.from("ocsys-archivos").upload(path, buf, {
-    contentType: "application/pdf",
+    contentType,
     upsert: true,
   });
   if (upErr) throw new Error("upload storage: " + upErr.message);
@@ -27,12 +31,12 @@ async function procesarUno(db, o, userToken) {
   const { data: updated, error: dbErr } = await db
     .from("ordenes_compra")
     .update({ archivo_url: pub.publicUrl, archivo_nombre: filename })
-    .eq("numero_oc", o.num_order)
+    .eq("numero_oc", memoNumero)
     .is("archivo_url", null)
     .select("id");
   if (dbErr) throw new Error("update db: " + dbErr.message);
 
-  return { num_order: o.num_order, ok: true, actualizado: (updated || []).length > 0, url: pub.publicUrl };
+  return { num_order: o.num_order, memo: memoNumero, ok: true, actualizado: (updated || []).length > 0, url: pub.publicUrl };
 }
 
 async function procesarEnLotes(db, ordenes, userToken, concurrencia) {
