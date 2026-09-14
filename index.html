@@ -68,6 +68,10 @@ button{font-family:'DM Sans',sans-serif;cursor:pointer;transition:all 0.15s}
 .drop-zone:hover{border-color:var(--acc2);background:var(--surf3)}
 .drop-zone.done{border-color:var(--green);border-style:solid;background:var(--gbg)}
 .table-scroll{overflow:auto;max-height:62vh;margin:0 -24px;padding:0 24px}
+.table-scroll::-webkit-scrollbar{width:12px;height:12px}
+.table-scroll::-webkit-scrollbar-track{background:var(--surf2)}
+.table-scroll::-webkit-scrollbar-thumb{background:var(--acc2);border-radius:6px;border:2px solid var(--surf2)}
+.table-scroll::-webkit-scrollbar-thumb:hover{background:var(--acc)}
 table{width:100%;border-collapse:collapse;font-size:11.5px;min-width:max-content}
 .table-scroll th{position:sticky;top:0;z-index:1;box-shadow:0 1px 0 var(--bdr)}
 th{padding:8px 10px;background:var(--surf2);color:var(--txd);font-weight:700;text-transform:uppercase;font-size:9.5px;letter-spacing:.05em;border-bottom:1px solid var(--bdr);text-align:left;white-space:nowrap}
