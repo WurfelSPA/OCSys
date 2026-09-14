@@ -264,7 +264,7 @@ function DataTable({ columns, rows, rowKey, searchPlaceholder, searchFields, onR
   );
 }
 
-function ProveedorModal({ regiones, onClose, onCreated, notify, editProveedor, prefill, currentUser }) {
+function ProveedorModal({ regiones, catalogosListos, onClose, onCreated, notify, editProveedor, prefill, currentUser }) {
   const [form, setForm] = useState(
     editProveedor ? { ...PROVEEDOR_BLANK, ...editProveedor }
       : prefill ? { ...PROVEEDOR_BLANK, ...prefill }
@@ -341,8 +341,8 @@ function ProveedorModal({ regiones, onClose, onCreated, notify, editProveedor, p
         h(Field, { label: "Dirección Comercial" }, h("input", { value: form.direccion_comercial, onChange: set("direccion_comercial") })),
         h(Field, { label: "Departamento / Oficina" }, h("input", { value: form.departamento_oficina, onChange: set("departamento_oficina") })),
         h(Field, { label: "Región" },
-          h("select", { value: form.region, onChange: set("region") },
-            h("option", { value: "" }, "Selecciona región"),
+          h("select", { value: form.region, onChange: set("region"), disabled: !catalogosListos },
+            h("option", { value: "" }, catalogosListos ? "Selecciona región" : "Cargando..."),
             (regiones || []).map((r) => h("option", { key: r.id, value: r.nombre }, r.nombre)),
           )),
         h(Field, { label: "Ciudad" }, h("input", { value: form.ciudad, onChange: set("ciudad"), placeholder: "Ciudad" })),
@@ -767,7 +767,7 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, notify, onCreated
 
   return h("div", { className: "page fade-up" },
     showModal && h(ProveedorModal, {
-      regiones: catalogos.regiones, prefill: provPrefill, editProveedor: provEditing, currentUser,
+      regiones: catalogos.regiones, catalogosListos: catalogos.listos, prefill: provPrefill, editProveedor: provEditing, currentUser,
       onClose: () => { setShowModal(false); setProvPrefill(null); setProvEditing(null); },
       onCreated: handleCreated, notify,
     }),
@@ -848,10 +848,10 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, notify, onCreated
       h("div", { className: "grid2" },
         h(Field, { label: "Centro de Costo" },
           h("select", {
-            value: form.centro_costo_codigo,
+            value: form.centro_costo_codigo, disabled: !catalogos.listos,
             onChange: (e) => setForm((f) => ({ ...f, centro_costo_codigo: e.target.value, cuenta_contable_codigo: "" })),
           },
-            h("option", { value: "" }, "Selecciona"),
+            h("option", { value: "" }, catalogos.listos ? "Selecciona" : "Cargando..."),
             catalogos.centrosCosto.map((c) => h("option", { key: c.codigo, value: c.codigo }, c.codigo + " — " + c.descripcion)),
           )),
         h(Field, { label: "Cuenta Contable" },
@@ -1044,7 +1044,7 @@ function ProveedoresList({ proveedores, catalogos, refreshProveedores, notify, c
   const closeAny = () => { setShowModal(false); setEditing(null); };
   return h("div", { className: "page fade-up" },
     (showModal || editing) && h(ProveedorModal, {
-      regiones: catalogos.regiones, editProveedor: editing, onClose: closeAny, currentUser,
+      regiones: catalogos.regiones, catalogosListos: catalogos.listos, editProveedor: editing, onClose: closeAny, currentUser,
       onCreated: () => { refreshProveedores(); closeAny(); }, notify,
     }),
     h("div", { className: "card" },
@@ -1293,7 +1293,7 @@ function App({ currentUser, onLogout }) {
   const [proveedores, setProveedores] = useState([]);
   const [ordenes, setOrdenes] = useState([]);
   const [usuarios, setUsuarios] = useState([]);
-  const [catalogos, setCatalogos] = useState({ centrosCosto: [], cuentasContables: [], regiones: [], ciudades: [] });
+  const [catalogos, setCatalogos] = useState({ centrosCosto: [], cuentasContables: [], regiones: [], ciudades: [], listos: false });
   const [notif, notify] = useNotif();
 
   const loadProveedores = useCallback(() => {
@@ -1312,7 +1312,9 @@ function App({ currentUser, onLogout }) {
     loadProveedores();
     loadOrdenes();
     loadUsuarios();
-    api("catalogos").then(setCatalogos).catch((e) => notify("err", e.message));
+    api("catalogos")
+      .then((d) => setCatalogos({ ...d, listos: true }))
+      .catch((e) => { notify("err", e.message); setCatalogos((c) => ({ ...c, listos: true })); });
   }, []);
 
   return h("div", null,
