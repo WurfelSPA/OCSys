@@ -64,6 +64,7 @@ export default async function handler(req, res) {
     const { data, error } = await db
       .from("ordenes_compra")
       .select("*, proveedores(razon_social, rut)")
+      .eq("activo", true)
       .order("created_at", { ascending: false });
     if (error) return res.status(500).json({ error: error.message });
     return res.status(200).json({ ordenes: data });
@@ -74,7 +75,18 @@ export default async function handler(req, res) {
     if (!id) return res.status(400).json({ error: "id es obligatorio" });
     const session = verifyToken(parseCookie(req.headers.cookie, "ocsys_token"), process.env.SESSION_SECRET || "");
     if (!session) return res.status(401).json({ error: "No autenticado" });
-    const { error } = await db.from("ordenes_compra").delete().eq("id", id);
+    if (session.nivel_aprobacion !== 1) {
+      return res.status(403).json({ error: "No tienes nivel de aprobación para eliminar órdenes de compra" });
+    }
+    const { error } = await db
+      .from("ordenes_compra")
+      .update({
+        activo: false,
+        eliminado_por: session.usuario,
+        eliminado_en: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", id);
     if (error) return res.status(500).json({ error: error.message });
     return res.status(200).json({ ok: true });
   }

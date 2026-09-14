@@ -81,32 +81,19 @@ export default async function handler(req, res) {
     if (!id) return res.status(400).json({ error: "id es obligatorio" });
     const session = verifyToken(parseCookie(req.headers.cookie, "ocsys_token"), process.env.SESSION_SECRET || "");
     if (!session) return res.status(401).json({ error: "No autenticado" });
-    const hard = req.query.hard === "1";
-    const cascade = req.query.cascade === "1";
-    if (hard) {
-      if (cascade) {
-        const { error: ordenesError } = await db.from("ordenes_compra").delete().eq("proveedor_id", id);
-        if (ordenesError) return res.status(500).json({ error: ordenesError.message });
-      }
-      const { error } = await db.from("proveedores").delete().eq("id", id);
-      if (error) {
-        if (error.code === "23503") {
-          const { count } = await db
-            .from("ordenes_compra")
-            .select("id", { count: "exact", head: true })
-            .eq("proveedor_id", id);
-          return res.status(409).json({
-            error: "Este proveedor tiene " + count + (count === 1 ? " orden de compra asociada" : " órdenes de compra asociadas") + " y no se puede eliminar directamente.",
-            requiereCascada: true,
-            ordenesAsociadas: count,
-          });
-        }
-        return res.status(500).json({ error: error.message });
-      }
-    } else {
-      const { error } = await db.from("proveedores").update({ activo: false, updated_at: new Date().toISOString() }).eq("id", id);
-      if (error) return res.status(500).json({ error: error.message });
+    if (session.nivel_aprobacion !== 1) {
+      return res.status(403).json({ error: "No tienes nivel de aprobación para eliminar proveedores" });
     }
+    const { error } = await db
+      .from("proveedores")
+      .update({
+        activo: false,
+        eliminado_por: session.usuario,
+        eliminado_en: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", id);
+    if (error) return res.status(500).json({ error: error.message });
     return res.status(200).json({ ok: true });
   }
 

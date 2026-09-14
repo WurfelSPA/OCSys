@@ -264,7 +264,7 @@ function DataTable({ columns, rows, rowKey, searchPlaceholder, searchFields, onR
   );
 }
 
-function ProveedorModal({ regiones, onClose, onCreated, notify, editProveedor, prefill }) {
+function ProveedorModal({ regiones, onClose, onCreated, notify, editProveedor, prefill, currentUser }) {
   const [form, setForm] = useState(
     editProveedor ? { ...PROVEEDOR_BLANK, ...editProveedor }
       : prefill ? { ...PROVEEDOR_BLANK, ...prefill }
@@ -295,32 +295,20 @@ function ProveedorModal({ regiones, onClose, onCreated, notify, editProveedor, p
     }
   };
 
+  const puedeEliminar = currentUser && currentUser.nivel_aprobacion === 1;
+
   const eliminar = async () => {
-    if (!window.confirm("¿Eliminar definitivamente el proveedor \"" + editProveedor.razon_social + "\"? (borrado permanente, para pruebas)")) return;
+    if (!window.confirm("¿Eliminar el proveedor \"" + editProveedor.razon_social + "\"? Dejará de verse en OCSys y en los informes.")) return;
     setSaving(true);
     try {
-      await intentarEliminar(false);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const intentarEliminar = async (cascade) => {
-    try {
-      await api("proveedores?id=" + editProveedor.id + "&hard=1" + (cascade ? "&cascade=1" : ""), { method: "DELETE" });
-      notify("ok", cascade ? "Proveedor y sus órdenes de compra eliminados" : "Proveedor eliminado");
+      await api("proveedores?id=" + editProveedor.id, { method: "DELETE" });
+      notify("ok", "Proveedor eliminado");
       onCreated(null);
       onClose();
     } catch (e) {
-      if (!cascade && e.data && e.data.requiereCascada) {
-        const n = e.data.ordenesAsociadas;
-        const texto = n === 1 ? "1 orden de compra asociada" : n + " órdenes de compra asociadas";
-        if (window.confirm(e.message + "\n\n¿Desea eliminar " + texto + " y luego el proveedor?")) {
-          return intentarEliminar(true);
-        }
-        return;
-      }
       notify("err", e.message);
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -385,7 +373,7 @@ function ProveedorModal({ regiones, onClose, onCreated, notify, editProveedor, p
       ),
 
       h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginTop: 6 } },
-        isEdit
+        isEdit && puedeEliminar
           ? h("button", { className: "btn-ghost", style: { color: "var(--red)" }, onClick: eliminar, disabled: saving }, "Eliminar")
           : h("div"),
         h("div", { style: { display: "flex", gap: 10 } },
@@ -594,7 +582,7 @@ function CuotasEditor({ cuotas, setCuotas, montoNeto, moneda }) {
   );
 }
 
-function NuevaOC({ proveedores, catalogos, refreshProveedores, notify, onCreated }) {
+function NuevaOC({ proveedores, catalogos, refreshProveedores, notify, onCreated, currentUser }) {
   const [showModal, setShowModal] = useState(false);
   const [provPrefill, setProvPrefill] = useState(null);
   const [provEditing, setProvEditing] = useState(null);
@@ -779,7 +767,7 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, notify, onCreated
 
   return h("div", { className: "page fade-up" },
     showModal && h(ProveedorModal, {
-      regiones: catalogos.regiones, prefill: provPrefill, editProveedor: provEditing,
+      regiones: catalogos.regiones, prefill: provPrefill, editProveedor: provEditing, currentUser,
       onClose: () => { setShowModal(false); setProvPrefill(null); setProvEditing(null); },
       onCreated: handleCreated, notify,
     }),
@@ -978,7 +966,7 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser }) {
   const puedeAprobar = currentUser && currentUser.nivel_aprobacion === 1;
 
   const eliminarOrden = async (o) => {
-    if (!window.confirm("¿Eliminar definitivamente la OC " + o.numero_oc + "?")) return;
+    if (!window.confirm("¿Eliminar la OC " + o.numero_oc + "? Dejará de verse en OCSys y en los informes.")) return;
     try {
       await api("ordenes?id=" + o.id, { method: "DELETE" });
       notify("ok", "OC " + o.numero_oc + " eliminada");
@@ -1010,10 +998,10 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser }) {
         ? h("button", { className: "btn-ghost", style: { padding: "4px 10px", fontSize: 11 }, onClick: () => setAccion({ orden: o, tipo: "completar" }) }, "Completar")
         : "—",
     },
-    {
+    ...(puedeAprobar ? [{
       key: "eliminar", label: "", sortable: false,
       render: (o) => h("button", { className: "btn-ghost", title: "Eliminar OC", style: { padding: "4px 8px", fontSize: 12, color: "var(--red)" }, onClick: () => eliminarOrden(o) }, "🗑"),
-    },
+    }] : []),
   ], [puedeAprobar]);
 
   return h("div", { className: "page fade-up" },
@@ -1050,13 +1038,13 @@ const PROVEEDORES_COLUMNS = [
   { key: "datos_completos", label: "Ficha", render: (p) => (p.datos_completos ? h("span", { className: "pill pill-ok" }, "Completa") : h("span", { className: "pill pill-pend" }, "⚠ Completar")) },
 ];
 
-function ProveedoresList({ proveedores, catalogos, refreshProveedores, notify }) {
+function ProveedoresList({ proveedores, catalogos, refreshProveedores, notify, currentUser }) {
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState(null);
   const closeAny = () => { setShowModal(false); setEditing(null); };
   return h("div", { className: "page fade-up" },
     (showModal || editing) && h(ProveedorModal, {
-      regiones: catalogos.regiones, editProveedor: editing, onClose: closeAny,
+      regiones: catalogos.regiones, editProveedor: editing, onClose: closeAny, currentUser,
       onCreated: () => { refreshProveedores(); closeAny(); }, notify,
     }),
     h("div", { className: "card" },
@@ -1344,9 +1332,9 @@ function App({ currentUser, onLogout }) {
       h("button", { className: "nav-btn" + (tab === "reportes" ? " active" : ""), onClick: () => setTab("reportes") }, "Reportes"),
       h("button", { className: "nav-btn" + (tab === "administracion" ? " active" : ""), onClick: () => setTab("administracion") }, "Administración"),
     ),
-    tab === "nueva" && h(NuevaOC, { proveedores, catalogos, refreshProveedores: loadProveedores, notify, onCreated: loadOrdenes }),
+    tab === "nueva" && h(NuevaOC, { proveedores, catalogos, refreshProveedores: loadProveedores, notify, onCreated: loadOrdenes, currentUser }),
     tab === "ordenes" && h(OrdenesList, { ordenes, refreshOrdenes: loadOrdenes, notify, currentUser }),
-    tab === "proveedores" && h(ProveedoresList, { proveedores, catalogos, refreshProveedores: loadProveedores, notify }),
+    tab === "proveedores" && h(ProveedoresList, { proveedores, catalogos, refreshProveedores: loadProveedores, notify, currentUser }),
     tab === "reportes" && h(ReportesList, { ordenes, proveedores, notify }),
     tab === "administracion" && h(AdministracionList, { usuarios, refreshUsuarios: loadUsuarios, notify }),
   );
