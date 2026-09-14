@@ -91,6 +91,7 @@ tr:hover td{background:var(--surf2)}
 .notif{position:fixed;top:18px;right:18px;z-index:200;padding:12px 20px;border-radius:10px;font-size:13px;font-weight:500;animation:fadeIn 0.2s;max-width:380px;box-shadow:0 4px 16px rgba(0,0,0,0.15)}
 .notif-ok{background:var(--gbg);color:var(--green);border:1px solid #b0dfc8}
 .notif-err{background:var(--rbg);color:var(--red);border:1px solid #f0bcb6}
+.notif-warn{background:var(--abg);color:var(--amber);border:1px solid #f0dba0}
 .empty{padding:40px 20px;text-align:center;color:var(--txd);font-size:12px}
 .link{color:var(--acc);text-decoration:none;font-weight:600}
 .link:hover{text-decoration:underline}
@@ -163,6 +164,16 @@ async function api(path, opts) {
   } finally {
     if (timer) clearTimeout(timer);
   }
+}
+
+function formBlank() {
+  return {
+    proveedor_id: "", fecha: new Date().toISOString().slice(0, 10),
+    titulo: "", descripcion: "", motivo: "", gerencia: "", representante_compra: "",
+    centro_costo_codigo: "", cuenta_contable_codigo: "",
+    tipo_orden: "Afecto", tipo_compra: "Servicios", moneda: "CLP",
+    monto_neto: "", monto_iva: "", monto_total: "",
+  };
 }
 
 function fileToBase64(file) {
@@ -627,13 +638,7 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, notify, onCreated
   const [leyendoIA, setLeyendoIA] = useState(false);
   const [numCuotas, setNumCuotas] = useState(1);
   const [cuotas, setCuotas] = useState(distribuirCuotas(1, 0));
-  const [form, setForm] = useState({
-    proveedor_id: "", fecha: new Date().toISOString().slice(0, 10),
-    titulo: "", descripcion: "", motivo: "", gerencia: "", representante_compra: "",
-    centro_costo_codigo: "", cuenta_contable_codigo: "",
-    tipo_orden: "Afecto", tipo_compra: "Servicios", moneda: "CLP",
-    monto_neto: "", monto_iva: "", monto_total: "",
-  });
+  const [form, setForm] = useState(formBlank());
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
   const setMontoNeto = (e) => {
@@ -797,9 +802,10 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, notify, onCreated
 
       notify("ok", (estado === "Borrador" ? "Borrador guardado: " : "OC generada: ") + orden.numero_oc);
       onCreated();
-      setForm((f) => ({ ...f, titulo: "", descripcion: "", motivo: "", monto_neto: "", monto_iva: "", monto_total: "" }));
+      setForm(formBlank());
       setFile(null);
-      setCuotas(distribuirCuotas(numCuotas, 0));
+      setNumCuotas(1);
+      setCuotas(distribuirCuotas(1, 0));
     } catch (e) {
       notify("err", e.message);
     } finally {
@@ -959,7 +965,7 @@ function OrdenAccionModal({ orden, tipo, onClose, onDone, notify }) {
         body: JSON.stringify(payload),
       });
       if (isAprobar) {
-        notify(correoError ? "err" : "ok",
+        notify(correoError ? "warn" : "ok",
           "OC aprobada con HES " + actualizada.numero_hes + (correoError ? " — correo no enviado: " + correoError : " — correo enviado al proveedor"));
       } else {
         notify("ok", "OC completada con Factura " + numeroFactura);
@@ -1362,7 +1368,7 @@ function App({ currentUser, onLogout }) {
   }, []);
 
   return h("div", null,
-    notif && h("div", { className: "notif " + (notif.type === "ok" ? "notif-ok" : "notif-err") }, notif.msg),
+    notif && h("div", { className: "notif notif-" + (notif.type === "ok" ? "ok" : notif.type === "warn" ? "warn" : "err") }, notif.msg),
     h("div", { className: "header" },
       h("img", { src: "/logo.jpg", alt: "Patagónica" }),
       h("div", { style: { flex: 1 } }, h("h1", null, "OCSys"), h("div", { className: "sub" }, "Órdenes de Compra — Patagónica Inmobiliaria")),
