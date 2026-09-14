@@ -1,5 +1,8 @@
 {
   "functions": {
+    "api/*.js": {
+      "maxDuration": 30
+    },
     "api/extraer-cotizacion.js": {
       "maxDuration": 60
     }

@@ -762,6 +762,7 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, notify, onCreated
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ filename: file.name, base64 }),
+          timeoutMs: 25000,
         });
         archivo_url = up.url;
         archivo_nombre = file.name;
@@ -773,6 +774,7 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, notify, onCreated
           ...form, estado, archivo_url, archivo_nombre, cuotas,
           creado_por: form.representante_compra,
         }),
+        timeoutMs: 25000,
       });
 
       if (estado === "Pendiente aprobación") {
@@ -783,11 +785,13 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, notify, onCreated
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ filename: orden.numero_oc + ".pdf", base64: pdfBase64 }),
+          timeoutMs: 25000,
         });
         await api("ordenes?id=" + orden.id, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ archivo_oc_url: up.url, archivo_oc_nombre: orden.numero_oc + ".pdf" }),
+          timeoutMs: 25000,
         });
       }
 
