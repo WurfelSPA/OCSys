@@ -100,6 +100,11 @@ tr:hover td{background:var(--surf2)}
 .stat-num{font-size:26px;font-weight:700;line-height:1.2}
 .stat-lbl{font-size:11.5px;color:var(--txm);margin-top:4px;display:flex;align-items:center;justify-content:center;gap:6px}
 .stat-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.bar-track{border-radius:11px;overflow:hidden;background:var(--surf2);border:1px solid var(--bdr);position:relative;height:14px}
+.bar-fill{height:100%;transition:width 1.1s cubic-bezier(.22,.9,.24,1);position:relative;box-shadow:0 0 12px -2px var(--glow,transparent),inset 0 0 12px -4px rgba(255,255,255,.25)}
+.bar-fill::after{content:'';position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.35),transparent);transform:translateX(-120%);animation:barshimmer 2.8s ease-in-out infinite}
+@keyframes barshimmer{0%{transform:translateX(-120%)}55%{transform:translateX(120%)}100%{transform:translateX(120%)}}
+@media (prefers-reduced-motion:reduce){.bar-fill{transition:none}.bar-fill::after{animation:none;display:none}}
 .link{color:var(--acc);text-decoration:none;font-weight:600}
 .link:hover{text-decoration:underline}
 .hint{font-size:10.5px;color:var(--txd);margin-top:4px}
@@ -1358,6 +1363,30 @@ function normalizarEstadoCategoria(estado) {
   return map[estado] || "Otros (histórico)";
 }
 
+function BarraEstadosOC({ items }) {
+  const max = Math.max(1, ...items.map((b) => b.value));
+  const sig = items.map((b) => b.value).join(",");
+  const [grown, setGrown] = useState(false);
+  useEffect(() => {
+    setGrown(false);
+    const r1 = requestAnimationFrame(() => { const r2 = requestAnimationFrame(() => setGrown(true)); return () => cancelAnimationFrame(r2); });
+    return () => cancelAnimationFrame(r1);
+  }, [sig]);
+  return h("div", { style: { display: "flex", flexDirection: "column", gap: 12 } },
+    items.map((b) => h("div", { key: b.label, style: { display: "flex", alignItems: "center", gap: 10 } },
+      h("div", { style: { width: 150, fontSize: 11.5, color: "var(--txm)", fontWeight: 600, flexShrink: 0 } }, b.label),
+      h("div", { className: "bar-track", style: { flex: 1 } },
+        h("div", {
+          className: "bar-fill",
+          title: b.label + ": " + b.value,
+          style: { width: grown ? (b.value / max * 100) + "%" : "0%", "--glow": b.color, background: b.color, minWidth: grown && b.value > 0 ? 6 : 0 },
+        })
+      ),
+      h("div", { style: { width: 36, textAlign: "right", fontSize: 12.5, fontWeight: 700 } }, b.value)
+    ))
+  );
+}
+
 function Dashboard({ ordenes, proveedores, setTab }) {
   const counts = useMemo(() => {
     const c = { "Borrador": 0, "Pendiente aprobación": 0, "Aprobada": 0, "Completada": 0, "Otros (histórico)": 0 };
@@ -1387,6 +1416,12 @@ function Dashboard({ ordenes, proveedores, setTab }) {
           h("div", { className: "stat-num", style: { color: it.color } }, it.value),
           h("div", { className: "stat-lbl" }, h("span", { className: "stat-dot", style: { background: it.color } }), it.label),
         )),
+      ),
+    ),
+    h("div", { className: "card", style: { marginTop: 20 } },
+      h("h2", null, "Distribución por Estado"),
+      h("div", { style: { marginTop: 16 } },
+        h(BarraEstadosOC, { items: items.filter((it) => it.label !== "Total") }),
       ),
     ),
     proveedoresIncompletos > 0 && h("div", { className: "card", style: { marginTop: 20 } },
