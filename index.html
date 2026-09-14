@@ -352,7 +352,6 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, notify, onCreated
     centro_costo_codigo: "", cuenta_contable_codigo: "",
     tipo_orden: "Afecto", tipo_compra: "Servicios", moneda: "CLP",
     monto_neto: "", monto_iva: "", monto_total: "",
-    numero_hes: "", numero_egreso: "", numero_factura: "",
   });
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
@@ -391,7 +390,7 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, notify, onCreated
       });
       notify("ok", "OC " + orden.numero_oc + " creada");
       onCreated();
-      setForm((f) => ({ ...f, titulo: "", descripcion: "", motivo: "", monto_neto: "", monto_iva: "", monto_total: "", numero_hes: "", numero_egreso: "", numero_factura: "" }));
+      setForm((f) => ({ ...f, titulo: "", descripcion: "", motivo: "", monto_neto: "", monto_iva: "", monto_total: "" }));
       setFile(null);
     } catch (e) {
       notify("err", e.message);
@@ -417,9 +416,10 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, notify, onCreated
       ),
 
       h("div", { className: "section-lbl" }, "Detalle de la Orden"),
-      h("div", { className: "grid2" },
+      h("div", { className: "grid3" },
         h(Field, { label: "Título" }, h("input", { value: form.titulo, onChange: set("titulo") })),
         h(Field, { label: "Gerencia" }, h("input", { value: form.gerencia, onChange: set("gerencia") })),
+        h(Field, { label: "Fecha" }, h("input", { type: "date", value: form.fecha, onChange: set("fecha") })),
       ),
       h(Field, { label: "Descripción" }, h("textarea", { rows: 2, value: form.descripcion, onChange: set("descripcion") })),
       h(Field, { label: "Motivo" }, h("textarea", { rows: 2, value: form.motivo, onChange: set("motivo") })),
@@ -465,13 +465,6 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, notify, onCreated
         h(Field, { label: "Monto Neto" }, h("input", { type: "number", value: form.monto_neto, onChange: setMontoNeto })),
         h(Field, { label: "Monto IVA" }, h("input", { type: "number", value: form.monto_iva, onChange: set("monto_iva") })),
         h(Field, { label: "Monto Total" }, h("input", { type: "number", value: form.monto_total, onChange: set("monto_total") })),
-      ),
-
-      h("div", { className: "section-lbl" }, "Referencias"),
-      h("div", { className: "grid3" },
-        h(Field, { label: "Fecha" }, h("input", { type: "date", value: form.fecha, onChange: set("fecha") })),
-        h(Field, { label: "N° HES" }, h("input", { value: form.numero_hes, onChange: set("numero_hes") })),
-        h(Field, { label: "N° Egreso" }, h("input", { value: form.numero_egreso, onChange: set("numero_egreso") })),
       ),
 
       h("div", { className: "section-lbl" }, "Documento de la Orden de Compra"),
