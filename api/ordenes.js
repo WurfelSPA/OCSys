@@ -1,7 +1,46 @@
 import { supabase, readJsonBody } from "./_supabase.js";
 
+const ESTADOS_OCSYS = ["Borrador", "Pendiente aprobación", "Aprobada", "Completada"];
+
 export default async function handler(req, res) {
   const db = supabase();
+
+  if (req.method === "PUT") {
+    const id = req.query.id;
+    if (!id) return res.status(400).json({ error: "id es obligatorio" });
+    const body = await readJsonBody(req);
+
+    const fields = {};
+    if (body.estado !== undefined) {
+      if (!ESTADOS_OCSYS.includes(body.estado)) {
+        return res.status(400).json({ error: "estado inválido" });
+      }
+      if (body.estado === "Aprobada" && !body.numero_hes) {
+        return res.status(400).json({ error: "numero_hes es obligatorio para aprobar la OC" });
+      }
+      if (body.estado === "Completada" && !body.numero_factura) {
+        return res.status(400).json({ error: "numero_factura es obligatorio para completar la OC" });
+      }
+      fields.estado = body.estado;
+    }
+    if (body.numero_hes !== undefined) fields.numero_hes = body.numero_hes;
+    if (body.numero_factura !== undefined) fields.numero_factura = body.numero_factura;
+    if (body.archivo_factura_url !== undefined) fields.archivo_factura_url = body.archivo_factura_url;
+    if (body.archivo_factura_nombre !== undefined) fields.archivo_factura_nombre = body.archivo_factura_nombre;
+
+    if (Object.keys(fields).length === 0) {
+      return res.status(400).json({ error: "No hay campos para actualizar" });
+    }
+
+    const { data, error } = await db
+      .from("ordenes_compra")
+      .update({ ...fields, updated_at: new Date().toISOString() })
+      .eq("id", id)
+      .select("*, proveedores(razon_social, rut)")
+      .single();
+    if (error) return res.status(500).json({ error: error.message });
+    return res.status(200).json({ orden: data });
+  }
 
   if (req.method === "GET") {
     const { data, error } = await db
@@ -17,6 +56,7 @@ export default async function handler(req, res) {
     if (!body.proveedor_id) {
       return res.status(400).json({ error: "proveedor_id es obligatorio" });
     }
+    const estado = ESTADOS_OCSYS.includes(body.estado) ? body.estado : "Borrador";
     const { data, error } = await db
       .from("ordenes_compra")
       .insert({
@@ -34,9 +74,7 @@ export default async function handler(req, res) {
         monto_neto: body.monto_neto || null,
         monto_iva: body.monto_iva || null,
         monto_total: body.monto_total || null,
-        numero_hes: body.numero_hes || null,
-        numero_egreso: body.numero_egreso || null,
-        numero_factura: body.numero_factura || null,
+        estado,
         archivo_url: body.archivo_url || null,
         archivo_nombre: body.archivo_nombre || null,
         creado_por: body.creado_por || null,
@@ -47,6 +85,6 @@ export default async function handler(req, res) {
     return res.status(201).json({ orden: data });
   }
 
-  res.setHeader("Allow", "GET, POST");
+  res.setHeader("Allow", "GET, POST, PUT");
   return res.status(405).json({ error: "Método no permitido" });
 }

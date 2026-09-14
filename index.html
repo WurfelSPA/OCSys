@@ -73,6 +73,8 @@ tr:hover td{background:var(--surf2)}
 .pill-ok{background:var(--gbg);color:var(--green)}
 .pill-pend{background:var(--abg);color:var(--amber)}
 .pill-anul{background:var(--rbg);color:var(--red)}
+.pill-draft{background:var(--surf3);color:var(--txm)}
+.pill-info{background:var(--accbg);color:var(--acc)}
 .notif{position:fixed;top:18px;right:18px;z-index:200;padding:12px 20px;border-radius:10px;font-size:13px;font-weight:500;animation:fadeIn 0.2s;max-width:380px;box-shadow:0 4px 16px rgba(0,0,0,0.15)}
 .notif-ok{background:var(--gbg);color:var(--green);border:1px solid #b0dfc8}
 .notif-err{background:var(--rbg);color:var(--red);border:1px solid #f0bcb6}
@@ -116,8 +118,10 @@ function fmtDate(d) {
 
 function estadoPill(estado) {
   const map = {
-    "Aprobado": "pill-ok", "Factura Aprobada": "pill-ok",
-    "Pendiente": "pill-pend",
+    "Borrador": "pill-draft",
+    "Pendiente aprobación": "pill-pend", "Pendiente": "pill-pend",
+    "Aprobada": "pill-ok", "Aprobado": "pill-ok", "Factura Aprobada": "pill-ok",
+    "Completada": "pill-info",
     "Anulado": "pill-anul", "Rechazado": "pill-anul",
   };
   return h("span", { className: "pill " + (map[estado] || "pill-pend") }, estado || "Pendiente");
@@ -368,7 +372,7 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, notify, onCreated
     setShowModal(false);
   };
 
-  const submit = async () => {
+  const submit = async (estado) => {
     if (!form.proveedor_id) return notify("err", "Selecciona un proveedor");
     setSaving(true);
     try {
@@ -386,9 +390,9 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, notify, onCreated
       const { orden } = await api("ordenes", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...form, archivo_url, archivo_nombre }),
+        body: JSON.stringify({ ...form, estado, archivo_url, archivo_nombre }),
       });
-      notify("ok", "OC " + orden.numero_oc + " creada");
+      notify("ok", (estado === "Borrador" ? "Borrador guardado: " : "OC enviada a aprobación: ") + orden.numero_oc);
       onCreated();
       setForm((f) => ({ ...f, titulo: "", descripcion: "", motivo: "", monto_neto: "", monto_iva: "", monto_total: "" }));
       setFile(null);
@@ -403,7 +407,10 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, notify, onCreated
     showModal && h(ProveedorModal, { regiones: catalogos.regiones, onClose: () => setShowModal(false), onCreated: handleCreated, notify }),
 
     h("div", { className: "card" },
-      h("h2", null, "Nueva Orden de Compra"),
+      h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 14 } },
+        h("h2", { style: { marginBottom: 0 } }, "Nueva Orden de Compra"),
+        h("div", { className: "hint", style: { fontSize: 12 } }, "(" + fmtDate(form.fecha) + ")"),
+      ),
 
       h(Field, { label: "Proveedor *" },
         h("div", { className: "row-inline" },
@@ -416,10 +423,9 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, notify, onCreated
       ),
 
       h("div", { className: "section-lbl" }, "Detalle de la Orden"),
-      h("div", { className: "grid3" },
+      h("div", { className: "grid2" },
         h(Field, { label: "Título" }, h("input", { value: form.titulo, onChange: set("titulo") })),
         h(Field, { label: "Gerencia" }, h("input", { value: form.gerencia, onChange: set("gerencia") })),
-        h(Field, { label: "Fecha" }, h("input", { type: "date", value: form.fecha, onChange: set("fecha") })),
       ),
       h(Field, { label: "Descripción" }, h("textarea", { rows: 2, value: form.descripcion, onChange: set("descripcion") })),
       h(Field, { label: "Motivo" }, h("textarea", { rows: 2, value: form.motivo, onChange: set("motivo") })),
@@ -483,31 +489,114 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, notify, onCreated
       ),
       h("div", { className: "hint" }, "Formatos permitidos: PDF, Word, Excel, JPG, PNG"),
 
-      h("div", { style: { display: "flex", justifyContent: "flex-end", marginTop: 20 } },
-        h("button", { className: "btn-primary", onClick: submit, disabled: saving }, saving ? "Guardando..." : "Crear Orden de Compra"),
+      h("div", { style: { display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 20 } },
+        h("button", { className: "btn-ghost", onClick: () => submit("Borrador"), disabled: saving }, "Guardar Borrador"),
+        h("button", { className: "btn-primary", onClick: () => submit("Pendiente aprobación"), disabled: saving }, saving ? "Guardando..." : "Enviar a Aprobación"),
       ),
     )
   );
 }
 
-const ORDENES_COLUMNS = [
-  { key: "numero_oc", label: "N° OC" },
-  { key: "fecha", label: "Fecha", render: (o) => fmtDate(o.fecha) },
-  { key: "proveedor", label: "Proveedor", sortValue: (o) => (o.proveedores ? o.proveedores.razon_social : ""), render: (o) => (o.proveedores ? o.proveedores.razon_social : "—") },
-  { key: "numero_hes", label: "N° HES" },
-  { key: "numero_factura", label: "N° Factura" },
-  { key: "centro_costo_codigo", label: "Centro Costo" },
-  { key: "monto_total", label: "Monto Total", render: (o) => fmtMoney(o.monto_total) },
-  { key: "estado", label: "Estado", render: (o) => estadoPill(o.estado) },
-  { key: "archivo", label: "Archivo", sortable: false, render: (o) => (o.archivo_url ? h("a", { className: "link", href: o.archivo_url, target: "_blank", rel: "noreferrer" }, "Ver") : "—") },
-];
+function OrdenAccionModal({ orden, tipo, onClose, onDone, notify }) {
+  const isAprobar = tipo === "aprobar";
+  const [numeroHes, setNumeroHes] = useState("");
+  const [numeroFactura, setNumeroFactura] = useState("");
+  const [file, setFile] = useState(null);
+  const [saving, setSaving] = useState(false);
 
-function OrdenesList({ ordenes }) {
+  const submit = async () => {
+    if (isAprobar && !numeroHes) return notify("err", "Ingresa el N° HES");
+    if (!isAprobar && !numeroFactura) return notify("err", "Ingresa el N° de Factura");
+    setSaving(true);
+    try {
+      const payload = isAprobar
+        ? { estado: "Aprobada", numero_hes: numeroHes }
+        : { estado: "Completada", numero_factura: numeroFactura };
+      if (!isAprobar && file) {
+        const base64 = await fileToBase64(file);
+        const up = await api("upload", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ filename: file.name, base64 }),
+        });
+        payload.archivo_factura_url = up.url;
+        payload.archivo_factura_nombre = file.name;
+      }
+      await api("ordenes?id=" + orden.id, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      notify("ok", isAprobar ? "OC aprobada con HES " + numeroHes : "OC completada con Factura " + numeroFactura);
+      onDone();
+    } catch (e) {
+      notify("err", e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return h("div", { className: "overlay", onClick: (e) => e.target === e.currentTarget && onClose() },
+    h("div", { className: "modal", style: { width: 420 } },
+      h("div", { className: "modal-hdr" },
+        h("h3", null, (isAprobar ? "Aprobar OC " : "Completar OC ") + orden.numero_oc),
+        h("button", { className: "modal-close", onClick: onClose }, "×")
+      ),
+      isAprobar
+        ? h(Field, { label: "N° HES *" }, h("input", { value: numeroHes, onChange: (e) => setNumeroHes(e.target.value), autoFocus: true }))
+        : h(React.Fragment, null,
+            h(Field, { label: "N° Factura *" }, h("input", { value: numeroFactura, onChange: (e) => setNumeroFactura(e.target.value), autoFocus: true })),
+            h(Field, { label: "Factura (PDF/imagen)" },
+              h("input", {
+                type: "file", id: "factura-file", style: { display: "none" },
+                accept: ".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png",
+                onChange: (e) => setFile(e.target.files[0] || null),
+              })),
+            h("label", { htmlFor: "factura-file", className: "drop-zone" + (file ? " done" : ""), style: { display: "block" } },
+              file ? ("✓ " + file.name) : "Haz clic para subir la factura"),
+          ),
+      h("div", { style: { display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 16 } },
+        h("button", { className: "btn-ghost", onClick: onClose }, "Cancelar"),
+        h("button", { className: "btn-primary", onClick: submit, disabled: saving }, saving ? "Guardando..." : "Confirmar"),
+      ),
+    )
+  );
+}
+
+function OrdenesList({ ordenes, refreshOrdenes, notify }) {
+  const [accion, setAccion] = useState(null);
+
+  const columns = useMemo(() => [
+    { key: "numero_oc", label: "N° OC" },
+    { key: "fecha", label: "Fecha", render: (o) => fmtDate(o.fecha) },
+    { key: "proveedor", label: "Proveedor", sortValue: (o) => (o.proveedores ? o.proveedores.razon_social : ""), render: (o) => (o.proveedores ? o.proveedores.razon_social : "—") },
+    { key: "numero_hes", label: "N° HES" },
+    { key: "numero_factura", label: "N° Factura" },
+    { key: "centro_costo_codigo", label: "Centro Costo" },
+    { key: "monto_total", label: "Monto Total", render: (o) => fmtMoney(o.monto_total) },
+    { key: "estado", label: "Estado", render: (o) => estadoPill(o.estado) },
+    { key: "archivo", label: "Archivo OC", sortable: false, render: (o) => (o.archivo_url ? h("a", { className: "link", href: o.archivo_url, target: "_blank", rel: "noreferrer" }, "Ver") : "—") },
+    { key: "archivo_factura", label: "Factura", sortable: false, render: (o) => (o.archivo_factura_url ? h("a", { className: "link", href: o.archivo_factura_url, target: "_blank", rel: "noreferrer" }, "Ver") : "—") },
+    {
+      key: "accion", label: "Acción", sortable: false,
+      render: (o) => o.estado === "Pendiente aprobación"
+        ? h("button", { className: "btn-ghost", style: { padding: "4px 10px", fontSize: 11 }, onClick: () => setAccion({ orden: o, tipo: "aprobar" }) }, "Aprobar")
+        : o.estado === "Aprobada"
+        ? h("button", { className: "btn-ghost", style: { padding: "4px 10px", fontSize: 11 }, onClick: () => setAccion({ orden: o, tipo: "completar" }) }, "Completar")
+        : "—",
+    },
+  ], []);
+
   return h("div", { className: "page fade-up" },
+    accion && h(OrdenAccionModal, {
+      orden: accion.orden, tipo: accion.tipo, notify,
+      onClose: () => setAccion(null),
+      onDone: () => { refreshOrdenes(); setAccion(null); },
+    }),
     h("div", { className: "card" },
       h("h2", null, "Órdenes de Compra"),
       h(DataTable, {
-        columns: ORDENES_COLUMNS, rows: ordenes, rowKey: (o) => o.id,
+        columns, rows: ordenes, rowKey: (o) => o.id,
         searchFields: ["numero_oc", "numero_hes", "numero_egreso", "numero_factura"],
         searchPlaceholder: "Buscar por N° OC, N° HES o N° Factura",
         emptyText: "Aún no hay órdenes de compra creadas en OCSys",
@@ -771,7 +860,7 @@ function App() {
       h("button", { className: "nav-btn" + (tab === "administracion" ? " active" : ""), onClick: () => setTab("administracion") }, "Administración"),
     ),
     tab === "nueva" && h(NuevaOC, { proveedores, catalogos, refreshProveedores: loadProveedores, notify, onCreated: loadOrdenes }),
-    tab === "ordenes" && h(OrdenesList, { ordenes }),
+    tab === "ordenes" && h(OrdenesList, { ordenes, refreshOrdenes: loadOrdenes, notify }),
     tab === "proveedores" && h(ProveedoresList, { proveedores, catalogos, refreshProveedores: loadProveedores, notify }),
     tab === "reportes" && h(ReportesList, { ordenes, proveedores, notify }),
     tab === "administracion" && h(AdministracionList, { usuarios, refreshUsuarios: loadUsuarios, notify }),
