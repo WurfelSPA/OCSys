@@ -1,6 +1,16 @@
 import { supabase, readJsonBody } from "./_supabase.js";
 import { verifyToken, parseCookie } from "./_session.js";
 
+const CAMPOS_PARA_FICHA_COMPLETA = [
+  "giro_comercial", "direccion_comercial", "region", "ciudad",
+  "contacto_correo", "banco", "tipo_cuenta", "numero_cuenta",
+];
+
+function calcularDatosCompletos(fields) {
+  const tieneContactoTelefonico = !!(fields.telefono || fields.contacto_telefono || fields.contacto_celular);
+  return tieneContactoTelefonico && CAMPOS_PARA_FICHA_COMPLETA.every((k) => !!fields[k]);
+}
+
 export default async function handler(req, res) {
   const db = supabase();
 
@@ -39,8 +49,8 @@ export default async function handler(req, res) {
       banco: body.banco || null,
       tipo_cuenta: body.tipo_cuenta || null,
       numero_cuenta: body.numero_cuenta || null,
-      datos_completos: true,
     };
+    fields.datos_completos = calcularDatosCompletos(fields);
 
     if (req.method === "PUT") {
       const id = req.query.id;
