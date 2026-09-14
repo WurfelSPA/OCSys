@@ -684,12 +684,14 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, notify, onCreated
       }
 
       const neto = datos.monto_neto || 0;
+      const nombreContacto = [datos.contacto_nombre, datos.contacto_apellido].filter(Boolean).join(" ");
       setForm((f) => ({
         ...f,
         proveedor_id: proveedorMatch ? proveedorMatch.id : f.proveedor_id,
-        titulo: datos.titulo || f.titulo,
+        titulo: (datos.titulo || "").slice(0, 150) || f.titulo,
         descripcion: datos.descripcion || f.descripcion,
         motivo: datos.motivo || f.motivo,
+        representante_compra: f.representante_compra || nombreContacto,
         moneda: datos.moneda || f.moneda,
         monto_neto: neto || f.monto_neto,
         monto_iva: datos.monto_iva !== undefined ? datos.monto_iva : f.monto_iva,
