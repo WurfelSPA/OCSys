@@ -7,6 +7,7 @@
 <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet"/>
 <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -539,11 +540,207 @@ function HistoricoList({ historicas }) {
   );
 }
 
+function downloadExcel(filename, rows) {
+  if (!rows.length) return false;
+  const ws = XLSX.utils.json_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Datos");
+  XLSX.writeFile(wb, filename);
+  return true;
+}
+
+function buildOCRows(ordenes, historicas) {
+  const nativas = ordenes.map((o) => ({
+    Fuente: "OCSys", "N° OC": o.numero_oc, Proveedor: o.proveedores ? o.proveedores.razon_social : "",
+    RUT: o.proveedores ? o.proveedores.rut : "", Fecha: o.fecha, "Centro Costo": o.centro_costo_codigo,
+    "Cuenta Contable": o.cuenta_contable_codigo, "Monto Neto": o.monto_neto, "Monto Total": o.monto_total, Estado: o.estado,
+  }));
+  const historicasRows = historicas.map((o) => ({
+    Fuente: "Acquisys", "N° OC": o.numero_solicitud, Proveedor: o.nombre_proveedor, RUT: o.rut_proveedor,
+    Fecha: o.fecha_emision, "Centro Costo": o.cc1, "Cuenta Contable": o.cu1,
+    "Monto Neto": o.monto_neto, "Monto Total": o.monto_total, Estado: o.estado,
+  }));
+  return [...nativas, ...historicasRows];
+}
+
+function buildHESRows(ordenes, historicas) {
+  const nativas = ordenes.filter((o) => o.numero_hes).map((o) => ({
+    Fuente: "OCSys", "N° OC": o.numero_oc, "N° HES": o.numero_hes,
+    Proveedor: o.proveedores ? o.proveedores.razon_social : "", Fecha: o.fecha, "Monto Total": o.monto_total, Estado: o.estado,
+  }));
+  const historicasRows = historicas.filter((o) => o.numero_egreso).map((o) => ({
+    Fuente: "Acquisys", "N° OC": o.numero_solicitud, "N° HES / Egreso": o.numero_egreso,
+    Proveedor: o.nombre_proveedor, Fecha: o.fecha_emision, "Monto Total": o.monto_total, Estado: o.estado,
+  }));
+  return [...nativas, ...historicasRows];
+}
+
+function buildFacturasRows(ordenes, historicas) {
+  const nativas = ordenes.filter((o) => o.numero_factura).map((o) => ({
+    Fuente: "OCSys", "N° Factura": o.numero_factura, "N° OC": o.numero_oc,
+    Proveedor: o.proveedores ? o.proveedores.razon_social : "", Fecha: o.fecha, "Monto Total": o.monto_total, Estado: o.estado,
+  }));
+  const historicasRows = historicas.filter((o) => o.numero_factura).map((o) => ({
+    Fuente: "Acquisys", "N° Factura": o.numero_factura, "N° OC": o.numero_solicitud,
+    Proveedor: o.nombre_proveedor, Fecha: o.fecha_emision, "Monto Total": o.monto_total, Estado: o.estado,
+  }));
+  return [...nativas, ...historicasRows];
+}
+
+function buildProveedoresRows(proveedores) {
+  return proveedores.map((p) => ({
+    "Razón Social": p.razon_social, RUT: p.rut, Documento: p.tipo_documento, "Tamaño Empresa": p.tamano_empresa,
+    "Giro Comercial": p.giro_comercial, "Dirección Comercial": p.direccion_comercial, "Depto/Oficina": p.departamento_oficina,
+    Región: p.region, Ciudad: p.ciudad, Teléfono: p.telefono, "Sitio Web": p.sitio_web,
+    "Nombre Contacto": p.contacto_nombre, "Apellido Contacto": p.contacto_apellido,
+    "Teléfono Contacto": p.contacto_telefono, "Celular Contacto": p.contacto_celular, "Correo Contacto": p.contacto_correo,
+    Banco: p.banco, "Tipo Cuenta": p.tipo_cuenta, "N° Cuenta": p.numero_cuenta,
+    "Ficha Completa": p.datos_completos ? "Sí" : "No",
+  }));
+}
+
+function ReporteCard({ title, description, count, onDownload }) {
+  return h("div", { className: "card" },
+    h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center" } },
+      h("div", null,
+        h("h2", { style: { marginBottom: 4 } }, title),
+        h("div", { className: "hint" }, description + " — " + count + " fila(s) disponibles"),
+      ),
+      h("button", { className: "btn-primary", style: { padding: "8px 18px" }, disabled: count === 0, onClick: onDownload }, "Descargar Excel"),
+    )
+  );
+}
+
+function ReportesList({ ordenes, historicas, proveedores, notify }) {
+  const ocRows = useMemo(() => buildOCRows(ordenes, historicas), [ordenes, historicas]);
+  const hesRows = useMemo(() => buildHESRows(ordenes, historicas), [ordenes, historicas]);
+  const facturasRows = useMemo(() => buildFacturasRows(ordenes, historicas), [ordenes, historicas]);
+  const provRows = useMemo(() => buildProveedoresRows(proveedores), [proveedores]);
+
+  const doDownload = (rows, filename, label) => {
+    if (!downloadExcel(filename, rows)) notify("err", "No hay datos para exportar en " + label);
+    else notify("ok", "Descargado: " + filename);
+  };
+
+  return h("div", { className: "page fade-up" },
+    h(ReporteCard, {
+      title: "Listado de OC", description: "Órdenes de Compra creadas en OCSys + histórico de Acquisys", count: ocRows.length,
+      onDownload: () => doDownload(ocRows, "OCSys_Listado_OC.xlsx", "Listado de OC"),
+    }),
+    h(ReporteCard, {
+      title: "Listado de HES", description: "Órdenes con N° HES (OCSys) o N° de Egreso (Acquisys)", count: hesRows.length,
+      onDownload: () => doDownload(hesRows, "OCSys_Listado_HES.xlsx", "Listado de HES"),
+    }),
+    h(ReporteCard, {
+      title: "Listado de Facturas", description: "Órdenes con N° de Factura asociado (OCSys + Acquisys)", count: facturasRows.length,
+      onDownload: () => doDownload(facturasRows, "OCSys_Listado_Facturas.xlsx", "Listado de Facturas"),
+    }),
+    h(ReporteCard, {
+      title: "Listado de Proveedores", description: "Ficha completa de todos los proveedores cargados", count: provRows.length,
+      onDownload: () => doDownload(provRows, "OCSys_Listado_Proveedores.xlsx", "Listado de Proveedores"),
+    }),
+  );
+}
+
+const USUARIO_BLANK = { nombre: "", apellido: "", usuario: "", nivel_aprobacion: "0", password: "" };
+
+function UsuarioModal({ onClose, onSaved, notify, editUsuario }) {
+  const [form, setForm] = useState(editUsuario
+    ? { ...USUARIO_BLANK, ...editUsuario, nivel_aprobacion: String(editUsuario.nivel_aprobacion), password: "" }
+    : USUARIO_BLANK);
+  const [saving, setSaving] = useState(false);
+  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  const isEdit = !!editUsuario;
+
+  const submit = async () => {
+    if (!form.nombre || !form.apellido || !form.usuario) {
+      notify("err", "Nombre, Apellido y Usuario son obligatorios");
+      return;
+    }
+    setSaving(true);
+    try {
+      const { usuario } = await api("usuarios" + (isEdit ? "?id=" + editUsuario.id : ""), {
+        method: isEdit ? "PUT" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...form, nivel_aprobacion: Number(form.nivel_aprobacion) }),
+      });
+      notify("ok", (isEdit ? "Usuario actualizado: " : "Usuario creado: ") + usuario.usuario);
+      onSaved(usuario);
+    } catch (e) {
+      notify("err", e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return h("div", { className: "overlay", onClick: (e) => e.target === e.currentTarget && onClose() },
+    h("div", { className: "modal", style: { width: 420 } },
+      h("div", { className: "modal-hdr" },
+        h("h3", null, isEdit ? "Editar Usuario" : "Nuevo Usuario"),
+        h("button", { className: "modal-close", onClick: onClose }, "×")
+      ),
+      h(Field, { label: "Nombre *" }, h("input", { value: form.nombre, onChange: set("nombre") })),
+      h(Field, { label: "Apellido *" }, h("input", { value: form.apellido, onChange: set("apellido") })),
+      h(Field, { label: "Usuario (login) *" }, h("input", { value: form.usuario, onChange: set("usuario") })),
+      h(Field, { label: "Nivel de Aprobación de OC" },
+        h("select", { value: form.nivel_aprobacion, onChange: set("nivel_aprobacion") },
+          h("option", { value: "0" }, "0 — No puede aprobar OC"),
+          h("option", { value: "1" }, "1 — Puede aprobar OC"),
+        )),
+      h(Field, { label: "Contraseña" },
+        h("input", { type: "password", value: form.password, onChange: set("password"),
+          placeholder: isEdit ? "Dejar en blanco para no cambiarla" : "Dejar en blanco por ahora" })),
+      isEdit && h("div", { className: "hint" }, editUsuario.tiene_password ? "Ya tiene contraseña configurada." : "Todavía sin contraseña."),
+      h("div", { style: { display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 16 } },
+        h("button", { className: "btn-ghost", onClick: onClose }, "Cancelar"),
+        h("button", { className: "btn-primary", onClick: submit, disabled: saving }, saving ? "Guardando..." : "Aceptar"),
+      ),
+    )
+  );
+}
+
+const USUARIOS_COLUMNS = [
+  { key: "nombre", label: "Nombre" },
+  { key: "apellido", label: "Apellido" },
+  { key: "usuario", label: "Usuario" },
+  { key: "nivel_aprobacion", label: "Nivel Aprobación", render: (u) => (u.nivel_aprobacion === 1
+    ? h("span", { className: "pill pill-ok" }, "1 — Aprueba OC")
+    : h("span", { className: "pill pill-pend" }, "0 — No aprueba")) },
+  { key: "tiene_password", label: "Contraseña", render: (u) => (u.tiene_password
+    ? h("span", { className: "pill pill-ok" }, "Configurada")
+    : h("span", { className: "pill pill-pend" }, "Sin definir")) },
+];
+
+function AdministracionList({ usuarios, refreshUsuarios, notify }) {
+  const [showModal, setShowModal] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const closeAny = () => { setShowModal(false); setEditing(null); };
+  return h("div", { className: "page fade-up" },
+    (showModal || editing) && h(UsuarioModal, {
+      editUsuario: editing, onClose: closeAny,
+      onSaved: () => { refreshUsuarios(); closeAny(); }, notify,
+    }),
+    h("div", { className: "card" },
+      h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 } },
+        h("h2", { style: { marginBottom: 0 } }, "Administración de Usuarios"),
+        h("button", { className: "btn-primary", style: { padding: "8px 18px" }, onClick: () => setShowModal(true) }, "+ Nuevo Usuario"),
+      ),
+      h(DataTable, {
+        columns: USUARIOS_COLUMNS, rows: usuarios, rowKey: (u) => u.id, onRowClick: setEditing,
+        searchFields: ["nombre", "apellido", "usuario"],
+        searchPlaceholder: "Buscar por nombre, apellido o usuario",
+        emptyText: "No hay usuarios cargados todavía",
+      }),
+    )
+  );
+}
+
 function App() {
   const [tab, setTab] = useState("nueva");
   const [proveedores, setProveedores] = useState([]);
   const [ordenes, setOrdenes] = useState([]);
   const [historicas, setHistoricas] = useState([]);
+  const [usuarios, setUsuarios] = useState([]);
   const [catalogos, setCatalogos] = useState({ centrosCosto: [], cuentasContables: [], regiones: [], ciudades: [] });
   const [notif, notify] = useNotif();
 
@@ -555,9 +752,14 @@ function App() {
     api("ordenes").then((d) => setOrdenes(d.ordenes)).catch((e) => notify("err", e.message));
   }, [notify]);
 
+  const loadUsuarios = useCallback(() => {
+    api("usuarios").then((d) => setUsuarios(d.usuarios)).catch((e) => notify("err", e.message));
+  }, [notify]);
+
   useEffect(() => {
     loadProveedores();
     loadOrdenes();
+    loadUsuarios();
     api("catalogos").then(setCatalogos).catch((e) => notify("err", e.message));
     api("historico").then((d) => setHistoricas(d.historicas)).catch((e) => notify("err", e.message));
   }, []);
@@ -573,11 +775,15 @@ function App() {
       h("button", { className: "nav-btn" + (tab === "ordenes" ? " active" : ""), onClick: () => setTab("ordenes") }, "Órdenes"),
       h("button", { className: "nav-btn" + (tab === "proveedores" ? " active" : ""), onClick: () => setTab("proveedores") }, "Proveedores"),
       h("button", { className: "nav-btn" + (tab === "historico" ? " active" : ""), onClick: () => setTab("historico") }, "Histórico Acquisys"),
+      h("button", { className: "nav-btn" + (tab === "reportes" ? " active" : ""), onClick: () => setTab("reportes") }, "Reportes"),
+      h("button", { className: "nav-btn" + (tab === "administracion" ? " active" : ""), onClick: () => setTab("administracion") }, "Administración"),
     ),
     tab === "nueva" && h(NuevaOC, { proveedores, catalogos, refreshProveedores: loadProveedores, notify, onCreated: loadOrdenes }),
     tab === "ordenes" && h(OrdenesList, { ordenes }),
     tab === "proveedores" && h(ProveedoresList, { proveedores, catalogos, refreshProveedores: loadProveedores, notify }),
     tab === "historico" && h(HistoricoList, { historicas }),
+    tab === "reportes" && h(ReportesList, { ordenes, historicas, proveedores, notify }),
+    tab === "administracion" && h(AdministracionList, { usuarios, refreshUsuarios: loadUsuarios, notify }),
   );
 }
 
