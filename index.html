@@ -446,17 +446,22 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, notify, onCreated
 
       h("div", { className: "grid2" },
         h(Field, { label: "Centro de Costo" },
-          h("select", { value: form.centro_costo_codigo, onChange: set("centro_costo_codigo") },
+          h("select", {
+            value: form.centro_costo_codigo,
+            onChange: (e) => setForm((f) => ({ ...f, centro_costo_codigo: e.target.value, cuenta_contable_codigo: "" })),
+          },
             h("option", { value: "" }, "Selecciona"),
             catalogos.centrosCosto.map((c) => h("option", { key: c.codigo, value: c.codigo }, c.codigo + " — " + c.descripcion)),
           )),
         h(Field, { label: "Cuenta Contable" },
-          catalogos.cuentasContables.length
-            ? h("select", { value: form.cuenta_contable_codigo, onChange: set("cuenta_contable_codigo") },
+          !form.centro_costo_codigo
+            ? h("input", { disabled: true, placeholder: "Primero selecciona un Centro de Costo" })
+            : h("select", { value: form.cuenta_contable_codigo, onChange: set("cuenta_contable_codigo") },
                 h("option", { value: "" }, "Selecciona"),
-                catalogos.cuentasContables.map((c) => h("option", { key: c.codigo, value: c.codigo }, c.codigo + " — " + c.descripcion)),
+                catalogos.cuentasContables
+                  .filter((c) => c.centro_costo_codigo === form.centro_costo_codigo)
+                  .map((c) => h("option", { key: c.codigo, value: c.codigo }, c.codigo + " — " + c.descripcion)),
               )
-            : h("input", { value: form.cuenta_contable_codigo, onChange: set("cuenta_contable_codigo"), placeholder: "Aún sin catálogo — ingresa manualmente" })
         ),
       ),
 
