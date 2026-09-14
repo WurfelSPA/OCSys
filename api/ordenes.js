@@ -1,5 +1,6 @@
 import { supabase, readJsonBody } from "./_supabase.js";
 import { verifyToken, parseCookie } from "./_session.js";
+import { enviarCorreoAprobacion } from "./_email.js";
 
 const ESTADOS_OCSYS = ["Borrador", "Pendiente aprobación", "Aprobada", "Completada"];
 
@@ -12,25 +13,23 @@ export default async function handler(req, res) {
     const body = await readJsonBody(req);
 
     const fields = {};
+    let session = null;
     if (body.estado !== undefined) {
       if (!ESTADOS_OCSYS.includes(body.estado)) {
         return res.status(400).json({ error: "estado inválido" });
       }
       if (body.estado === "Aprobada") {
-        if (!body.numero_hes) {
-          return res.status(400).json({ error: "numero_hes es obligatorio para aprobar la OC" });
-        }
-        const session = verifyToken(parseCookie(req.headers.cookie, "ocsys_token"), process.env.SESSION_SECRET || "");
+        session = verifyToken(parseCookie(req.headers.cookie, "ocsys_token"), process.env.SESSION_SECRET || "");
         if (!session || session.nivel_aprobacion !== 1) {
           return res.status(403).json({ error: "No tienes nivel de aprobación para aprobar órdenes de compra" });
         }
+        fields.numero_hes = Date.now().toString();
       }
       if (body.estado === "Completada" && !body.numero_factura) {
         return res.status(400).json({ error: "numero_factura es obligatorio para completar la OC" });
       }
       fields.estado = body.estado;
     }
-    if (body.numero_hes !== undefined) fields.numero_hes = body.numero_hes;
     if (body.numero_factura !== undefined) fields.numero_factura = body.numero_factura;
     if (body.archivo_factura_url !== undefined) fields.archivo_factura_url = body.archivo_factura_url;
     if (body.archivo_factura_nombre !== undefined) fields.archivo_factura_nombre = body.archivo_factura_nombre;
@@ -46,10 +45,19 @@ export default async function handler(req, res) {
       .from("ordenes_compra")
       .update({ ...fields, updated_at: new Date().toISOString() })
       .eq("id", id)
-      .select("*, proveedores(razon_social, rut)")
+      .select("*, proveedores(razon_social, rut, contacto_correo)")
       .single();
     if (error) return res.status(500).json({ error: error.message });
-    return res.status(200).json({ orden: data });
+
+    let correoError = null;
+    if (body.estado === "Aprobada") {
+      try {
+        await enviarCorreoAprobacion(data, session);
+      } catch (e) {
+        correoError = e.message;
+      }
+    }
+    return res.status(200).json({ orden: data, correoError });
   }
 
   if (req.method === "GET") {

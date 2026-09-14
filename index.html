@@ -716,18 +716,16 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, notify, onCreated
 
 function OrdenAccionModal({ orden, tipo, onClose, onDone, notify }) {
   const isAprobar = tipo === "aprobar";
-  const [numeroHes, setNumeroHes] = useState("");
   const [numeroFactura, setNumeroFactura] = useState("");
   const [file, setFile] = useState(null);
   const [saving, setSaving] = useState(false);
 
   const submit = async () => {
-    if (isAprobar && !numeroHes) return notify("err", "Ingresa el N° HES");
     if (!isAprobar && !numeroFactura) return notify("err", "Ingresa el N° de Factura");
     setSaving(true);
     try {
       const payload = isAprobar
-        ? { estado: "Aprobada", numero_hes: numeroHes }
+        ? { estado: "Aprobada" }
         : { estado: "Completada", numero_factura: numeroFactura };
       if (!isAprobar && file) {
         const base64 = await fileToBase64(file);
@@ -739,12 +737,17 @@ function OrdenAccionModal({ orden, tipo, onClose, onDone, notify }) {
         payload.archivo_factura_url = up.url;
         payload.archivo_factura_nombre = file.name;
       }
-      await api("ordenes?id=" + orden.id, {
+      const { orden: actualizada, correoError } = await api("ordenes?id=" + orden.id, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      notify("ok", isAprobar ? "OC aprobada con HES " + numeroHes : "OC completada con Factura " + numeroFactura);
+      if (isAprobar) {
+        notify(correoError ? "err" : "ok",
+          "OC aprobada con HES " + actualizada.numero_hes + (correoError ? " — correo no enviado: " + correoError : " — correo enviado al proveedor"));
+      } else {
+        notify("ok", "OC completada con Factura " + numeroFactura);
+      }
       onDone();
     } catch (e) {
       notify("err", e.message);
@@ -760,7 +763,8 @@ function OrdenAccionModal({ orden, tipo, onClose, onDone, notify }) {
         h("button", { className: "modal-close", onClick: onClose }, "×")
       ),
       isAprobar
-        ? h(Field, { label: "N° HES *" }, h("input", { value: numeroHes, onChange: (e) => setNumeroHes(e.target.value), autoFocus: true }))
+        ? h("p", { style: { fontSize: 13, color: "var(--txm)", marginBottom: 4 } },
+            "Se asignará automáticamente el N° HES y se enviará un correo al proveedor (" + ((orden.proveedores && orden.proveedores.razon_social) || "") + ") con la Orden de Compra adjunta.")
         : h(React.Fragment, null,
             h(Field, { label: "N° Factura *" }, h("input", { value: numeroFactura, onChange: (e) => setNumeroFactura(e.target.value), autoFocus: true })),
             h(Field, { label: "Factura (PDF/imagen)" },
