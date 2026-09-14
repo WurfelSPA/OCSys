@@ -18,7 +18,11 @@ function rutNorm(r) {
 
 function memoDeUrl(url) {
   const filename = (url || "").split("/").pop();
-  return filename.replace(/-\d+\.(pdf|xlsx?|docx?|jpe?g|png)$/i, "");
+  // El patron real es "<memorandum>-<timestamp>.<ext>" — la extension puede
+  // ser cualquier cosa (pdf, xlsx, rar, etc.), asi que se quita de forma
+  // generica en vez de listar extensiones conocidas (una desconocida dejaba
+  // el sufijo pegado y rompia el match contra numero_oc).
+  return filename.replace(/-\d+\.\w+$/i, "");
 }
 
 const CAMPOS_PARA_FICHA_COMPLETA = [

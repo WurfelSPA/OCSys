@@ -35,6 +35,11 @@ export default async function handler(req, res) {
     if (body.archivo_factura_nombre !== undefined) fields.archivo_factura_nombre = body.archivo_factura_nombre;
     if (body.archivo_oc_url !== undefined) fields.archivo_oc_url = body.archivo_oc_url;
     if (body.archivo_oc_nombre !== undefined) fields.archivo_oc_nombre = body.archivo_oc_nombre;
+    if (body.archivo_url !== undefined) fields.archivo_url = body.archivo_url;
+    if (body.archivo_nombre !== undefined) fields.archivo_nombre = body.archivo_nombre;
+    // Correccion manual de historicos migrados (no genera HES nuevo, a diferencia
+    // de la transicion a "Aprobada" mas arriba, que sí lo asigna automaticamente).
+    if (body.numero_hes !== undefined && body.estado === undefined) fields.numero_hes = body.numero_hes;
     if (body.cuotas !== undefined) fields.cuotas = Array.isArray(body.cuotas) ? body.cuotas : [];
 
     if (Object.keys(fields).length === 0) {
