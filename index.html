@@ -144,6 +144,68 @@ function Field({ label, children }) {
   return h("div", { className: "field" }, h("label", null, label), children);
 }
 
+function DataTable({ columns, rows, rowKey, searchPlaceholder, searchFields, onRowClick, emptyText }) {
+  const [search, setSearch] = useState("");
+  const [sortKey, setSortKey] = useState(null);
+  const [sortDir, setSortDir] = useState("asc");
+
+  const filtered = useMemo(() => {
+    if (!search.trim()) return rows;
+    const q = search.trim().toLowerCase();
+    return rows.filter((r) => (searchFields || []).some((f) => String(r[f] ?? "").toLowerCase().includes(q)));
+  }, [rows, search, searchFields]);
+
+  const sorted = useMemo(() => {
+    if (!sortKey) return filtered;
+    const col = columns.find((c) => c.key === sortKey);
+    const getVal = col && col.sortValue ? col.sortValue : (r) => r[sortKey];
+    const copy = [...filtered];
+    copy.sort((a, b) => {
+      let va = getVal(a), vb = getVal(b);
+      if (va === null || va === undefined) va = "";
+      if (vb === null || vb === undefined) vb = "";
+      if (typeof va === "number" && typeof vb === "number") return sortDir === "asc" ? va - vb : vb - va;
+      va = String(va).toLowerCase(); vb = String(vb).toLowerCase();
+      if (va < vb) return sortDir === "asc" ? -1 : 1;
+      if (va > vb) return sortDir === "asc" ? 1 : -1;
+      return 0;
+    });
+    return copy;
+  }, [filtered, sortKey, sortDir, columns]);
+
+  const toggleSort = (key) => {
+    if (sortKey !== key) { setSortKey(key); setSortDir("asc"); }
+    else if (sortDir === "asc") setSortDir("desc");
+    else { setSortKey(null); setSortDir("asc"); }
+  };
+
+  return h(React.Fragment, null,
+    searchFields && searchFields.length > 0 && h("input", {
+      value: search, onChange: (e) => setSearch(e.target.value),
+      placeholder: searchPlaceholder || "Buscar...",
+      style: { marginBottom: 12 },
+    }),
+    rows.length === 0
+      ? h("div", { className: "empty" }, emptyText || "Sin datos")
+      : sorted.length === 0
+      ? h("div", { className: "empty" }, "Sin resultados para \"" + search + "\"")
+      : h("table", null,
+          h("thead", null, h("tr", null,
+            columns.map((c) => h("th", {
+              key: c.key,
+              onClick: c.sortable === false ? undefined : () => toggleSort(c.key),
+              style: c.sortable === false ? undefined : { cursor: "pointer", userSelect: "none" },
+            }, c.label + (sortKey === c.key ? (sortDir === "asc" ? " ▲" : " ▼") : ""))),
+          )),
+          h("tbody", null, sorted.map((row, i) => h("tr", {
+            key: rowKey ? rowKey(row) : i,
+            style: onRowClick ? { cursor: "pointer" } : undefined,
+            onClick: onRowClick ? () => onRowClick(row) : undefined,
+          }, columns.map((c) => h("td", { key: c.key }, c.render ? c.render(row) : (row[c.key] ?? "—")))))),
+        )
+  );
+}
+
 function ProveedorModal({ regiones, onClose, onCreated, notify, editProveedor }) {
   const [form, setForm] = useState(editProveedor ? { ...PROVEEDOR_BLANK, ...editProveedor } : PROVEEDOR_BLANK);
   const [saving, setSaving] = useState(false);
@@ -389,30 +451,42 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, notify, onCreated
   );
 }
 
+const ORDENES_COLUMNS = [
+  { key: "numero_oc", label: "N° OC" },
+  { key: "fecha", label: "Fecha", render: (o) => fmtDate(o.fecha) },
+  { key: "proveedor", label: "Proveedor", sortValue: (o) => (o.proveedores ? o.proveedores.razon_social : ""), render: (o) => (o.proveedores ? o.proveedores.razon_social : "—") },
+  { key: "numero_hes", label: "N° HES" },
+  { key: "numero_factura", label: "N° Factura" },
+  { key: "centro_costo_codigo", label: "Centro Costo" },
+  { key: "monto_total", label: "Monto Total", render: (o) => fmtMoney(o.monto_total) },
+  { key: "estado", label: "Estado", render: (o) => estadoPill(o.estado) },
+  { key: "archivo", label: "Archivo", sortable: false, render: (o) => (o.archivo_url ? h("a", { className: "link", href: o.archivo_url, target: "_blank", rel: "noreferrer" }, "Ver") : "—") },
+];
+
 function OrdenesList({ ordenes }) {
   return h("div", { className: "page fade-up" },
     h("div", { className: "card" },
       h("h2", null, "Órdenes de Compra"),
-      ordenes.length === 0
-        ? h("div", { className: "empty" }, "Aún no hay órdenes de compra creadas en OCSys")
-        : h("table", null,
-            h("thead", null, h("tr", null,
-              h("th", null, "N° OC"), h("th", null, "Fecha"), h("th", null, "Proveedor"),
-              h("th", null, "Centro Costo"), h("th", null, "Monto Total"), h("th", null, "Estado"), h("th", null, "Archivo"),
-            )),
-            h("tbody", null, ordenes.map((o) => h("tr", { key: o.id },
-              h("td", null, o.numero_oc),
-              h("td", null, fmtDate(o.fecha)),
-              h("td", null, o.proveedores ? o.proveedores.razon_social : "—"),
-              h("td", null, o.centro_costo_codigo || "—"),
-              h("td", null, fmtMoney(o.monto_total)),
-              h("td", null, estadoPill(o.estado)),
-              h("td", null, o.archivo_url ? h("a", { className: "link", href: o.archivo_url, target: "_blank", rel: "noreferrer" }, "Ver") : "—"),
-            ))),
-          )
+      h(DataTable, {
+        columns: ORDENES_COLUMNS, rows: ordenes, rowKey: (o) => o.id,
+        searchFields: ["numero_oc", "numero_hes", "numero_egreso", "numero_factura"],
+        searchPlaceholder: "Buscar por N° OC, N° HES o N° Factura",
+        emptyText: "Aún no hay órdenes de compra creadas en OCSys",
+      }),
     )
   );
 }
+
+const PROVEEDORES_COLUMNS = [
+  { key: "razon_social", label: "Razón Social" },
+  { key: "rut", label: "RUT" },
+  { key: "tipo_documento", label: "Documento" },
+  { key: "giro_comercial", label: "Giro" },
+  { key: "ciudad", label: "Ciudad" },
+  { key: "contacto", label: "Contacto", sortValue: (p) => [p.contacto_nombre, p.contacto_apellido].filter(Boolean).join(" "), render: (p) => [p.contacto_nombre, p.contacto_apellido].filter(Boolean).join(" ") || "—" },
+  { key: "contacto_correo", label: "Correo" },
+  { key: "datos_completos", label: "Ficha", render: (p) => (p.datos_completos ? h("span", { className: "pill pill-ok" }, "Completa") : h("span", { className: "pill pill-pend" }, "⚠ Completar")) },
+];
 
 function ProveedoresList({ proveedores, catalogos, refreshProveedores, notify }) {
   const [showModal, setShowModal] = useState(false);
@@ -428,52 +502,39 @@ function ProveedoresList({ proveedores, catalogos, refreshProveedores, notify })
         h("h2", { style: { marginBottom: 0 } }, "Proveedores"),
         h("button", { className: "btn-primary", style: { padding: "8px 18px" }, onClick: () => setShowModal(true) }, "+ Nuevo Proveedor"),
       ),
-      proveedores.length === 0
-        ? h("div", { className: "empty" }, "No hay proveedores cargados todavía")
-        : h("table", null,
-            h("thead", null, h("tr", null,
-              h("th", null, "Razón Social"), h("th", null, "RUT"), h("th", null, "Documento"),
-              h("th", null, "Giro"), h("th", null, "Ciudad"), h("th", null, "Contacto"), h("th", null, "Correo"), h("th", null, "Ficha"),
-            )),
-            h("tbody", null, proveedores.map((p) => h("tr", { key: p.id, style: { cursor: "pointer" }, onClick: () => setEditing(p) },
-              h("td", null, p.razon_social),
-              h("td", null, p.rut),
-              h("td", null, p.tipo_documento),
-              h("td", null, p.giro_comercial || "—"),
-              h("td", null, p.ciudad || "—"),
-              h("td", null, [p.contacto_nombre, p.contacto_apellido].filter(Boolean).join(" ") || "—"),
-              h("td", null, p.contacto_correo || "—"),
-              h("td", null, p.datos_completos
-                ? h("span", { className: "pill pill-ok" }, "Completa")
-                : h("span", { className: "pill pill-pend" }, "⚠ Completar")),
-            ))),
-          )
+      h(DataTable, {
+        columns: PROVEEDORES_COLUMNS, rows: proveedores, rowKey: (p) => p.id, onRowClick: setEditing,
+        searchFields: ["razon_social", "rut"],
+        searchPlaceholder: "Buscar por Razón Social o RUT",
+        emptyText: "No hay proveedores cargados todavía",
+      }),
     )
   );
 }
+
+const HISTORICO_COLUMNS = [
+  { key: "numero_solicitud", label: "N° Solicitud" },
+  { key: "numero_orden", label: "N° Orden" },
+  { key: "numero_factura", label: "N° Factura" },
+  { key: "numero_egreso", label: "N° Egreso" },
+  { key: "nombre_proveedor", label: "Proveedor" },
+  { key: "fecha_emision", label: "Fecha Emisión", render: (o) => fmtDate(o.fecha_emision) },
+  { key: "estado", label: "Estado", render: (o) => estadoPill(o.estado) },
+  { key: "monto_total", label: "Monto Total", render: (o) => fmtMoney(o.monto_total) },
+  { key: "cu1", label: "Cta. Contable" },
+];
 
 function HistoricoList({ historicas }) {
   return h("div", { className: "page fade-up" },
     h("div", { className: "card" },
       h("h2", null, "Histórico Acquisys"),
       h("div", { className: "hint", style: { marginBottom: 12 } }, "Datos migrados desde Acquisys (solo lectura) — órdenes creadas en OCSys aparecen en la pestaña \"Órdenes\""),
-      historicas.length === 0
-        ? h("div", { className: "empty" }, "Sin datos históricos importados")
-        : h("table", null,
-            h("thead", null, h("tr", null,
-              h("th", null, "N° Solicitud"), h("th", null, "N° Factura"), h("th", null, "Proveedor"),
-              h("th", null, "Fecha Emisión"), h("th", null, "Estado"), h("th", null, "Monto Total"), h("th", null, "Cta. Contable"),
-            )),
-            h("tbody", null, historicas.map((o, i) => h("tr", { key: o.id || i },
-              h("td", null, o.numero_solicitud || "—"),
-              h("td", null, o.numero_factura || "—"),
-              h("td", null, o.nombre_proveedor || "—"),
-              h("td", null, fmtDate(o.fecha_emision)),
-              h("td", null, estadoPill(o.estado)),
-              h("td", null, fmtMoney(o.monto_total)),
-              h("td", null, o.cu1 || "—"),
-            ))),
-          )
+      h(DataTable, {
+        columns: HISTORICO_COLUMNS, rows: historicas, rowKey: (o, i) => o.id || i,
+        searchFields: ["numero_solicitud", "numero_orden", "numero_factura", "numero_egreso"],
+        searchPlaceholder: "Buscar por N° Solicitud, N° Orden, N° Factura o N° Egreso",
+        emptyText: "Sin datos históricos importados",
+      }),
     )
   );
 }
