@@ -11,8 +11,8 @@
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
-  --bg:#f0f2f5;--surf:#ffffff;--surf2:#f4f6f9;--surf3:#e9edf3;
-  --bdr:#d9dfe6;--bdr2:#c3ccd6;
+  --bg:#dbe1e8;--surf:#ffffff;--surf2:#eef1f4;--surf3:#e3e8ed;
+  --bdr:#c7d0d9;--bdr2:#b0bcc7;
   --tx:#1a2230;--txm:#5c6b7a;--txd:#94a1ad;
   --green:#0a7c4e;--gbg:#e8f5f0;
   --amber:#a05c00;--abg:#fff8e8;
@@ -551,33 +551,6 @@ function ProveedoresList({ proveedores, catalogos, refreshProveedores, notify })
   );
 }
 
-const HISTORICO_COLUMNS = [
-  { key: "numero_solicitud", label: "N° Solicitud" },
-  { key: "numero_orden", label: "N° Orden" },
-  { key: "numero_factura", label: "N° Factura" },
-  { key: "numero_egreso", label: "N° Egreso" },
-  { key: "nombre_proveedor", label: "Proveedor" },
-  { key: "fecha_emision", label: "Fecha Emisión", render: (o) => fmtDate(o.fecha_emision) },
-  { key: "estado", label: "Estado", render: (o) => estadoPill(o.estado) },
-  { key: "monto_total", label: "Monto Total", render: (o) => fmtMoney(o.monto_total) },
-  { key: "cu1", label: "Cta. Contable" },
-];
-
-function HistoricoList({ historicas }) {
-  return h("div", { className: "page fade-up" },
-    h("div", { className: "card" },
-      h("h2", null, "Histórico Acquisys"),
-      h("div", { className: "hint", style: { marginBottom: 12 } }, "Datos migrados desde Acquisys (solo lectura) — órdenes creadas en OCSys aparecen en la pestaña \"Órdenes\""),
-      h(DataTable, {
-        columns: HISTORICO_COLUMNS, rows: historicas, rowKey: (o, i) => o.id || i,
-        searchFields: ["numero_solicitud", "numero_orden", "numero_factura", "numero_egreso"],
-        searchPlaceholder: "Buscar por N° Solicitud, N° Orden, N° Factura o N° Egreso",
-        emptyText: "Sin datos históricos importados",
-      }),
-    )
-  );
-}
-
 function downloadExcel(filename, rows) {
   if (!rows.length) return false;
   const ws = XLSX.utils.json_to_sheet(rows);
@@ -587,42 +560,26 @@ function downloadExcel(filename, rows) {
   return true;
 }
 
-function buildOCRows(ordenes, historicas) {
-  const nativas = ordenes.map((o) => ({
-    Fuente: "OCSys", "N° OC": o.numero_oc, Proveedor: o.proveedores ? o.proveedores.razon_social : "",
+function buildOCRows(ordenes) {
+  return ordenes.map((o) => ({
+    "N° OC": o.numero_oc, Proveedor: o.proveedores ? o.proveedores.razon_social : "",
     RUT: o.proveedores ? o.proveedores.rut : "", Fecha: o.fecha, "Centro Costo": o.centro_costo_codigo,
     "Cuenta Contable": o.cuenta_contable_codigo, "Monto Neto": o.monto_neto, "Monto Total": o.monto_total, Estado: o.estado,
   }));
-  const historicasRows = historicas.map((o) => ({
-    Fuente: "Acquisys", "N° OC": o.numero_solicitud, Proveedor: o.nombre_proveedor, RUT: o.rut_proveedor,
-    Fecha: o.fecha_emision, "Centro Costo": o.cc1, "Cuenta Contable": o.cu1,
-    "Monto Neto": o.monto_neto, "Monto Total": o.monto_total, Estado: o.estado,
-  }));
-  return [...nativas, ...historicasRows];
 }
 
-function buildHESRows(ordenes, historicas) {
-  const nativas = ordenes.filter((o) => o.numero_hes).map((o) => ({
-    Fuente: "OCSys", "N° OC": o.numero_oc, "N° HES": o.numero_hes,
+function buildHESRows(ordenes) {
+  return ordenes.filter((o) => o.numero_hes || o.numero_egreso).map((o) => ({
+    "N° OC": o.numero_oc, "N° HES": o.numero_hes, "N° Egreso": o.numero_egreso,
     Proveedor: o.proveedores ? o.proveedores.razon_social : "", Fecha: o.fecha, "Monto Total": o.monto_total, Estado: o.estado,
   }));
-  const historicasRows = historicas.filter((o) => o.numero_egreso).map((o) => ({
-    Fuente: "Acquisys", "N° OC": o.numero_solicitud, "N° HES / Egreso": o.numero_egreso,
-    Proveedor: o.nombre_proveedor, Fecha: o.fecha_emision, "Monto Total": o.monto_total, Estado: o.estado,
-  }));
-  return [...nativas, ...historicasRows];
 }
 
-function buildFacturasRows(ordenes, historicas) {
-  const nativas = ordenes.filter((o) => o.numero_factura).map((o) => ({
-    Fuente: "OCSys", "N° Factura": o.numero_factura, "N° OC": o.numero_oc,
+function buildFacturasRows(ordenes) {
+  return ordenes.filter((o) => o.numero_factura).map((o) => ({
+    "N° Factura": o.numero_factura, "N° OC": o.numero_oc,
     Proveedor: o.proveedores ? o.proveedores.razon_social : "", Fecha: o.fecha, "Monto Total": o.monto_total, Estado: o.estado,
   }));
-  const historicasRows = historicas.filter((o) => o.numero_factura).map((o) => ({
-    Fuente: "Acquisys", "N° Factura": o.numero_factura, "N° OC": o.numero_solicitud,
-    Proveedor: o.nombre_proveedor, Fecha: o.fecha_emision, "Monto Total": o.monto_total, Estado: o.estado,
-  }));
-  return [...nativas, ...historicasRows];
 }
 
 function buildProveedoresRows(proveedores) {
@@ -649,10 +606,10 @@ function ReporteCard({ title, description, count, onDownload }) {
   );
 }
 
-function ReportesList({ ordenes, historicas, proveedores, notify }) {
-  const ocRows = useMemo(() => buildOCRows(ordenes, historicas), [ordenes, historicas]);
-  const hesRows = useMemo(() => buildHESRows(ordenes, historicas), [ordenes, historicas]);
-  const facturasRows = useMemo(() => buildFacturasRows(ordenes, historicas), [ordenes, historicas]);
+function ReportesList({ ordenes, proveedores, notify }) {
+  const ocRows = useMemo(() => buildOCRows(ordenes), [ordenes]);
+  const hesRows = useMemo(() => buildHESRows(ordenes), [ordenes]);
+  const facturasRows = useMemo(() => buildFacturasRows(ordenes), [ordenes]);
   const provRows = useMemo(() => buildProveedoresRows(proveedores), [proveedores]);
 
   const doDownload = (rows, filename, label) => {
@@ -662,15 +619,15 @@ function ReportesList({ ordenes, historicas, proveedores, notify }) {
 
   return h("div", { className: "page fade-up" },
     h(ReporteCard, {
-      title: "Listado de OC", description: "Órdenes de Compra creadas en OCSys + histórico de Acquisys", count: ocRows.length,
+      title: "Listado de OC", description: "Todas las Órdenes de Compra", count: ocRows.length,
       onDownload: () => doDownload(ocRows, "OCSys_Listado_OC.xlsx", "Listado de OC"),
     }),
     h(ReporteCard, {
-      title: "Listado de HES", description: "Órdenes con N° HES (OCSys) o N° de Egreso (Acquisys)", count: hesRows.length,
+      title: "Listado de HES", description: "Órdenes con N° HES o N° de Egreso asociado", count: hesRows.length,
       onDownload: () => doDownload(hesRows, "OCSys_Listado_HES.xlsx", "Listado de HES"),
     }),
     h(ReporteCard, {
-      title: "Listado de Facturas", description: "Órdenes con N° de Factura asociado (OCSys + Acquisys)", count: facturasRows.length,
+      title: "Listado de Facturas", description: "Órdenes con N° de Factura asociado", count: facturasRows.length,
       onDownload: () => doDownload(facturasRows, "OCSys_Listado_Facturas.xlsx", "Listado de Facturas"),
     }),
     h(ReporteCard, {
@@ -777,7 +734,6 @@ function App() {
   const [tab, setTab] = useState("nueva");
   const [proveedores, setProveedores] = useState([]);
   const [ordenes, setOrdenes] = useState([]);
-  const [historicas, setHistoricas] = useState([]);
   const [usuarios, setUsuarios] = useState([]);
   const [catalogos, setCatalogos] = useState({ centrosCosto: [], cuentasContables: [], regiones: [], ciudades: [] });
   const [notif, notify] = useNotif();
@@ -799,7 +755,6 @@ function App() {
     loadOrdenes();
     loadUsuarios();
     api("catalogos").then(setCatalogos).catch((e) => notify("err", e.message));
-    api("historico").then((d) => setHistoricas(d.historicas)).catch((e) => notify("err", e.message));
   }, []);
 
   return h("div", null,
@@ -812,15 +767,13 @@ function App() {
       h("button", { className: "nav-btn" + (tab === "nueva" ? " active" : ""), onClick: () => setTab("nueva") }, "Nueva OC"),
       h("button", { className: "nav-btn" + (tab === "ordenes" ? " active" : ""), onClick: () => setTab("ordenes") }, "Órdenes"),
       h("button", { className: "nav-btn" + (tab === "proveedores" ? " active" : ""), onClick: () => setTab("proveedores") }, "Proveedores"),
-      h("button", { className: "nav-btn" + (tab === "historico" ? " active" : ""), onClick: () => setTab("historico") }, "Histórico Acquisys"),
       h("button", { className: "nav-btn" + (tab === "reportes" ? " active" : ""), onClick: () => setTab("reportes") }, "Reportes"),
       h("button", { className: "nav-btn" + (tab === "administracion" ? " active" : ""), onClick: () => setTab("administracion") }, "Administración"),
     ),
     tab === "nueva" && h(NuevaOC, { proveedores, catalogos, refreshProveedores: loadProveedores, notify, onCreated: loadOrdenes }),
     tab === "ordenes" && h(OrdenesList, { ordenes }),
     tab === "proveedores" && h(ProveedoresList, { proveedores, catalogos, refreshProveedores: loadProveedores, notify }),
-    tab === "historico" && h(HistoricoList, { historicas }),
-    tab === "reportes" && h(ReportesList, { ordenes, historicas, proveedores, notify }),
+    tab === "reportes" && h(ReportesList, { ordenes, proveedores, notify }),
     tab === "administracion" && h(AdministracionList, { usuarios, refreshUsuarios: loadUsuarios, notify }),
   );
 }
