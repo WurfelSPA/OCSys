@@ -230,8 +230,12 @@ function DataTable({ columns, rows, rowKey, searchPlaceholder, searchFields, onR
   );
 }
 
-function ProveedorModal({ regiones, onClose, onCreated, notify, editProveedor }) {
-  const [form, setForm] = useState(editProveedor ? { ...PROVEEDOR_BLANK, ...editProveedor } : PROVEEDOR_BLANK);
+function ProveedorModal({ regiones, onClose, onCreated, notify, editProveedor, prefill }) {
+  const [form, setForm] = useState(
+    editProveedor ? { ...PROVEEDOR_BLANK, ...editProveedor }
+      : prefill ? { ...PROVEEDOR_BLANK, ...prefill }
+      : PROVEEDOR_BLANK
+  );
   const [saving, setSaving] = useState(false);
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
   const isEdit = !!editProveedor;
@@ -359,6 +363,43 @@ function ProveedorPicker({ proveedores, value, onChange }) {
   );
 }
 
+function ProveedorInfoPanel({ proveedor }) {
+  if (!proveedor) return null;
+  const dato = (label, value) => h("div", null,
+    h("div", { style: { fontSize: 9.5, fontWeight: 700, color: "var(--txd)", textTransform: "uppercase", letterSpacing: ".05em" } }, label),
+    h("div", { style: { fontSize: 12 } }, value || "—"),
+  );
+  return h("div", { style: { background: "var(--surf2)", border: "1px solid var(--bdr)", borderRadius: 10, padding: "14px 16px", marginTop: 10 } },
+    !proveedor.datos_completos && h("div", { className: "pill pill-pend", style: { marginBottom: 10 } }, "⚠ Ficha incompleta — revisa en Proveedores"),
+    h("div", { className: "section-lbl", style: { marginTop: 0, paddingTop: 0, borderTop: "none" } }, "Datos del Proveedor Seleccionado"),
+    h("div", { className: "grid3" },
+      dato("Razón Social", proveedor.razon_social),
+      dato("RUT", proveedor.rut),
+      dato("Documento", proveedor.tipo_documento),
+      dato("Giro Comercial", proveedor.giro_comercial),
+      dato("Tamaño Empresa", proveedor.tamano_empresa),
+      dato("Sitio Web", proveedor.sitio_web),
+      dato("Dirección Comercial", proveedor.direccion_comercial),
+      dato("Depto/Oficina", proveedor.departamento_oficina),
+      dato("Región / Ciudad", [proveedor.region, proveedor.ciudad].filter(Boolean).join(" / ")),
+      dato("Teléfono", proveedor.telefono),
+    ),
+    h("div", { className: "section-lbl" }, "Contacto"),
+    h("div", { className: "grid3" },
+      dato("Nombre Contacto", [proveedor.contacto_nombre, proveedor.contacto_apellido].filter(Boolean).join(" ")),
+      dato("Teléfono Contacto", proveedor.contacto_telefono),
+      dato("Celular Contacto", proveedor.contacto_celular),
+      dato("Correo Contacto", proveedor.contacto_correo),
+    ),
+    h("div", { className: "section-lbl" }, "Datos Bancarios"),
+    h("div", { className: "grid3" },
+      dato("Banco", proveedor.banco),
+      dato("Tipo de Cuenta", proveedor.tipo_cuenta),
+      dato("N° de Cuenta", proveedor.numero_cuenta),
+    ),
+  );
+}
+
 function distribuirCuotas(n, montoNeto) {
   const neto = Number(montoNeto) || 0;
   const base = Math.floor(neto / n);
@@ -483,6 +524,7 @@ function CuotasEditor({ cuotas, setCuotas, montoNeto, moneda }) {
 
 function NuevaOC({ proveedores, catalogos, refreshProveedores, notify, onCreated }) {
   const [showModal, setShowModal] = useState(false);
+  const [provPrefill, setProvPrefill] = useState(null);
   const [file, setFile] = useState(null);
   const [saving, setSaving] = useState(false);
   const [leyendoIA, setLeyendoIA] = useState(false);
@@ -515,6 +557,7 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, notify, onCreated
     refreshProveedores();
     setForm((f) => ({ ...f, proveedor_id: proveedor.id }));
     setShowModal(false);
+    setProvPrefill(null);
   };
 
   const leerConIA = async () => {
@@ -553,7 +596,12 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, notify, onCreated
       if (neto) setCuotas(distribuirCuotas(numCuotas, neto));
 
       if ((datos.proveedor_rut || datos.proveedor_razon_social) && !proveedorMatch) {
-        notify("err", "Leído, pero no encontré al proveedor (" + (datos.proveedor_razon_social || datos.proveedor_rut) + ") en la lista — selecciónalo o créalo manualmente");
+        const nombre = datos.proveedor_razon_social || datos.proveedor_rut;
+        notify("err", "Proveedor no existe (" + nombre + ")");
+        if (window.confirm("Proveedor no existe: \"" + nombre + "\". ¿Desea agregarlo?")) {
+          setProvPrefill({ razon_social: datos.proveedor_razon_social || "", rut: datos.proveedor_rut || "" });
+          setShowModal(true);
+        }
       } else {
         notify("ok", "Cotización leída con IA — revisa los datos antes de generar la OC");
       }
@@ -620,7 +668,11 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, notify, onCreated
   };
 
   return h("div", { className: "page fade-up" },
-    showModal && h(ProveedorModal, { regiones: catalogos.regiones, onClose: () => setShowModal(false), onCreated: handleCreated, notify }),
+    showModal && h(ProveedorModal, {
+      regiones: catalogos.regiones, prefill: provPrefill,
+      onClose: () => { setShowModal(false); setProvPrefill(null); },
+      onCreated: handleCreated, notify,
+    }),
 
     h("div", { className: "card" },
       h("div", { style: { display: "flex", alignItems: "baseline", gap: 8, marginBottom: 14 } },
@@ -659,6 +711,7 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, notify, onCreated
           h("button", { className: "btn-add", title: "Agregar proveedor", onClick: () => setShowModal(true) }, "+"),
         )
       ),
+      h(ProveedorInfoPanel, { proveedor: proveedores.find((p) => p.id === form.proveedor_id) }),
 
       h("div", { className: "section-lbl" }, "Detalle de la Orden"),
       h("div", { className: "grid3" },
