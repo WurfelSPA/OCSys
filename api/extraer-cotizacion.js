@@ -1,8 +1,6 @@
 import { GoogleGenAI } from "@google/genai";
 import { readJsonBody } from "./_supabase.js";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-
 const RESPONSE_SCHEMA = {
   type: "object",
   properties: {
@@ -41,6 +39,7 @@ export default async function handler(req, res) {
   }
 
   try {
+    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash",
       contents: [{
