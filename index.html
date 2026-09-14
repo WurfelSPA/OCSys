@@ -865,9 +865,9 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser }) {
     { key: "centro_costo_codigo", label: "Centro Costo" },
     { key: "monto_total", label: "Monto Total", render: (o) => fmtMoney(o.monto_total) },
     { key: "estado", label: "Estado", render: (o) => estadoPill(o.estado) },
-    { key: "archivo", label: "Cotización", sortable: false, render: (o) => (o.archivo_url ? h("a", { className: "link", href: o.archivo_url, target: "_blank", rel: "noreferrer" }, "Ver") : "—") },
-    { key: "archivo_oc", label: "OC", sortable: false, render: (o) => (o.archivo_oc_url ? h("a", { className: "link", href: o.archivo_oc_url, target: "_blank", rel: "noreferrer" }, "Ver") : "—") },
-    { key: "archivo_factura", label: "Factura", sortable: false, render: (o) => (o.archivo_factura_url ? h("a", { className: "link", href: o.archivo_factura_url, target: "_blank", rel: "noreferrer" }, "Ver") : "—") },
+    { key: "archivo", label: "Cotización", sortable: false, render: (o) => (o.archivo_url ? h("a", { className: "link", href: o.archivo_url, target: "_blank", rel: "noreferrer" }, truncar(o.archivo_nombre || "Ver", 140)) : "—") },
+    { key: "archivo_oc", label: "OC", sortable: false, render: (o) => (o.archivo_oc_url ? h("a", { className: "link", href: o.archivo_oc_url, target: "_blank", rel: "noreferrer" }, truncar(o.archivo_oc_nombre || "Ver", 140)) : "—") },
+    { key: "archivo_factura", label: "Factura", sortable: false, render: (o) => (o.archivo_factura_url ? h("a", { className: "link", href: o.archivo_factura_url, target: "_blank", rel: "noreferrer" }, truncar(o.archivo_factura_nombre || "Ver", 140)) : "—") },
     {
       key: "accion", label: "Acción", sortable: false,
       render: (o) => o.estado === "Pendiente aprobación"
@@ -898,11 +898,16 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser }) {
   );
 }
 
+function truncar(text, maxWidth) {
+  if (!text) return "—";
+  return h("span", { title: text, style: { display: "inline-block", maxWidth, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", verticalAlign: "bottom" } }, text);
+}
+
 const PROVEEDORES_COLUMNS = [
-  { key: "razon_social", label: "Razón Social" },
+  { key: "razon_social", label: "Razón Social", render: (p) => truncar(p.razon_social, 220) },
   { key: "rut", label: "RUT" },
   { key: "tipo_documento", label: "Documento" },
-  { key: "giro_comercial", label: "Giro" },
+  { key: "giro_comercial", label: "Giro", render: (p) => truncar(p.giro_comercial, 200) },
   { key: "ciudad", label: "Ciudad" },
   { key: "contacto", label: "Contacto", sortValue: (p) => [p.contacto_nombre, p.contacto_apellido].filter(Boolean).join(" "), render: (p) => [p.contacto_nombre, p.contacto_apellido].filter(Boolean).join(" ") || "—" },
   { key: "contacto_correo", label: "Correo" },
