@@ -261,6 +261,21 @@ function ProveedorModal({ regiones, onClose, onCreated, notify, editProveedor, p
     }
   };
 
+  const eliminar = async () => {
+    if (!window.confirm("¿Eliminar definitivamente el proveedor \"" + editProveedor.razon_social + "\"? (borrado permanente, para pruebas)")) return;
+    setSaving(true);
+    try {
+      await api("proveedores?id=" + editProveedor.id + "&hard=1", { method: "DELETE" });
+      notify("ok", "Proveedor eliminado");
+      onCreated(null);
+      onClose();
+    } catch (e) {
+      notify("err", e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return h("div", { className: "overlay", onClick: (e) => e.target === e.currentTarget && onClose() },
     h("div", { className: "modal" },
       h("div", { className: "modal-hdr" },
@@ -321,9 +336,14 @@ function ProveedorModal({ regiones, onClose, onCreated, notify, editProveedor, p
         h(Field, { label: "Número de Cuenta" }, h("input", { value: form.numero_cuenta, onChange: set("numero_cuenta") })),
       ),
 
-      h("div", { style: { display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 6 } },
-        h("button", { className: "btn-ghost", onClick: onClose }, "Cancelar"),
-        h("button", { className: "btn-primary", onClick: submit, disabled: saving }, saving ? "Guardando..." : "Aceptar"),
+      h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginTop: 6 } },
+        isEdit
+          ? h("button", { className: "btn-ghost", style: { color: "var(--red)" }, onClick: eliminar, disabled: saving }, "Eliminar")
+          : h("div"),
+        h("div", { style: { display: "flex", gap: 10 } },
+          h("button", { className: "btn-ghost", onClick: onClose }, "Cancelar"),
+          h("button", { className: "btn-primary", onClick: submit, disabled: saving }, saving ? "Guardando..." : "Aceptar"),
+        ),
       ),
     )
   );
@@ -856,6 +876,17 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser }) {
   const [accion, setAccion] = useState(null);
   const puedeAprobar = currentUser && currentUser.nivel_aprobacion === 1;
 
+  const eliminarOrden = async (o) => {
+    if (!window.confirm("¿Eliminar definitivamente la OC " + o.numero_oc + "?")) return;
+    try {
+      await api("ordenes?id=" + o.id, { method: "DELETE" });
+      notify("ok", "OC " + o.numero_oc + " eliminada");
+      refreshOrdenes();
+    } catch (e) {
+      notify("err", e.message);
+    }
+  };
+
   const columns = useMemo(() => [
     { key: "numero_oc", label: "N° OC" },
     { key: "fecha", label: "Fecha", render: (o) => fmtDate(o.fecha) },
@@ -877,6 +908,10 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser }) {
         : o.estado === "Aprobada"
         ? h("button", { className: "btn-ghost", style: { padding: "4px 10px", fontSize: 11 }, onClick: () => setAccion({ orden: o, tipo: "completar" }) }, "Completar")
         : "—",
+    },
+    {
+      key: "eliminar", label: "", sortable: false,
+      render: (o) => h("button", { className: "btn-ghost", title: "Eliminar OC", style: { padding: "4px 8px", fontSize: 12, color: "var(--red)" }, onClick: () => eliminarOrden(o) }, "🗑"),
     },
   ], [puedeAprobar]);
 
