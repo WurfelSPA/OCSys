@@ -474,6 +474,7 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, notify, onCreated
   const [showModal, setShowModal] = useState(false);
   const [file, setFile] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [leyendoIA, setLeyendoIA] = useState(false);
   const [numCuotas, setNumCuotas] = useState(1);
   const [cuotas, setCuotas] = useState(distribuirCuotas(1, 0));
   const [form, setForm] = useState({
@@ -503,6 +504,47 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, notify, onCreated
     refreshProveedores();
     setForm((f) => ({ ...f, proveedor_id: proveedor.id }));
     setShowModal(false);
+  };
+
+  const leerConIA = async () => {
+    if (!file) return;
+    setLeyendoIA(true);
+    try {
+      const base64 = await fileToBase64(file);
+      const { datos } = await api("extraer-cotizacion", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filename: file.name, base64 }),
+      });
+
+      const rutNorm = (r) => (r || "").replace(/\./g, "").toUpperCase();
+      const proveedorMatch = datos.proveedor_rut
+        ? proveedores.find((p) => rutNorm(p.rut) === rutNorm(datos.proveedor_rut))
+        : null;
+
+      const neto = datos.monto_neto || 0;
+      setForm((f) => ({
+        ...f,
+        proveedor_id: proveedorMatch ? proveedorMatch.id : f.proveedor_id,
+        titulo: datos.titulo || f.titulo,
+        descripcion: datos.descripcion || f.descripcion,
+        moneda: datos.moneda || f.moneda,
+        monto_neto: neto || f.monto_neto,
+        monto_iva: datos.monto_iva !== undefined ? datos.monto_iva : f.monto_iva,
+        monto_total: datos.monto_total !== undefined ? datos.monto_total : f.monto_total,
+      }));
+      if (neto) setCuotas(distribuirCuotas(numCuotas, neto));
+
+      if (datos.proveedor_rut && !proveedorMatch) {
+        notify("err", "Leído, pero no encontré un proveedor con RUT " + datos.proveedor_rut + " — selecciónalo o créalo manualmente");
+      } else {
+        notify("ok", "Cotización leída con IA — revisa los datos antes de generar la OC");
+      }
+    } catch (e) {
+      notify("err", e.message);
+    } finally {
+      setLeyendoIA(false);
+    }
   };
 
   const submit = async (estado) => {
@@ -564,7 +606,7 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, notify, onCreated
     showModal && h(ProveedorModal, { regiones: catalogos.regiones, onClose: () => setShowModal(false), onCreated: handleCreated, notify }),
 
     h("div", { className: "card" },
-      h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 14 } },
+      h("div", { style: { display: "flex", alignItems: "baseline", gap: 8, marginBottom: 14 } },
         h("h2", { style: { marginBottom: 0 } }, "Nueva Orden de Compra"),
         h("div", { className: "hint", style: { fontSize: 12 } }, "(" + fmtDate(form.fecha) + ")"),
       ),
@@ -578,6 +620,24 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, notify, onCreated
           h("button", { className: "btn-add", title: "Agregar proveedor", onClick: () => setShowModal(true) }, "+"),
         )
       ),
+
+      h("div", { className: "section-lbl" }, "Cotización del Proveedor"),
+      h("input", {
+        type: "file", id: "file-input", style: { display: "none" },
+        accept: ".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png",
+        onChange: (e) => setFile(e.target.files[0] || null),
+      }),
+      h("label", { htmlFor: "file-input", className: "drop-zone" + (file ? " done" : ""), style: { display: "block" } },
+        file ? ("✓ " + file.name) : "Haz clic para subir la cotización enviada por el proveedor (PDF / Word / Excel / JPG / PNG)"
+      ),
+      h("div", { className: "row-inline", style: { marginTop: 10 } },
+        h("button", {
+          className: "btn-ghost", disabled: !file || leyendoIA || !["pdf", "jpg", "jpeg", "png"].includes((file && file.name.split(".").pop().toLowerCase()) || ""),
+          onClick: leerConIA,
+        }, leyendoIA ? "Leyendo con IA..." : "Leer cotización con IA"),
+        h("div", { className: "hint" }, "Completa el formulario automáticamente desde un PDF/JPG/PNG. Word/Excel se completan a mano."),
+      ),
+      h("div", { className: "hint", style: { marginTop: 4 } }, "Formatos permitidos para subir: PDF, Word, Excel, JPG, PNG"),
 
       h("div", { className: "section-lbl" }, "Detalle de la Orden"),
       h("div", { className: "grid3" },
@@ -639,17 +699,6 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, notify, onCreated
       h("div", { className: "section-lbl" }, "Cuotas de Pago"),
       h(Field, { label: "N° de Cuotas" }, h("input", { type: "number", min: 1, value: numCuotas, onChange: setNumCuotasField, style: { width: 90 } })),
       h(CuotasEditor, { cuotas, setCuotas, montoNeto: form.monto_neto, moneda: form.moneda }),
-
-      h("div", { className: "section-lbl" }, "Cotización del Proveedor"),
-      h("input", {
-        type: "file", id: "file-input", style: { display: "none" },
-        accept: ".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png",
-        onChange: (e) => setFile(e.target.files[0] || null),
-      }),
-      h("label", { htmlFor: "file-input", className: "drop-zone" + (file ? " done" : ""), style: { display: "block" } },
-        file ? ("✓ " + file.name) : "Haz clic para subir la cotización enviada por el proveedor (PDF / Word / Excel / JPG / PNG)"
-      ),
-      h("div", { className: "hint" }, "Formatos permitidos: PDF, Word, Excel, JPG, PNG"),
 
       h("div", { style: { display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 20 } },
         h("button", { className: "btn-ghost", onClick: () => submit("Borrador"), disabled: saving }, "Guardar Borrador"),

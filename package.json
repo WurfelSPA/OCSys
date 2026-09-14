@@ -4,6 +4,7 @@
   "private": true,
   "description": "OCSys — Órdenes de Compra Patagónica",
   "dependencies": {
-    "@supabase/supabase-js": "^2.45.4"
+    "@supabase/supabase-js": "^2.45.4",
+    "@anthropic-ai/sdk": "^0.32.1"
   }
 }
