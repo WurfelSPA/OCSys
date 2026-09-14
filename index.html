@@ -141,10 +141,24 @@ function estadoPill(estado) {
 }
 
 async function api(path, opts) {
-  const res = await fetch("/api/" + path, opts);
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || "Error de servidor");
-  return data;
+  const { timeoutMs, ...rest } = opts || {};
+  let timer, signal = rest.signal;
+  if (timeoutMs) {
+    const ctrl = new AbortController();
+    signal = ctrl.signal;
+    timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  }
+  try {
+    const res = await fetch("/api/" + path, { ...rest, signal });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || "Error de servidor");
+    return data;
+  } catch (e) {
+    if (e.name === "AbortError") throw new Error("La IA está tardando demasiado en responder. Intenta nuevamente o completa los datos manualmente.");
+    throw e;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 function fileToBase64(file) {
@@ -155,6 +169,8 @@ function fileToBase64(file) {
     reader.readAsDataURL(file);
   });
 }
+
+const ALLOWED_IA_EXT = ["pdf", "jpg", "jpeg", "png"];
 
 function fileDropHandlers(setFile, setDragOver) {
   return {
@@ -601,15 +617,17 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, notify, onCreated
     setProvEditing(null);
   };
 
-  const leerConIA = async () => {
-    if (!file) return;
+  const leerConIA = async (fileArg) => {
+    const f = fileArg || file;
+    if (!f) return;
     setLeyendoIA(true);
     try {
-      const base64 = await fileToBase64(file);
+      const base64 = await fileToBase64(f);
       const { datos } = await api("extraer-cotizacion", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ filename: file.name, base64 }),
+        body: JSON.stringify({ filename: f.name, base64 }),
+        timeoutMs: 55000,
       });
 
       const rutNorm = (r) => (r || "").replace(/[^0-9kK]/g, "").toUpperCase();
@@ -675,6 +693,14 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, notify, onCreated
       notify("err", e.message);
     } finally {
       setLeyendoIA(false);
+    }
+  };
+
+  const handleFileSelected = (f) => {
+    setFile(f);
+    if (f) {
+      const ext = f.name.split(".").pop().toLowerCase();
+      if (ALLOWED_IA_EXT.includes(ext)) leerConIA(f);
     }
   };
 
@@ -750,25 +776,25 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, notify, onCreated
       h("input", {
         type: "file", id: "file-input", style: { display: "none" },
         accept: ".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png",
-        onChange: (e) => setFile(e.target.files[0] || null),
+        onChange: (e) => handleFileSelected(e.target.files[0] || null),
       }),
       h("label", {
         htmlFor: "file-input",
         className: "drop-zone" + (file ? " done" : "") + (dragOver ? " dragover" : ""),
         style: { display: "block" },
-        ...fileDropHandlers(setFile, setDragOver),
+        ...fileDropHandlers(handleFileSelected, setDragOver),
       },
         file ? ("✓ " + file.name) : "Haz clic o arrastra aquí la cotización enviada por el proveedor (PDF / Word / Excel / JPG / PNG)"
       ),
       h("div", { className: "row-inline", style: { marginTop: 10 } },
         h("button", {
-          className: "btn-ghost", disabled: !file || leyendoIA || !["pdf", "jpg", "jpeg", "png"].includes((file && file.name.split(".").pop().toLowerCase()) || ""),
-          onClick: leerConIA, style: { display: "flex", alignItems: "center", gap: 8 },
+          className: "btn-ghost", disabled: !file || leyendoIA || !ALLOWED_IA_EXT.includes((file && file.name.split(".").pop().toLowerCase()) || ""),
+          onClick: () => leerConIA(), style: { display: "flex", alignItems: "center", gap: 8 },
         },
           leyendoIA && h("span", { className: "spinner" }),
-          leyendoIA ? "Leyendo con IA..." : "Leer cotización con IA",
+          leyendoIA ? "Leyendo con IA..." : "Volver a leer con IA",
         ),
-        h("div", { className: "hint" }, "Completa el formulario automáticamente (incluido el proveedor) desde un PDF/JPG/PNG. Word/Excel se completan a mano."),
+        h("div", { className: "hint" }, "Al subir o arrastrar un PDF/JPG/PNG se lee automáticamente con IA y completa el formulario (incluido el proveedor). Word/Excel se completan a mano."),
       ),
       leyendoIA && h("div", { className: "pbar" }, h("div", { className: "pbar-fill" })),
       h("div", { className: "hint", style: { marginTop: 4 } }, "Formatos permitidos para subir: PDF, Word, Excel, JPG, PNG"),

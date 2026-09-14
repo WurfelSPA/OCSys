@@ -1,0 +1,7 @@
+{
+  "functions": {
+    "api/extraer-cotizacion.js": {
+      "maxDuration": 60
+    }
+  }
+}
