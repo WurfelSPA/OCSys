@@ -67,8 +67,9 @@ button{font-family:'DM Sans',sans-serif;cursor:pointer;transition:all 0.15s}
 .drop-zone{border:2px dashed var(--bdr2);border-radius:12px;padding:24px 20px;text-align:center;cursor:pointer;transition:all 0.2s;background:var(--surf2)}
 .drop-zone:hover{border-color:var(--acc2);background:var(--surf3)}
 .drop-zone.done{border-color:var(--green);border-style:solid;background:var(--gbg)}
-.table-scroll{overflow-x:auto;margin:0 -24px;padding:0 24px}
+.table-scroll{overflow:auto;max-height:62vh;margin:0 -24px;padding:0 24px}
 table{width:100%;border-collapse:collapse;font-size:11.5px;min-width:max-content}
+.table-scroll th{position:sticky;top:0;z-index:1;box-shadow:0 1px 0 var(--bdr)}
 th{padding:8px 10px;background:var(--surf2);color:var(--txd);font-weight:700;text-transform:uppercase;font-size:9.5px;letter-spacing:.05em;border-bottom:1px solid var(--bdr);text-align:left;white-space:nowrap}
 td{padding:9px 10px;border-bottom:1px solid var(--bdr);font-size:11.5px;white-space:nowrap}
 tr:hover td{background:var(--surf2)}
