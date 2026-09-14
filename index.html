@@ -151,7 +151,11 @@ async function api(path, opts) {
   try {
     const res = await fetch("/api/" + path, { ...rest, signal });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error || "Error de servidor");
+    if (!res.ok) {
+      const err = new Error(data.error || "Error de servidor");
+      err.data = data;
+      throw err;
+    }
     return data;
   } catch (e) {
     if (e.name === "AbortError") throw new Error("La IA está tardando demasiado en responder. Intenta nuevamente o completa los datos manualmente.");
@@ -295,14 +299,28 @@ function ProveedorModal({ regiones, onClose, onCreated, notify, editProveedor, p
     if (!window.confirm("¿Eliminar definitivamente el proveedor \"" + editProveedor.razon_social + "\"? (borrado permanente, para pruebas)")) return;
     setSaving(true);
     try {
-      await api("proveedores?id=" + editProveedor.id + "&hard=1", { method: "DELETE" });
-      notify("ok", "Proveedor eliminado");
+      await intentarEliminar(false);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const intentarEliminar = async (cascade) => {
+    try {
+      await api("proveedores?id=" + editProveedor.id + "&hard=1" + (cascade ? "&cascade=1" : ""), { method: "DELETE" });
+      notify("ok", cascade ? "Proveedor y sus órdenes de compra eliminados" : "Proveedor eliminado");
       onCreated(null);
       onClose();
     } catch (e) {
+      if (!cascade && e.data && e.data.requiereCascada) {
+        const n = e.data.ordenesAsociadas;
+        const texto = n === 1 ? "1 orden de compra asociada" : n + " órdenes de compra asociadas";
+        if (window.confirm(e.message + "\n\n¿Desea eliminar " + texto + " y luego el proveedor?")) {
+          return intentarEliminar(true);
+        }
+        return;
+      }
       notify("err", e.message);
-    } finally {
-      setSaving(false);
     }
   };
 
