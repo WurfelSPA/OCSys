@@ -54,26 +54,41 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: "La lectura con IA solo funciona con PDF, JPG o PNG. Word/Excel debes completarlos manualmente." });
   }
 
-  try {
-    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-    const response = await ai.models.generateContent({
-      model: "gemini-3.6-flash",
-      contents: [{
-        role: "user",
-        parts: [
-          { text: "Esta es una cotización enviada por un proveedor a Patagónica Inmobiliaria. Extrae TODOS los datos solicitados en el esquema, incluyendo los datos bancarios (banco, tipo de cuenta, número de cuenta) y los datos de contacto (nombre, teléfono, celular, correo) si aparecen en el documento — no los omitas. Cada dato va SOLO en su propio campo: los montos van en monto_neto/monto_iva/monto_total, el banco y la cuenta van en banco/tipo_cuenta/numero_cuenta, nunca los repitas como texto dentro de titulo, descripcion o motivo. El titulo es un encabezado de máximo 8 palabras, sin cifras ni datos bancarios. El motivo debe quedar como cadena vacía si el documento no indica explícitamente para qué se solicita la compra — no escribas frases como 'no se indica motivo', simplemente déjalo vacío." },
-          { inlineData: { mimeType, data: base64 } },
-        ],
-      }],
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: RESPONSE_SCHEMA,
-      },
-    });
+  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+  const esErrorSaturacion = (e) => /UNAVAILABLE|"code":503|high demand|overloaded/i.test(e.message || "");
 
-    const datos = JSON.parse(response.text);
-    return res.status(200).json({ datos });
-  } catch (e) {
-    return res.status(500).json({ error: e.message });
+  let ultimoError;
+  for (let intento = 1; intento <= 3; intento++) {
+    try {
+      const response = await ai.models.generateContent({
+        model: "gemini-3.6-flash",
+        contents: [{
+          role: "user",
+          parts: [
+            { text: "Esta es una cotización enviada por un proveedor a Patagónica Inmobiliaria. Extrae TODOS los datos solicitados en el esquema, incluyendo los datos bancarios (banco, tipo de cuenta, número de cuenta) y los datos de contacto (nombre, teléfono, celular, correo) si aparecen en el documento — no los omitas. Cada dato va SOLO en su propio campo: los montos van en monto_neto/monto_iva/monto_total, el banco y la cuenta van en banco/tipo_cuenta/numero_cuenta, nunca los repitas como texto dentro de titulo, descripcion o motivo. El titulo es un encabezado de máximo 8 palabras, sin cifras ni datos bancarios. El motivo debe quedar como cadena vacía si el documento no indica explícitamente para qué se solicita la compra — no escribas frases como 'no se indica motivo', simplemente déjalo vacío." },
+            { inlineData: { mimeType, data: base64 } },
+          ],
+        }],
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: RESPONSE_SCHEMA,
+        },
+      });
+
+      const datos = JSON.parse(response.text);
+      return res.status(200).json({ datos });
+    } catch (e) {
+      ultimoError = e;
+      if (esErrorSaturacion(e) && intento < 3) {
+        await new Promise((r) => setTimeout(r, 1500 * intento));
+        continue;
+      }
+      break;
+    }
   }
+
+  const mensaje = esErrorSaturacion(ultimoError)
+    ? "La IA está saturada en este momento (alta demanda en Gemini). Intenta de nuevo en unos segundos."
+    : ultimoError.message;
+  return res.status(502).json({ error: mensaje });
 }
