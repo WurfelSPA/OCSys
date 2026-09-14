@@ -69,6 +69,16 @@ export default async function handler(req, res) {
     return res.status(200).json({ ordenes: data });
   }
 
+  if (req.method === "DELETE") {
+    const id = req.query.id;
+    if (!id) return res.status(400).json({ error: "id es obligatorio" });
+    const session = verifyToken(parseCookie(req.headers.cookie, "ocsys_token"), process.env.SESSION_SECRET || "");
+    if (!session) return res.status(401).json({ error: "No autenticado" });
+    const { error } = await db.from("ordenes_compra").delete().eq("id", id);
+    if (error) return res.status(500).json({ error: error.message });
+    return res.status(200).json({ ok: true });
+  }
+
   if (req.method === "POST") {
     const body = await readJsonBody(req);
     if (!body.proveedor_id) {
@@ -104,6 +114,6 @@ export default async function handler(req, res) {
     return res.status(201).json({ orden: data });
   }
 
-  res.setHeader("Allow", "GET, POST, PUT");
+  res.setHeader("Allow", "GET, POST, PUT, DELETE");
   return res.status(405).json({ error: "Método no permitido" });
 }

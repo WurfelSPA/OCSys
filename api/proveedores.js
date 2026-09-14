@@ -1,4 +1,5 @@
 import { supabase, readJsonBody } from "./_supabase.js";
+import { verifyToken, parseCookie } from "./_session.js";
 
 export default async function handler(req, res) {
   const db = supabase();
@@ -65,6 +66,22 @@ export default async function handler(req, res) {
     return res.status(201).json({ proveedor: data });
   }
 
-  res.setHeader("Allow", "GET, POST, PUT");
+  if (req.method === "DELETE") {
+    const id = req.query.id;
+    if (!id) return res.status(400).json({ error: "id es obligatorio" });
+    const session = verifyToken(parseCookie(req.headers.cookie, "ocsys_token"), process.env.SESSION_SECRET || "");
+    if (!session) return res.status(401).json({ error: "No autenticado" });
+    const hard = req.query.hard === "1";
+    if (hard) {
+      const { error } = await db.from("proveedores").delete().eq("id", id);
+      if (error) return res.status(500).json({ error: error.message });
+    } else {
+      const { error } = await db.from("proveedores").update({ activo: false, updated_at: new Date().toISOString() }).eq("id", id);
+      if (error) return res.status(500).json({ error: error.message });
+    }
+    return res.status(200).json({ ok: true });
+  }
+
+  res.setHeader("Allow", "GET, POST, PUT, DELETE");
   return res.status(405).json({ error: "Método no permitido" });
 }
