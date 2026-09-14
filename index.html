@@ -1345,10 +1345,23 @@ function LoginScreen({ onLoggedIn }) {
   );
 }
 
+// Agrupa estados legacy migrados de Acquisys (Pendiente, Aprobado, Factura
+// Aprobada, etc.) en los 4 estados canónicos de OCSys; lo no reconocido cae
+// en "Otros (histórico)" para que el Total nunca pierda registros.
+function normalizarEstadoCategoria(estado) {
+  const map = {
+    "Borrador": "Borrador",
+    "Pendiente aprobación": "Pendiente aprobación", "Pendiente": "Pendiente aprobación",
+    "Aprobada": "Aprobada", "Aprobado": "Aprobada",
+    "Completada": "Completada", "Factura Aprobada": "Completada",
+  };
+  return map[estado] || "Otros (histórico)";
+}
+
 function Dashboard({ ordenes, proveedores, setTab }) {
   const counts = useMemo(() => {
-    const c = { "Borrador": 0, "Pendiente aprobación": 0, "Aprobada": 0, "Completada": 0 };
-    ordenes.forEach((o) => { if (c[o.estado] !== undefined) c[o.estado]++; });
+    const c = { "Borrador": 0, "Pendiente aprobación": 0, "Aprobada": 0, "Completada": 0, "Otros (histórico)": 0 };
+    ordenes.forEach((o) => { c[normalizarEstadoCategoria(o.estado)]++; });
     return c;
   }, [ordenes]);
 
@@ -1357,6 +1370,7 @@ function Dashboard({ ordenes, proveedores, setTab }) {
     { label: "Pendiente aprobación", value: counts["Pendiente aprobación"], color: "var(--amber)" },
     { label: "Aprobadas", value: counts["Aprobada"], color: "var(--green)" },
     { label: "Completadas", value: counts["Completada"], color: "var(--acc)" },
+    ...(counts["Otros (histórico)"] > 0 ? [{ label: "Otros (histórico)", value: counts["Otros (histórico)"], color: "var(--red)" }] : []),
     { label: "Total", value: ordenes.length, color: "var(--tx)" },
   ];
 
