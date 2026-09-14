@@ -117,6 +117,8 @@ export default async function handler(req, res) {
     const cuCodigo = cu && cuentasContablesValidas.has(cu.code) ? cu.code : null;
     const hes = (o.order_detail || []).map((d) => d.ges).filter(Boolean).join(", ") || null;
     const factura = (o.facturas_validas || []).map((f) => f.num_facture).filter(Boolean).join(", ") || null;
+    const montoFacturadoSum = (o.facturas_validas || []).reduce((s, f) => s + (Number(f.net_mount) || 0), 0);
+    const montoFacturado = montoFacturadoSum > 0 ? montoFacturadoSum : null;
     const cuotas = (o.order_detail || []).map((d) => ({
       dias: d.days || 0, observacion: d.observation || "", monto: d.amount || 0, porcentaje: d.percent || 0,
     }));
@@ -127,6 +129,7 @@ export default async function handler(req, res) {
       const campos = {};
       if (!existente.numero_hes && hes) campos.numero_hes = hes;
       if (!existente.numero_factura && factura) campos.numero_factura = factura;
+      if (existente.monto_facturado == null && montoFacturado != null) campos.monto_facturado = montoFacturado;
       if ((!existente.cuotas || existente.cuotas.length === 0) && cuotas.length) campos.cuotas = cuotas;
       if (Object.keys(campos).length) {
         await db.from("ordenes_compra").update(campos).eq("id", existente.id);
@@ -155,6 +158,7 @@ export default async function handler(req, res) {
       creado_por: o.responsible || null,
       numero_hes: hes,
       numero_factura: factura,
+      monto_facturado: montoFacturado,
       cuotas,
     }).select("id").single();
     if (error) throw new Error("orden: " + error.message);
