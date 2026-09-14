@@ -93,6 +93,13 @@ tr:hover td{background:var(--surf2)}
 .notif-err{background:var(--rbg);color:var(--red);border:1px solid #f0bcb6}
 .notif-warn{background:var(--abg);color:var(--amber);border:1px solid #f0dba0}
 .empty{padding:40px 20px;text-align:center;color:var(--txd);font-size:12px}
+.stat-strip{display:flex;flex-wrap:wrap;margin-top:16px}
+.stat-item{flex:1;min-width:130px;padding:6px 24px;text-align:center;border-left:1px dashed var(--bdr2);cursor:pointer;transition:background 0.15s;border-radius:6px}
+.stat-item:first-child{border-left:none}
+.stat-item:hover{background:var(--surf2)}
+.stat-num{font-size:26px;font-weight:700;line-height:1.2}
+.stat-lbl{font-size:11.5px;color:var(--txm);margin-top:4px;display:flex;align-items:center;justify-content:center;gap:6px}
+.stat-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
 .link{color:var(--acc);text-decoration:none;font-weight:600}
 .link:hover{text-decoration:underline}
 .hint{font-size:10.5px;color:var(--txd);margin-top:4px}
@@ -1338,8 +1345,53 @@ function LoginScreen({ onLoggedIn }) {
   );
 }
 
+function Dashboard({ ordenes, proveedores, setTab }) {
+  const counts = useMemo(() => {
+    const c = { "Borrador": 0, "Pendiente aprobación": 0, "Aprobada": 0, "Completada": 0 };
+    ordenes.forEach((o) => { if (c[o.estado] !== undefined) c[o.estado]++; });
+    return c;
+  }, [ordenes]);
+
+  const items = [
+    { label: "Borrador", value: counts["Borrador"], color: "var(--txm)" },
+    { label: "Pendiente aprobación", value: counts["Pendiente aprobación"], color: "var(--amber)" },
+    { label: "Aprobadas", value: counts["Aprobada"], color: "var(--green)" },
+    { label: "Completadas", value: counts["Completada"], color: "var(--acc)" },
+    { label: "Total", value: ordenes.length, color: "var(--tx)" },
+  ];
+
+  const proveedoresIncompletos = proveedores.filter((p) => !p.datos_completos).length;
+
+  return h("div", { className: "page fade-up" },
+    h("div", { className: "card" },
+      h("h2", null, "Estado de Órdenes de Compra"),
+      h("div", { className: "stat-strip" },
+        items.map((it) => h("div", {
+          key: it.label, className: "stat-item",
+          onClick: () => setTab("ordenes"),
+        },
+          h("div", { className: "stat-num", style: { color: it.color } }, it.value),
+          h("div", { className: "stat-lbl" }, h("span", { className: "stat-dot", style: { background: it.color } }), it.label),
+        )),
+      ),
+    ),
+    proveedoresIncompletos > 0 && h("div", { className: "card", style: { marginTop: 20 } },
+      h("div", {
+        className: "row-inline", style: { justifyContent: "space-between", cursor: "pointer" },
+        onClick: () => setTab("proveedores"),
+      },
+        h("div", null,
+          h("h2", { style: { marginBottom: 4 } }, "⚠ Proveedores con ficha incompleta"),
+          h("div", { className: "hint" }, proveedoresIncompletos + (proveedoresIncompletos === 1 ? " proveedor necesita" : " proveedores necesitan") + " completar sus datos"),
+        ),
+        h("span", { className: "pill pill-pend" }, proveedoresIncompletos),
+      ),
+    ),
+  );
+}
+
 function App({ currentUser, onLogout }) {
-  const [tab, setTab] = useState("nueva");
+  const [tab, setTab] = useState("dashboard");
   const [proveedores, setProveedores] = useState([]);
   const [ordenes, setOrdenes] = useState([]);
   const [usuarios, setUsuarios] = useState([]);
@@ -1391,12 +1443,14 @@ function App({ currentUser, onLogout }) {
       ),
     ),
     h("div", { className: "nav" },
+      h("button", { className: "nav-btn" + (tab === "dashboard" ? " active" : ""), onClick: () => setTab("dashboard") }, "Dashboard"),
       h("button", { className: "nav-btn" + (tab === "nueva" ? " active" : ""), onClick: () => setTab("nueva") }, "Nueva OC"),
       h("button", { className: "nav-btn" + (tab === "ordenes" ? " active" : ""), onClick: () => setTab("ordenes") }, "Órdenes"),
       h("button", { className: "nav-btn" + (tab === "proveedores" ? " active" : ""), onClick: () => setTab("proveedores") }, "Proveedores"),
       h("button", { className: "nav-btn" + (tab === "reportes" ? " active" : ""), onClick: () => setTab("reportes") }, "Reportes"),
       h("button", { className: "nav-btn" + (tab === "administracion" ? " active" : ""), onClick: () => setTab("administracion") }, "Administración"),
     ),
+    tab === "dashboard" && h(Dashboard, { ordenes, proveedores, setTab }),
     tab === "nueva" && h(NuevaOC, { proveedores, catalogos, refreshProveedores: loadProveedores, notify, onCreated: loadOrdenes, currentUser }),
     tab === "ordenes" && h(OrdenesList, { ordenes, refreshOrdenes: loadOrdenes, notify, currentUser }),
     tab === "proveedores" && h(ProveedoresList, { proveedores, catalogos, refreshProveedores: loadProveedores, notify, currentUser }),
