@@ -14,8 +14,9 @@ const RESPONSE_SCHEMA = {
     banco: { type: "string", description: "Nombre del banco en los datos bancarios" },
     tipo_cuenta: { type: "string", description: "Tipo de cuenta bancaria (Cuenta Corriente, Cuenta Vista, Cuenta de Ahorro)" },
     numero_cuenta: { type: "string", description: "Número de cuenta bancaria" },
-    titulo: { type: "string", description: "Referencia corta / título del servicio o producto cotizado" },
-    descripcion: { type: "string", description: "Descripción detallada de lo cotizado" },
+    titulo: { type: "string", description: "Referencia MUY corta (máx. 8-10 palabras) del servicio o producto cotizado, a modo de encabezado. No repitas aquí el contenido completo de la descripción." },
+    descripcion: { type: "string", description: "Descripción detallada de lo cotizado: qué incluye, alcance, ítems o condiciones relevantes. Debe ser distinta y más extensa que el título, no una copia." },
+    motivo: { type: "string", description: "Motivo o justificación de la compra/contratación, SOLO si el documento lo menciona explícitamente (por ejemplo, una nota del proveedor sobre para qué se solicita el servicio). Si no aparece explícitamente, dejar vacío." },
     moneda: { type: "string", enum: ["CLP", "USD", "UF"] },
     monto_neto: { type: "number", description: "Monto neto (sin IVA)" },
     monto_iva: { type: "number", description: "Monto de IVA, si se indica" },
@@ -53,7 +54,7 @@ export default async function handler(req, res) {
       contents: [{
         role: "user",
         parts: [
-          { text: "Esta es una cotización enviada por un proveedor a Patagónica Inmobiliaria. Extrae TODOS los datos solicitados en el esquema, incluyendo los datos bancarios (banco, tipo de cuenta, número de cuenta) y los datos de contacto (nombre, teléfono, celular, correo) si aparecen en el documento — no los omitas." },
+          { text: "Esta es una cotización enviada por un proveedor a Patagónica Inmobiliaria. Extrae TODOS los datos solicitados en el esquema, incluyendo los datos bancarios (banco, tipo de cuenta, número de cuenta) y los datos de contacto (nombre, teléfono, celular, correo) si aparecen en el documento — no los omitas. Importante: título y descripción son campos DISTINTOS — el título es un encabezado muy corto, y la descripción es el detalle completo de lo cotizado (ítems, alcance, condiciones); no dupliques el mismo texto en ambos. El motivo solo debe llenarse si el documento indica explícitamente para qué se solicita la compra; si no lo dice, déjalo vacío en vez de inventarlo." },
           { inlineData: { mimeType, data: base64 } },
         ],
       }],

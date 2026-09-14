@@ -423,6 +423,41 @@ function ProveedorPicker({ proveedores, value, onChange }) {
   );
 }
 
+function SearchSelect({ options, value, onChange, placeholder, disabled }) {
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const selected = options.find((o) => o.value === value);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const base = q ? options.filter((o) => o.label.toLowerCase().includes(q)) : options;
+    return base.slice(0, 40);
+  }, [options, query]);
+
+  return h("div", { className: "ac-wrap" },
+    h("input", {
+      value: open ? query : (selected ? selected.label : ""),
+      placeholder: placeholder || "Escribe para buscar...",
+      disabled,
+      onFocus: () => { setOpen(true); setQuery(""); },
+      onBlur: () => setTimeout(() => setOpen(false), 150),
+      onChange: (e) => { setQuery(e.target.value); if (!e.target.value) onChange(""); },
+    }),
+    open && h("div", { className: "ac-list" },
+      h("div", {
+        className: "ac-item", style: { color: "var(--txm)", fontStyle: "italic" },
+        onMouseDown: () => { onChange(""); setQuery(""); setOpen(false); },
+      }, "— Seleccionar (limpiar) —"),
+      filtered.length === 0
+        ? h("div", { className: "ac-empty" }, "Sin resultados")
+        : filtered.map((o) => h("div", {
+            key: o.value, className: "ac-item",
+            onMouseDown: () => { onChange(o.value); setQuery(""); setOpen(false); },
+          }, o.label)),
+    )
+  );
+}
+
 function ProveedorInfoPanel({ proveedor }) {
   if (!proveedor) return null;
   const dato = (label, value) => h("div", null,
@@ -654,6 +689,7 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, notify, onCreated
         proveedor_id: proveedorMatch ? proveedorMatch.id : f.proveedor_id,
         titulo: datos.titulo || f.titulo,
         descripcion: datos.descripcion || f.descripcion,
+        motivo: datos.motivo || f.motivo,
         moneda: datos.moneda || f.moneda,
         monto_neto: neto || f.monto_neto,
         monto_iva: datos.monto_iva !== undefined ? datos.monto_iva : f.monto_iva,
@@ -857,12 +893,14 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, notify, onCreated
         h(Field, { label: "Cuenta Contable" },
           !form.centro_costo_codigo
             ? h("input", { disabled: true, placeholder: "Primero selecciona un Centro de Costo" })
-            : h("select", { value: form.cuenta_contable_codigo, onChange: set("cuenta_contable_codigo") },
-                h("option", { value: "" }, "Selecciona"),
-                catalogos.cuentasContables
+            : h(SearchSelect, {
+                options: catalogos.cuentasContables
                   .filter((c) => c.centro_costo_codigo === form.centro_costo_codigo)
-                  .map((c) => h("option", { key: c.codigo, value: c.codigo }, c.codigo + " — " + c.descripcion)),
-              )
+                  .map((c) => ({ value: c.codigo, label: c.codigo + " — " + c.descripcion })),
+                value: form.cuenta_contable_codigo,
+                onChange: (v) => setForm((f) => ({ ...f, cuenta_contable_codigo: v })),
+                placeholder: "Escribe para buscar cuenta contable...",
+              })
         ),
       ),
 
