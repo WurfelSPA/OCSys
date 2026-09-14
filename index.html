@@ -373,6 +373,10 @@ function ProveedorPicker({ proveedores, value, onChange }) {
       onChange: (e) => { setQuery(e.target.value); if (!e.target.value) onChange(""); },
     }),
     open && h("div", { className: "ac-list" },
+      h("div", {
+        className: "ac-item", style: { color: "var(--txm)", fontStyle: "italic" },
+        onMouseDown: () => { onChange(""); setQuery(""); setOpen(false); },
+      }, "— Seleccionar (limpiar) —"),
       filtered.length === 0
         ? h("div", { className: "ac-empty" }, "Sin resultados")
         : filtered.map((p) => h("div", {
