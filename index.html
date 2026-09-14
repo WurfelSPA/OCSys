@@ -8,6 +8,8 @@
 <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://unpkg.com/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<script src="https://unpkg.com/jspdf-autotable@3.8.2/dist/jspdf-autotable.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -346,13 +348,137 @@ function ProveedorPicker({ proveedores, value, onChange }) {
   );
 }
 
+function distribuirCuotas(n, montoNeto) {
+  const neto = Number(montoNeto) || 0;
+  const base = Math.floor(neto / n);
+  const resto = neto - base * n;
+  const rows = [];
+  for (let i = 0; i < n; i++) {
+    const monto = i === n - 1 ? base + resto : base;
+    rows.push({ dias: 0, observacion: (i + 1) + "/" + n, monto, porcentaje: neto ? Math.round((monto / neto) * 100) : 0 });
+  }
+  return rows;
+}
+
+function loadImageAsDataURL(url) {
+  return fetch(url)
+    .then((r) => r.blob())
+    .then((blob) => new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    }));
+}
+
+function fmtMontoPdf(n, moneda) {
+  const v = Number(n) || 0;
+  if (moneda === "UF") return v.toLocaleString("es-CL", { maximumFractionDigits: 2 });
+  return v.toLocaleString("es-CL", { maximumFractionDigits: 0 });
+}
+
+async function generarPdfOC(orden, proveedor, cuotas) {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: "mm", format: "a4" });
+  const moneda = orden.moneda;
+  const left = 20, right = 190;
+
+  try {
+    const logoData = await loadImageAsDataURL("/logo.jpg");
+    doc.addImage(logoData, "JPEG", left, 14, 32, 8);
+  } catch (e) { /* si no carga el logo, se sigue sin él */ }
+
+  doc.setFontSize(9); doc.setTextColor(40);
+  doc.text("Patagónica Inmobiliaria", left, 30);
+  doc.text("Av. Americo Vespucio Norte 2680 - Piso 12", left, 34.5);
+  doc.text("RUT: 96.673.250-4", left, 39);
+  doc.text("Correo DTE: dte@patagonica.cl", left, 43.5);
+  doc.setDrawColor(210); doc.line(left, 47, right, 47);
+
+  doc.setFont(undefined, "bold"); doc.text("Dirección de Envío", left, 54);
+  doc.setFont(undefined, "normal");
+  doc.text(["Oficina Operaciones", "Av. Americo Vespucio Norte 2680 - Piso 12", "Santiago", "Chile"], left, 59);
+
+  doc.setFont(undefined, "bold"); doc.text(proveedor.razon_social, 120, 54, { maxWidth: 70 });
+  doc.setFont(undefined, "normal");
+  doc.text("Correo: " + (proveedor.contacto_correo || "—"), 120, 63);
+  doc.text("RUT: " + proveedor.rut, 120, 67.5);
+
+  doc.setFontSize(20); doc.setTextColor(140);
+  doc.text("Orden de Compra #" + orden.numero_oc, left, 82);
+
+  doc.setFontSize(9); doc.setTextColor(40);
+  doc.setFont(undefined, "bold");
+  doc.text("Representante de Compra", left, 92);
+  doc.text("Fecha de pedido", 90, 92);
+  doc.text("Moneda", 150, 92);
+  doc.setFont(undefined, "normal");
+  doc.text(orden.creado_por || "—", left, 96.5);
+  doc.text(orden.fecha, 90, 96.5);
+  doc.text(moneda, 150, 96.5);
+
+  doc.setDrawColor(210); doc.line(150, 100, right, 100);
+  doc.setTextColor(150); doc.text("Base Imponible", 150, 105);
+  doc.setTextColor(40); doc.text(fmtMontoPdf(orden.monto_neto, moneda), right, 105, { align: "right" });
+  doc.setFont(undefined, "bold");
+  doc.text("IVA 19%", 150, 111); doc.text(fmtMontoPdf(orden.monto_iva, moneda), right, 111, { align: "right" });
+  doc.setDrawColor(210); doc.line(150, 114, right, 114);
+  doc.text("Total", 150, 119); doc.text(fmtMontoPdf(orden.monto_total, moneda), right, 119, { align: "right" });
+  doc.setFont(undefined, "normal");
+
+  doc.setFont(undefined, "bold"); doc.text("Ref. Interna", left, 106);
+  doc.setFont(undefined, "normal"); doc.text(orden.titulo || "—", left, 110.5, { maxWidth: 110 });
+  doc.setFont(undefined, "bold"); doc.text("Descripción", left, 119);
+  doc.setFont(undefined, "normal"); doc.text(orden.descripcion || "—", left, 123.5, { maxWidth: 110 });
+
+  const rows = (cuotas || []).map((c) => [String(c.dias || 0), c.observacion || "", (c.porcentaje || 0) + " %", moneda + " " + fmtMontoPdf(c.monto, moneda)]);
+  doc.autoTable({
+    startY: 140, margin: { left, right: 210 - right },
+    head: [["Días de Pago", "Observación", "Porcentaje", "Monto"]],
+    body: rows,
+    foot: [["Precio Total Neto", "", "", moneda + " " + fmtMontoPdf(orden.monto_neto, moneda)]],
+    theme: "plain",
+    styles: { fontSize: 9, textColor: 40 },
+    headStyles: { fontStyle: "bold", lineWidth: { bottom: 0.3 }, lineColor: 200 },
+    footStyles: { fontStyle: "bold", textColor: 40, lineWidth: { top: 0.3 }, lineColor: 200 },
+  });
+
+  const pageH = doc.internal.pageSize.getHeight();
+  doc.setFontSize(8); doc.setTextColor(150);
+  doc.text("OCSys - Patagónica Inmobiliaria © Todos los Derechos Reservados", left, pageH - 12);
+  doc.text("1/1", right, pageH - 12, { align: "right" });
+
+  return doc.output("blob");
+}
+
+function CuotasEditor({ cuotas, setCuotas, montoNeto, moneda }) {
+  const setCuota = (i, k, v) => setCuotas((cs) => cs.map((c, idx) => idx === i ? { ...c, [k]: v, porcentaje: k === "monto" ? (montoNeto ? Math.round((Number(v) / Number(montoNeto)) * 100) : 0) : c.porcentaje } : c));
+  const totalCuotas = cuotas.reduce((s, c) => s + (Number(c.monto) || 0), 0);
+  return h("div", null,
+    h("table", null,
+      h("thead", null, h("tr", null,
+        h("th", null, "Días de Pago"), h("th", null, "Observación"), h("th", null, "Monto (" + moneda + ")"), h("th", null, "%"),
+      )),
+      h("tbody", null, cuotas.map((c, i) => h("tr", { key: i },
+        h("td", null, h("input", { type: "number", value: c.dias, onChange: (e) => setCuota(i, "dias", e.target.value), style: { width: 70 } })),
+        h("td", null, h("input", { value: c.observacion, onChange: (e) => setCuota(i, "observacion", e.target.value), style: { width: 90 } })),
+        h("td", null, h("input", { type: "number", value: c.monto, onChange: (e) => setCuota(i, "monto", e.target.value), style: { width: 110 } })),
+        h("td", null, (c.porcentaje || 0) + " %"),
+      ))),
+    ),
+    h("div", { className: "hint", style: { marginTop: 6 } }, "Suma de cuotas: " + totalCuotas.toLocaleString("es-CL") + " / Monto Neto: " + (Number(montoNeto) || 0).toLocaleString("es-CL")),
+  );
+}
+
 function NuevaOC({ proveedores, catalogos, refreshProveedores, notify, onCreated }) {
   const [showModal, setShowModal] = useState(false);
   const [file, setFile] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [numCuotas, setNumCuotas] = useState(1);
+  const [cuotas, setCuotas] = useState(distribuirCuotas(1, 0));
   const [form, setForm] = useState({
     proveedor_id: "", fecha: new Date().toISOString().slice(0, 10),
-    titulo: "", descripcion: "", motivo: "", gerencia: "",
+    titulo: "", descripcion: "", motivo: "", gerencia: "", representante_compra: "",
     centro_costo_codigo: "", cuenta_contable_codigo: "",
     tipo_orden: "Afecto", tipo_compra: "Servicios", moneda: "CLP",
     monto_neto: "", monto_iva: "", monto_total: "",
@@ -364,6 +490,13 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, notify, onCreated
     const iva = neto ? Math.round(Number(neto) * 0.19) : "";
     const total = neto ? Math.round(Number(neto) * 1.19) : "";
     setForm((f) => ({ ...f, monto_neto: neto, monto_iva: iva, monto_total: total }));
+    setCuotas(distribuirCuotas(numCuotas, neto || 0));
+  };
+
+  const setNumCuotasField = (e) => {
+    const n = Math.max(1, Number(e.target.value) || 1);
+    setNumCuotas(n);
+    setCuotas(distribuirCuotas(n, form.monto_neto || 0));
   };
 
   const handleCreated = (proveedor) => {
@@ -374,6 +507,9 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, notify, onCreated
 
   const submit = async (estado) => {
     if (!form.proveedor_id) return notify("err", "Selecciona un proveedor");
+    if (estado === "Pendiente aprobación" && !form.representante_compra) {
+      return notify("err", "Ingresa el Representante de Compra");
+    }
     setSaving(true);
     try {
       let archivo_url = null, archivo_nombre = null;
@@ -390,12 +526,33 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, notify, onCreated
       const { orden } = await api("ordenes", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...form, estado, archivo_url, archivo_nombre }),
+        body: JSON.stringify({
+          ...form, estado, archivo_url, archivo_nombre, cuotas,
+          creado_por: form.representante_compra,
+        }),
       });
-      notify("ok", (estado === "Borrador" ? "Borrador guardado: " : "OC enviada a aprobación: ") + orden.numero_oc);
+
+      if (estado === "Pendiente aprobación") {
+        const proveedor = proveedores.find((p) => p.id === form.proveedor_id);
+        const pdfBlob = await generarPdfOC(orden, proveedor, cuotas);
+        const pdfBase64 = await fileToBase64(new File([pdfBlob], "OC.pdf", { type: "application/pdf" }));
+        const up = await api("upload", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ filename: orden.numero_oc + ".pdf", base64: pdfBase64 }),
+        });
+        await api("ordenes?id=" + orden.id, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ archivo_oc_url: up.url, archivo_oc_nombre: orden.numero_oc + ".pdf" }),
+        });
+      }
+
+      notify("ok", (estado === "Borrador" ? "Borrador guardado: " : "OC generada: ") + orden.numero_oc);
       onCreated();
       setForm((f) => ({ ...f, titulo: "", descripcion: "", motivo: "", monto_neto: "", monto_iva: "", monto_total: "" }));
       setFile(null);
+      setCuotas(distribuirCuotas(numCuotas, 0));
     } catch (e) {
       notify("err", e.message);
     } finally {
@@ -423,9 +580,10 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, notify, onCreated
       ),
 
       h("div", { className: "section-lbl" }, "Detalle de la Orden"),
-      h("div", { className: "grid2" },
+      h("div", { className: "grid3" },
         h(Field, { label: "Título" }, h("input", { value: form.titulo, onChange: set("titulo") })),
         h(Field, { label: "Gerencia" }, h("input", { value: form.gerencia, onChange: set("gerencia") })),
+        h(Field, { label: "Representante de Compra *" }, h("input", { value: form.representante_compra, onChange: set("representante_compra") })),
       ),
       h(Field, { label: "Descripción" }, h("textarea", { rows: 2, value: form.descripcion, onChange: set("descripcion") })),
       h(Field, { label: "Motivo" }, h("textarea", { rows: 2, value: form.motivo, onChange: set("motivo") })),
@@ -478,20 +636,24 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, notify, onCreated
         h(Field, { label: "Monto Total" }, h("input", { type: "number", value: form.monto_total, onChange: set("monto_total") })),
       ),
 
-      h("div", { className: "section-lbl" }, "Documento de la Orden de Compra"),
+      h("div", { className: "section-lbl" }, "Cuotas de Pago"),
+      h(Field, { label: "N° de Cuotas" }, h("input", { type: "number", min: 1, value: numCuotas, onChange: setNumCuotasField, style: { width: 90 } })),
+      h(CuotasEditor, { cuotas, setCuotas, montoNeto: form.monto_neto, moneda: form.moneda }),
+
+      h("div", { className: "section-lbl" }, "Cotización del Proveedor"),
       h("input", {
         type: "file", id: "file-input", style: { display: "none" },
         accept: ".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png",
         onChange: (e) => setFile(e.target.files[0] || null),
       }),
       h("label", { htmlFor: "file-input", className: "drop-zone" + (file ? " done" : ""), style: { display: "block" } },
-        file ? ("✓ " + file.name) : "Haz clic para subir el PDF / Word / Excel / JPG / PNG de la orden"
+        file ? ("✓ " + file.name) : "Haz clic para subir la cotización enviada por el proveedor (PDF / Word / Excel / JPG / PNG)"
       ),
       h("div", { className: "hint" }, "Formatos permitidos: PDF, Word, Excel, JPG, PNG"),
 
       h("div", { style: { display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 20 } },
         h("button", { className: "btn-ghost", onClick: () => submit("Borrador"), disabled: saving }, "Guardar Borrador"),
-        h("button", { className: "btn-primary", onClick: () => submit("Pendiente aprobación"), disabled: saving }, saving ? "Guardando..." : "Enviar a Aprobación"),
+        h("button", { className: "btn-primary", onClick: () => submit("Pendiente aprobación"), disabled: saving }, saving ? "Generando..." : "Generar OC"),
       ),
     )
   );
@@ -575,7 +737,8 @@ function OrdenesList({ ordenes, refreshOrdenes, notify }) {
     { key: "centro_costo_codigo", label: "Centro Costo" },
     { key: "monto_total", label: "Monto Total", render: (o) => fmtMoney(o.monto_total) },
     { key: "estado", label: "Estado", render: (o) => estadoPill(o.estado) },
-    { key: "archivo", label: "Archivo OC", sortable: false, render: (o) => (o.archivo_url ? h("a", { className: "link", href: o.archivo_url, target: "_blank", rel: "noreferrer" }, "Ver") : "—") },
+    { key: "archivo", label: "Cotización", sortable: false, render: (o) => (o.archivo_url ? h("a", { className: "link", href: o.archivo_url, target: "_blank", rel: "noreferrer" }, "Ver") : "—") },
+    { key: "archivo_oc", label: "OC", sortable: false, render: (o) => (o.archivo_oc_url ? h("a", { className: "link", href: o.archivo_oc_url, target: "_blank", rel: "noreferrer" }, "Ver") : "—") },
     { key: "archivo_factura", label: "Factura", sortable: false, render: (o) => (o.archivo_factura_url ? h("a", { className: "link", href: o.archivo_factura_url, target: "_blank", rel: "noreferrer" }, "Ver") : "—") },
     {
       key: "accion", label: "Acción", sortable: false,

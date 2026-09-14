@@ -27,6 +27,9 @@ export default async function handler(req, res) {
     if (body.numero_factura !== undefined) fields.numero_factura = body.numero_factura;
     if (body.archivo_factura_url !== undefined) fields.archivo_factura_url = body.archivo_factura_url;
     if (body.archivo_factura_nombre !== undefined) fields.archivo_factura_nombre = body.archivo_factura_nombre;
+    if (body.archivo_oc_url !== undefined) fields.archivo_oc_url = body.archivo_oc_url;
+    if (body.archivo_oc_nombre !== undefined) fields.archivo_oc_nombre = body.archivo_oc_nombre;
+    if (body.cuotas !== undefined) fields.cuotas = Array.isArray(body.cuotas) ? body.cuotas : [];
 
     if (Object.keys(fields).length === 0) {
       return res.status(400).json({ error: "No hay campos para actualizar" });
@@ -78,6 +81,7 @@ export default async function handler(req, res) {
         archivo_url: body.archivo_url || null,
         archivo_nombre: body.archivo_nombre || null,
         creado_por: body.creado_por || null,
+        cuotas: Array.isArray(body.cuotas) ? body.cuotas : [],
       })
       .select("*, proveedores(razon_social, rut)")
       .single();
