@@ -1,4 +1,5 @@
 import { supabase, readJsonBody } from "./_supabase.js";
+import { verifyToken, parseCookie } from "./_session.js";
 
 const ESTADOS_OCSYS = ["Borrador", "Pendiente aprobación", "Aprobada", "Completada"];
 
@@ -15,8 +16,14 @@ export default async function handler(req, res) {
       if (!ESTADOS_OCSYS.includes(body.estado)) {
         return res.status(400).json({ error: "estado inválido" });
       }
-      if (body.estado === "Aprobada" && !body.numero_hes) {
-        return res.status(400).json({ error: "numero_hes es obligatorio para aprobar la OC" });
+      if (body.estado === "Aprobada") {
+        if (!body.numero_hes) {
+          return res.status(400).json({ error: "numero_hes es obligatorio para aprobar la OC" });
+        }
+        const session = verifyToken(parseCookie(req.headers.cookie, "ocsys_token"), process.env.SESSION_SECRET || "");
+        if (!session || session.nivel_aprobacion !== 1) {
+          return res.status(403).json({ error: "No tienes nivel de aprobación para aprobar órdenes de compra" });
+        }
       }
       if (body.estado === "Completada" && !body.numero_factura) {
         return res.status(400).json({ error: "numero_factura es obligatorio para completar la OC" });

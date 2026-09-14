@@ -518,9 +518,15 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, notify, onCreated
       });
 
       const rutNorm = (r) => (r || "").replace(/\./g, "").toUpperCase();
-      const proveedorMatch = datos.proveedor_rut
+      const nombreNorm = (n) => (n || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+      let proveedorMatch = datos.proveedor_rut
         ? proveedores.find((p) => rutNorm(p.rut) === rutNorm(datos.proveedor_rut))
         : null;
+      if (!proveedorMatch && datos.proveedor_razon_social) {
+        const target = nombreNorm(datos.proveedor_razon_social);
+        proveedorMatch = proveedores.find((p) => nombreNorm(p.razon_social) === target)
+          || proveedores.find((p) => target.includes(nombreNorm(p.razon_social)) || nombreNorm(p.razon_social).includes(target));
+      }
 
       const neto = datos.monto_neto || 0;
       setForm((f) => ({
@@ -535,8 +541,8 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, notify, onCreated
       }));
       if (neto) setCuotas(distribuirCuotas(numCuotas, neto));
 
-      if (datos.proveedor_rut && !proveedorMatch) {
-        notify("err", "Leído, pero no encontré un proveedor con RUT " + datos.proveedor_rut + " — selecciónalo o créalo manualmente");
+      if ((datos.proveedor_rut || datos.proveedor_razon_social) && !proveedorMatch) {
+        notify("err", "Leído, pero no encontré al proveedor (" + (datos.proveedor_razon_social || datos.proveedor_rut) + ") en la lista — selecciónalo o créalo manualmente");
       } else {
         notify("ok", "Cotización leída con IA — revisa los datos antes de generar la OC");
       }
@@ -611,16 +617,6 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, notify, onCreated
         h("div", { className: "hint", style: { fontSize: 12 } }, "(" + fmtDate(form.fecha) + ")"),
       ),
 
-      h(Field, { label: "Proveedor *" },
-        h("div", { className: "row-inline" },
-          h(ProveedorPicker, {
-            proveedores, value: form.proveedor_id,
-            onChange: (id) => setForm((f) => ({ ...f, proveedor_id: id })),
-          }),
-          h("button", { className: "btn-add", title: "Agregar proveedor", onClick: () => setShowModal(true) }, "+"),
-        )
-      ),
-
       h("div", { className: "section-lbl" }, "Cotización del Proveedor"),
       h("input", {
         type: "file", id: "file-input", style: { display: "none" },
@@ -635,9 +631,19 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, notify, onCreated
           className: "btn-ghost", disabled: !file || leyendoIA || !["pdf", "jpg", "jpeg", "png"].includes((file && file.name.split(".").pop().toLowerCase()) || ""),
           onClick: leerConIA,
         }, leyendoIA ? "Leyendo con IA..." : "Leer cotización con IA"),
-        h("div", { className: "hint" }, "Completa el formulario automáticamente desde un PDF/JPG/PNG. Word/Excel se completan a mano."),
+        h("div", { className: "hint" }, "Completa el formulario automáticamente (incluido el proveedor) desde un PDF/JPG/PNG. Word/Excel se completan a mano."),
       ),
       h("div", { className: "hint", style: { marginTop: 4 } }, "Formatos permitidos para subir: PDF, Word, Excel, JPG, PNG"),
+
+      h(Field, { label: "Proveedor *" },
+        h("div", { className: "row-inline" },
+          h(ProveedorPicker, {
+            proveedores, value: form.proveedor_id,
+            onChange: (id) => setForm((f) => ({ ...f, proveedor_id: id })),
+          }),
+          h("button", { className: "btn-add", title: "Agregar proveedor", onClick: () => setShowModal(true) }, "+"),
+        )
+      ),
 
       h("div", { className: "section-lbl" }, "Detalle de la Orden"),
       h("div", { className: "grid3" },
@@ -774,8 +780,9 @@ function OrdenAccionModal({ orden, tipo, onClose, onDone, notify }) {
   );
 }
 
-function OrdenesList({ ordenes, refreshOrdenes, notify }) {
+function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser }) {
   const [accion, setAccion] = useState(null);
+  const puedeAprobar = currentUser && currentUser.nivel_aprobacion === 1;
 
   const columns = useMemo(() => [
     { key: "numero_oc", label: "N° OC" },
@@ -792,12 +799,14 @@ function OrdenesList({ ordenes, refreshOrdenes, notify }) {
     {
       key: "accion", label: "Acción", sortable: false,
       render: (o) => o.estado === "Pendiente aprobación"
-        ? h("button", { className: "btn-ghost", style: { padding: "4px 10px", fontSize: 11 }, onClick: () => setAccion({ orden: o, tipo: "aprobar" }) }, "Aprobar")
+        ? (puedeAprobar
+            ? h("button", { className: "btn-ghost", style: { padding: "4px 10px", fontSize: 11 }, onClick: () => setAccion({ orden: o, tipo: "aprobar" }) }, "Aprobar")
+            : h("span", { className: "hint" }, "Requiere aprobador"))
         : o.estado === "Aprobada"
         ? h("button", { className: "btn-ghost", style: { padding: "4px 10px", fontSize: 11 }, onClick: () => setAccion({ orden: o, tipo: "completar" }) }, "Completar")
         : "—",
     },
-  ], []);
+  ], [puedeAprobar]);
 
   return h("div", { className: "page fade-up" },
     accion && h(OrdenAccionModal, {
@@ -1031,7 +1040,54 @@ function AdministracionList({ usuarios, refreshUsuarios, notify }) {
   );
 }
 
-function App() {
+function LoginScreen({ onLoggedIn }) {
+  const [usuario, setUsuario] = useState("");
+  const [password, setPassword] = useState("");
+  const [msg, setMsg] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const doLogin = () => {
+    if (!usuario || !password) { setMsg("Completa todos los campos"); return; }
+    setBusy(true); setMsg("");
+    fetch("/api/auth?action=login", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ usuario, password }),
+    })
+      .then((r) => r.json().then((d) => ({ ok: r.ok, d })))
+      .then(({ ok, d }) => {
+        if (ok) onLoggedIn(d);
+        else setMsg(d.error || "Error al ingresar");
+      })
+      .catch(() => setMsg("Error de conexión"))
+      .finally(() => setBusy(false));
+  };
+
+  const wrap = { minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "linear-gradient(135deg,#0a1f3d 0%,#0e2f5c 50%,#0e4a8f 100%)" };
+  const card = { background: "#fff", borderRadius: 20, padding: "44px 40px", width: "100%", maxWidth: 380, boxShadow: "0 20px 60px rgba(0,0,0,.3)" };
+  const lbl = { fontSize: 11, fontWeight: 700, color: "var(--txm)", display: "block", marginBottom: 6, textTransform: "uppercase", letterSpacing: ".05em" };
+
+  return h("div", { style: wrap },
+    h("div", { style: card },
+      h("div", { style: { textAlign: "center", marginBottom: 28 } },
+        h("img", { src: "/logo.jpg", style: { maxWidth: 220, display: "block", margin: "0 auto" } }),
+        h("div", { style: { fontSize: 11, color: "var(--txm)", marginTop: 10, letterSpacing: ".04em" } }, "Portal de Órdenes de Compra"),
+      ),
+      h("h1", { style: { fontSize: 20, fontWeight: 700, marginBottom: 6 } }, "Iniciar sesión"),
+      h("p", { style: { color: "var(--txm)", fontSize: 13, marginBottom: 24 } }, "Ingresa con tu usuario de OCSys."),
+      h("label", { style: lbl }, "Usuario"),
+      h("input", { value: usuario, onChange: (e) => setUsuario(e.target.value), placeholder: "amelendez", style: { marginBottom: 16 }, autoComplete: "username" }),
+      h("label", { style: lbl }, "Contraseña"),
+      h("input", {
+        type: "password", value: password, onChange: (e) => setPassword(e.target.value), placeholder: "••••••••",
+        style: { marginBottom: 16 }, autoComplete: "current-password", onKeyDown: (e) => { if (e.key === "Enter") doLogin(); },
+      }),
+      msg && h("div", { className: "notif-err", style: { padding: "8px 12px", borderRadius: 8, marginBottom: 12, fontSize: 13 } }, msg),
+      h("button", { className: "btn-primary", style: { width: "100%" }, onClick: doLogin, disabled: busy }, busy ? "Ingresando..." : "Ingresar"),
+    )
+  );
+}
+
+function App({ currentUser, onLogout }) {
   const [tab, setTab] = useState("nueva");
   const [proveedores, setProveedores] = useState([]);
   const [ordenes, setOrdenes] = useState([]);
@@ -1062,7 +1118,11 @@ function App() {
     notif && h("div", { className: "notif " + (notif.type === "ok" ? "notif-ok" : "notif-err") }, notif.msg),
     h("div", { className: "header" },
       h("img", { src: "/logo.jpg", alt: "Patagónica" }),
-      h("div", null, h("h1", null, "OCSys"), h("div", { className: "sub" }, "Órdenes de Compra — Patagónica Inmobiliaria")),
+      h("div", { style: { flex: 1 } }, h("h1", null, "OCSys"), h("div", { className: "sub" }, "Órdenes de Compra — Patagónica Inmobiliaria")),
+      h("div", { style: { fontSize: 12, color: "var(--txm)", display: "flex", alignItems: "center", gap: 12 } },
+        (currentUser.nombre || currentUser.usuario),
+        h("button", { className: "btn-ghost", style: { padding: "5px 12px", fontSize: 11 }, onClick: onLogout }, "Cerrar sesión"),
+      ),
     ),
     h("div", { className: "nav" },
       h("button", { className: "nav-btn" + (tab === "nueva" ? " active" : ""), onClick: () => setTab("nueva") }, "Nueva OC"),
@@ -1072,14 +1132,34 @@ function App() {
       h("button", { className: "nav-btn" + (tab === "administracion" ? " active" : ""), onClick: () => setTab("administracion") }, "Administración"),
     ),
     tab === "nueva" && h(NuevaOC, { proveedores, catalogos, refreshProveedores: loadProveedores, notify, onCreated: loadOrdenes }),
-    tab === "ordenes" && h(OrdenesList, { ordenes, refreshOrdenes: loadOrdenes, notify }),
+    tab === "ordenes" && h(OrdenesList, { ordenes, refreshOrdenes: loadOrdenes, notify, currentUser }),
     tab === "proveedores" && h(ProveedoresList, { proveedores, catalogos, refreshProveedores: loadProveedores, notify }),
     tab === "reportes" && h(ReportesList, { ordenes, proveedores, notify }),
     tab === "administracion" && h(AdministracionList, { usuarios, refreshUsuarios: loadUsuarios, notify }),
   );
 }
 
-ReactDOM.createRoot(document.getElementById("root")).render(h(App));
+function Root() {
+  const [checking, setChecking] = useState(true);
+  const [currentUser, setCurrentUser] = useState(null);
+
+  useEffect(() => {
+    fetch("/api/auth?action=me")
+      .then((r) => (r.ok ? r.json() : null))
+      .then(setCurrentUser)
+      .finally(() => setChecking(false));
+  }, []);
+
+  const onLogout = () => {
+    fetch("/api/auth?action=logout").finally(() => setCurrentUser(null));
+  };
+
+  if (checking) return null;
+  if (!currentUser) return h(LoginScreen, { onLoggedIn: setCurrentUser });
+  return h(App, { currentUser, onLogout });
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(h(Root));
 </script>
 </body>
 </html>
