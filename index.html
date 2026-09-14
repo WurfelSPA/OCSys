@@ -71,6 +71,7 @@ button{font-family:'DM Sans',sans-serif;cursor:pointer;transition:all 0.15s}
 .drop-zone{border:2px dashed var(--bdr2);border-radius:12px;padding:24px 20px;text-align:center;cursor:pointer;transition:all 0.2s;background:var(--surf2)}
 .drop-zone:hover{border-color:var(--acc2);background:var(--surf3)}
 .drop-zone.done{border-color:var(--green);border-style:solid;background:var(--gbg)}
+.drop-zone.dragover{border-color:var(--acc2);background:var(--surf3);transform:scale(1.01)}
 .table-scroll{overflow:auto;max-height:62vh;margin:0 -24px;padding:0 24px}
 .table-scroll::-webkit-scrollbar{width:12px;height:12px}
 .table-scroll::-webkit-scrollbar-track{background:var(--surf2)}
@@ -153,6 +154,19 @@ function fileToBase64(file) {
     reader.onerror = reject;
     reader.readAsDataURL(file);
   });
+}
+
+function fileDropHandlers(setFile, setDragOver) {
+  return {
+    onDragOver: (e) => { e.preventDefault(); setDragOver(true); },
+    onDragLeave: (e) => { e.preventDefault(); setDragOver(false); },
+    onDrop: (e) => {
+      e.preventDefault();
+      setDragOver(false);
+      const f = e.dataTransfer.files && e.dataTransfer.files[0];
+      if (f) setFile(f);
+    },
+  };
 }
 
 const PROVEEDOR_BLANK = {
@@ -551,6 +565,7 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, notify, onCreated
   const [provPrefill, setProvPrefill] = useState(null);
   const [provEditing, setProvEditing] = useState(null);
   const [file, setFile] = useState(null);
+  const [dragOver, setDragOver] = useState(false);
   const [saving, setSaving] = useState(false);
   const [leyendoIA, setLeyendoIA] = useState(false);
   const [numCuotas, setNumCuotas] = useState(1);
@@ -597,11 +612,12 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, notify, onCreated
         body: JSON.stringify({ filename: file.name, base64 }),
       });
 
-      const rutNorm = (r) => (r || "").replace(/\./g, "").toUpperCase();
+      const rutNorm = (r) => (r || "").replace(/[^0-9kK]/g, "").toUpperCase();
       const nombreNorm = (n) => (n || "").toLowerCase().replace(/[^a-z0-9]/g, "");
       let proveedorMatch = datos.proveedor_rut
         ? proveedores.find((p) => rutNorm(p.rut) === rutNorm(datos.proveedor_rut))
         : null;
+      const matchedByRut = !!proveedorMatch;
       if (!proveedorMatch && datos.proveedor_razon_social) {
         const target = nombreNorm(datos.proveedor_razon_social);
         proveedorMatch = proveedores.find((p) => nombreNorm(p.razon_social) === target)
@@ -641,7 +657,10 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, notify, onCreated
           setProvPrefill(extraidoProveedor);
           setShowModal(true);
         }
-      } else if (proveedorMatch && !proveedorMatch.datos_completos) {
+      } else if (proveedorMatch && !proveedorMatch.datos_completos && matchedByRut) {
+        // Solo se ofrece autocompletar cuando el match fue por RUT (dato fiable);
+        // el nombre puede estar ingresado con mayúsculas/minúsculas u otro formato
+        // y un match por nombre no garantiza que sea el mismo proveedor.
         const completar = { ...proveedorMatch };
         Object.keys(extraidoProveedor).forEach((k) => { if (!completar[k] && extraidoProveedor[k]) completar[k] = extraidoProveedor[k]; });
         notify("err", "El proveedor \"" + proveedorMatch.razon_social + "\" tiene la ficha incompleta");
@@ -733,8 +752,13 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, notify, onCreated
         accept: ".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png",
         onChange: (e) => setFile(e.target.files[0] || null),
       }),
-      h("label", { htmlFor: "file-input", className: "drop-zone" + (file ? " done" : ""), style: { display: "block" } },
-        file ? ("✓ " + file.name) : "Haz clic para subir la cotización enviada por el proveedor (PDF / Word / Excel / JPG / PNG)"
+      h("label", {
+        htmlFor: "file-input",
+        className: "drop-zone" + (file ? " done" : "") + (dragOver ? " dragover" : ""),
+        style: { display: "block" },
+        ...fileDropHandlers(setFile, setDragOver),
+      },
+        file ? ("✓ " + file.name) : "Haz clic o arrastra aquí la cotización enviada por el proveedor (PDF / Word / Excel / JPG / PNG)"
       ),
       h("div", { className: "row-inline", style: { marginTop: 10 } },
         h("button", {
@@ -833,6 +857,7 @@ function OrdenAccionModal({ orden, tipo, onClose, onDone, notify }) {
   const isAprobar = tipo === "aprobar";
   const [numeroFactura, setNumeroFactura] = useState("");
   const [file, setFile] = useState(null);
+  const [dragOver, setDragOver] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const submit = async () => {
@@ -888,8 +913,13 @@ function OrdenAccionModal({ orden, tipo, onClose, onDone, notify }) {
                 accept: ".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png",
                 onChange: (e) => setFile(e.target.files[0] || null),
               })),
-            h("label", { htmlFor: "factura-file", className: "drop-zone" + (file ? " done" : ""), style: { display: "block" } },
-              file ? ("✓ " + file.name) : "Haz clic para subir la factura"),
+            h("label", {
+              htmlFor: "factura-file",
+              className: "drop-zone" + (file ? " done" : "") + (dragOver ? " dragover" : ""),
+              style: { display: "block" },
+              ...fileDropHandlers(setFile, setDragOver),
+            },
+              file ? ("✓ " + file.name) : "Haz clic o arrastra aquí la factura"),
           ),
       h("div", { style: { display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 16 } },
         h("button", { className: "btn-ghost", onClick: onClose }, "Cancelar"),
