@@ -1362,9 +1362,22 @@ function App({ currentUser, onLogout }) {
     loadProveedores();
     loadOrdenes();
     loadUsuarios();
-    api("catalogos")
-      .then((d) => setCatalogos({ ...d, listos: true }))
-      .catch((e) => { notify("err", e.message); setCatalogos((c) => ({ ...c, listos: true })); });
+    let cancelado = false;
+    const cargarCatalogos = (intento) => {
+      api("catalogos", { timeoutMs: 15000 })
+        .then((d) => { if (!cancelado) setCatalogos({ ...d, listos: true }); })
+        .catch((e) => {
+          if (cancelado) return;
+          if (intento < 3) {
+            setTimeout(() => cargarCatalogos(intento + 1), 1500 * intento);
+          } else {
+            notify("err", "No se pudieron cargar los catálogos (Centro de Costo / Región / Cuenta Contable): " + e.message + " — recarga la página para reintentar.");
+            setCatalogos((c) => ({ ...c, listos: true }));
+          }
+        });
+    };
+    cargarCatalogos(1);
+    return () => { cancelado = true; };
   }, []);
 
   return h("div", null,
