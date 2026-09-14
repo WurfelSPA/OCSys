@@ -549,6 +549,7 @@ function CuotasEditor({ cuotas, setCuotas, montoNeto, moneda }) {
 function NuevaOC({ proveedores, catalogos, refreshProveedores, notify, onCreated }) {
   const [showModal, setShowModal] = useState(false);
   const [provPrefill, setProvPrefill] = useState(null);
+  const [provEditing, setProvEditing] = useState(null);
   const [file, setFile] = useState(null);
   const [saving, setSaving] = useState(false);
   const [leyendoIA, setLeyendoIA] = useState(false);
@@ -582,6 +583,7 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, notify, onCreated
     setForm((f) => ({ ...f, proveedor_id: proveedor.id }));
     setShowModal(false);
     setProvPrefill(null);
+    setProvEditing(null);
   };
 
   const leerConIA = async () => {
@@ -619,11 +621,32 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, notify, onCreated
       }));
       if (neto) setCuotas(distribuirCuotas(numCuotas, neto));
 
+      const extraidoProveedor = {
+        razon_social: datos.proveedor_razon_social || "",
+        rut: datos.proveedor_rut || "",
+        contacto_nombre: datos.contacto_nombre || "",
+        contacto_apellido: datos.contacto_apellido || "",
+        contacto_telefono: datos.contacto_telefono || "",
+        contacto_celular: datos.contacto_celular || "",
+        contacto_correo: datos.contacto_correo || "",
+        banco: datos.banco || "",
+        tipo_cuenta: datos.tipo_cuenta || "",
+        numero_cuenta: datos.numero_cuenta || "",
+      };
+
       if ((datos.proveedor_rut || datos.proveedor_razon_social) && !proveedorMatch) {
         const nombre = datos.proveedor_razon_social || datos.proveedor_rut;
         notify("err", "Proveedor no existe (" + nombre + ")");
         if (window.confirm("Proveedor no existe: \"" + nombre + "\". ¿Desea agregarlo?")) {
-          setProvPrefill({ razon_social: datos.proveedor_razon_social || "", rut: datos.proveedor_rut || "" });
+          setProvPrefill(extraidoProveedor);
+          setShowModal(true);
+        }
+      } else if (proveedorMatch && !proveedorMatch.datos_completos) {
+        const completar = { ...proveedorMatch };
+        Object.keys(extraidoProveedor).forEach((k) => { if (!completar[k] && extraidoProveedor[k]) completar[k] = extraidoProveedor[k]; });
+        notify("err", "El proveedor \"" + proveedorMatch.razon_social + "\" tiene la ficha incompleta");
+        if (window.confirm("El proveedor \"" + proveedorMatch.razon_social + "\" existe pero su ficha está incompleta. ¿Desea completarla con los datos de esta cotización?")) {
+          setProvEditing(completar);
           setShowModal(true);
         }
       } else {
@@ -693,8 +716,8 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, notify, onCreated
 
   return h("div", { className: "page fade-up" },
     showModal && h(ProveedorModal, {
-      regiones: catalogos.regiones, prefill: provPrefill,
-      onClose: () => { setShowModal(false); setProvPrefill(null); },
+      regiones: catalogos.regiones, prefill: provPrefill, editProveedor: provEditing,
+      onClose: () => { setShowModal(false); setProvPrefill(null); setProvEditing(null); },
       onCreated: handleCreated, notify,
     }),
 

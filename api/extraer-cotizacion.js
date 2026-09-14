@@ -4,8 +4,16 @@ import { readJsonBody } from "./_supabase.js";
 const RESPONSE_SCHEMA = {
   type: "object",
   properties: {
-    proveedor_rut: { type: "string", description: "RUT del proveedor que emite la cotización, formato XX.XXX.XXX-X" },
-    proveedor_razon_social: { type: "string", description: "Razón social del proveedor" },
+    proveedor_rut: { type: "string", description: "RUT del proveedor/emisor de la cotización, formato XX.XXX.XXX-X" },
+    proveedor_razon_social: { type: "string", description: "Razón social o nombre del proveedor/emisor" },
+    contacto_nombre: { type: "string", description: "Nombre de pila de la persona de contacto que firma o emite la cotización" },
+    contacto_apellido: { type: "string", description: "Apellido de la persona de contacto" },
+    contacto_telefono: { type: "string", description: "Teléfono fijo de contacto, si se indica" },
+    contacto_celular: { type: "string", description: "Celular/móvil de contacto, si se indica" },
+    contacto_correo: { type: "string", description: "Correo electrónico de contacto del proveedor" },
+    banco: { type: "string", description: "Nombre del banco en los datos bancarios" },
+    tipo_cuenta: { type: "string", description: "Tipo de cuenta bancaria (Cuenta Corriente, Cuenta Vista, Cuenta de Ahorro)" },
+    numero_cuenta: { type: "string", description: "Número de cuenta bancaria" },
     titulo: { type: "string", description: "Referencia corta / título del servicio o producto cotizado" },
     descripcion: { type: "string", description: "Descripción detallada de lo cotizado" },
     moneda: { type: "string", enum: ["CLP", "USD", "UF"] },
@@ -45,7 +53,7 @@ export default async function handler(req, res) {
       contents: [{
         role: "user",
         parts: [
-          { text: "Esta es una cotización enviada por un proveedor a Patagónica Inmobiliaria. Extrae los datos solicitados en el esquema." },
+          { text: "Esta es una cotización enviada por un proveedor a Patagónica Inmobiliaria. Extrae TODOS los datos solicitados en el esquema, incluyendo los datos bancarios (banco, tipo de cuenta, número de cuenta) y los datos de contacto (nombre, teléfono, celular, correo) si aparecen en el documento — no los omitas." },
           { inlineData: { mimeType, data: base64 } },
         ],
       }],
