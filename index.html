@@ -1279,7 +1279,98 @@ const USUARIOS_COLUMNS = [
     : h("span", { className: "pill pill-pend" }, "Sin definir")) },
 ];
 
-function AdministracionList({ usuarios, refreshUsuarios, notify }) {
+function SincronizarAcquisys({ notify, refreshOrdenes, refreshProveedores }) {
+  const [acquisysToken, setAcquisysToken] = useState("");
+  const [corriendo, setCorriendo] = useState(false);
+  const [log, setLog] = useState([]);
+
+  const agregarLog = (linea) => setLog((l) => [...l, linea]);
+
+  const sincronizar = async () => {
+    if (!acquisysToken.trim()) return notify("err", "Pega el user_token de Acquisys primero");
+    setCorriendo(true);
+    setLog([]);
+    try {
+      agregarLog("Consultando órdenes en Acquisys...");
+      const hoy = new Date().toISOString().slice(0, 10);
+      const url = "https://acquisysbck.dkohome.cl/admin/order?responsible_id=&gerencia=&status=&date_ini=2015-1-1&date_end=" + hoy + "&entity_id=4";
+      const rAcq = await fetch(url, { headers: { accept: "application/json", user_token: acquisysToken } });
+      if (!rAcq.ok) throw new Error("Acquisys respondió " + rAcq.status + " — el user_token puede haber expirado (dura ~24h)");
+      const ordenesAcquisys = await rAcq.json();
+      agregarLog(ordenesAcquisys.length + " registros recibidos de Acquisys");
+
+      agregarLog("Sincronizando con OCSys (esto puede tardar unos minutos)...");
+      const resultado = await api("sync-acquisys", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userToken: acquisysToken, ordenes: ordenesAcquisys }),
+        timeoutMs: 280000,
+      });
+      agregarLog(
+        "Listo: " + resultado.total + " órdenes procesadas — " +
+        resultado.creadas + " nuevas, " + resultado.actualizadas + " actualizadas, " +
+        resultado.sinCambios + " sin cambios, " + resultado.errores + " con error"
+      );
+      if (resultado.errores > 0) {
+        resultado.detalleErrores.forEach((e) => agregarLog("  ⚠ " + e.numero_oc + ": " + e.error));
+      }
+      refreshOrdenes();
+      refreshProveedores();
+
+      agregarLog("Generando PDF de OC para las órdenes que aún no lo tienen...");
+      const [{ ordenes }, { proveedores }] = await Promise.all([api("ordenes"), api("proveedores")]);
+      const pendientes = ordenes.filter((o) => !o.archivo_oc_url);
+      let ok = 0, err = 0;
+      for (const orden of pendientes) {
+        const proveedor = proveedores.find((p) => p.id === orden.proveedor_id);
+        if (!proveedor) { err++; continue; }
+        try {
+          const pdfBlob = await generarPdfOC(orden, proveedor, orden.cuotas || []);
+          const pdfBase64 = await fileToBase64(new File([pdfBlob], "OC.pdf", { type: "application/pdf" }));
+          const up = await api("upload", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ filename: orden.numero_oc + ".pdf", base64: pdfBase64 }),
+          });
+          await api("ordenes?id=" + orden.id, {
+            method: "PUT", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ archivo_oc_url: up.url, archivo_oc_nombre: orden.numero_oc + ".pdf" }),
+          });
+          ok++;
+        } catch (e) { err++; }
+      }
+      agregarLog("PDFs de OC generados: " + ok + (err ? " (" + err + " con error)" : ""));
+      refreshOrdenes();
+      notify("ok", "Sincronización con Acquisys completada");
+    } catch (e) {
+      agregarLog("ERROR: " + e.message);
+      notify("err", e.message);
+    } finally {
+      setCorriendo(false);
+    }
+  };
+
+  return h("div", { className: "card", style: { marginTop: 20 } },
+    h("h2", null, "Sincronizar con Acquisys"),
+    h("p", { className: "hint", style: { marginBottom: 12 } },
+      "Trae órdenes nuevas o desactualizadas desde Acquisys (proveedor, montos, HES, factura, cuotas y archivos), sin pisar datos ya cargados en OCSys."),
+    h("div", { className: "row-inline" },
+      h("input", {
+        value: acquisysToken, onChange: (e) => setAcquisysToken(e.target.value),
+        placeholder: "Pega aquí el user_token de Acquisys (F12 → Network → header user_token)",
+        style: { flex: 1 }, disabled: corriendo,
+      }),
+      h("button", { className: "btn-primary", onClick: sincronizar, disabled: corriendo }, corriendo ? "Sincronizando..." : "Sincronizar"),
+    ),
+    log.length > 0 && h("pre", {
+      style: {
+        marginTop: 14, background: "var(--surf2)", border: "1px solid var(--bdr)", borderRadius: 8,
+        padding: 12, fontSize: 11.5, maxHeight: 220, overflow: "auto", whiteSpace: "pre-wrap",
+      },
+    }, log.join("\n")),
+  );
+}
+
+function AdministracionList({ usuarios, refreshUsuarios, notify, currentUser, refreshOrdenes, refreshProveedores }) {
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState(null);
   const closeAny = () => { setShowModal(false); setEditing(null); };
@@ -1299,7 +1390,8 @@ function AdministracionList({ usuarios, refreshUsuarios, notify }) {
         searchPlaceholder: "Buscar por nombre, apellido o usuario",
         emptyText: "No hay usuarios cargados todavía",
       }),
-    )
+    ),
+    currentUser && currentUser.nivel_aprobacion === 1 && h(SincronizarAcquisys, { notify, refreshOrdenes, refreshProveedores }),
   );
 }
 
@@ -1504,7 +1596,7 @@ function App({ currentUser, onLogout }) {
     tab === "ordenes" && h(OrdenesList, { ordenes, refreshOrdenes: loadOrdenes, notify, currentUser }),
     tab === "proveedores" && h(ProveedoresList, { proveedores, catalogos, refreshProveedores: loadProveedores, notify, currentUser }),
     tab === "reportes" && h(ReportesList, { ordenes, proveedores, notify }),
-    tab === "administracion" && h(AdministracionList, { usuarios, refreshUsuarios: loadUsuarios, notify }),
+    tab === "administracion" && h(AdministracionList, { usuarios, refreshUsuarios: loadUsuarios, notify, currentUser, refreshOrdenes: loadOrdenes, refreshProveedores: loadProveedores }),
   );
 }
 
