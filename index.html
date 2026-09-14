@@ -144,10 +144,11 @@ function Field({ label, children }) {
   return h("div", { className: "field" }, h("label", null, label), children);
 }
 
-function ProveedorModal({ regiones, onClose, onCreated, notify }) {
-  const [form, setForm] = useState(PROVEEDOR_BLANK);
+function ProveedorModal({ regiones, onClose, onCreated, notify, editProveedor }) {
+  const [form, setForm] = useState(editProveedor ? { ...PROVEEDOR_BLANK, ...editProveedor } : PROVEEDOR_BLANK);
   const [saving, setSaving] = useState(false);
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  const isEdit = !!editProveedor;
 
   const submit = async () => {
     if (!form.razon_social || !form.rut) {
@@ -156,12 +157,12 @@ function ProveedorModal({ regiones, onClose, onCreated, notify }) {
     }
     setSaving(true);
     try {
-      const { proveedor } = await api("proveedores", {
-        method: "POST",
+      const { proveedor } = await api("proveedores" + (isEdit ? "?id=" + editProveedor.id : ""), {
+        method: isEdit ? "PUT" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
       });
-      notify("ok", "Proveedor creado: " + proveedor.razon_social);
+      notify("ok", (isEdit ? "Proveedor actualizado: " : "Proveedor creado: ") + proveedor.razon_social);
       onCreated(proveedor);
     } catch (e) {
       notify("err", e.message);
@@ -173,7 +174,7 @@ function ProveedorModal({ regiones, onClose, onCreated, notify }) {
   return h("div", { className: "overlay", onClick: (e) => e.target === e.currentTarget && onClose() },
     h("div", { className: "modal" },
       h("div", { className: "modal-hdr" },
-        h("h3", null, "Nuevo Proveedor"),
+        h("h3", null, isEdit ? "Completar / Editar Proveedor" : "Nuevo Proveedor"),
         h("button", { className: "modal-close", onClick: onClose }, "×")
       ),
 
@@ -306,7 +307,7 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, notify, onCreated
         h("div", { className: "row-inline" },
           h("select", { value: form.proveedor_id, onChange: set("proveedor_id") },
             h("option", { value: "" }, "Selecciona un proveedor"),
-            proveedores.map((p) => h("option", { key: p.id, value: p.id }, p.razon_social + " — " + p.rut)),
+            proveedores.map((p) => h("option", { key: p.id, value: p.id }, (p.datos_completos ? "" : "⚠ ") + p.razon_social + " — " + p.rut)),
           ),
           h("button", { className: "btn-add", title: "Agregar proveedor", onClick: () => setShowModal(true) }, "+"),
         )
@@ -415,8 +416,13 @@ function OrdenesList({ ordenes }) {
 
 function ProveedoresList({ proveedores, catalogos, refreshProveedores, notify }) {
   const [showModal, setShowModal] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const closeAny = () => { setShowModal(false); setEditing(null); };
   return h("div", { className: "page fade-up" },
-    showModal && h(ProveedorModal, { regiones: catalogos.regiones, onClose: () => setShowModal(false), onCreated: () => { refreshProveedores(); setShowModal(false); }, notify }),
+    (showModal || editing) && h(ProveedorModal, {
+      regiones: catalogos.regiones, editProveedor: editing, onClose: closeAny,
+      onCreated: () => { refreshProveedores(); closeAny(); }, notify,
+    }),
     h("div", { className: "card" },
       h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 } },
         h("h2", { style: { marginBottom: 0 } }, "Proveedores"),
@@ -427,9 +433,9 @@ function ProveedoresList({ proveedores, catalogos, refreshProveedores, notify })
         : h("table", null,
             h("thead", null, h("tr", null,
               h("th", null, "Razón Social"), h("th", null, "RUT"), h("th", null, "Documento"),
-              h("th", null, "Giro"), h("th", null, "Ciudad"), h("th", null, "Contacto"), h("th", null, "Correo"),
+              h("th", null, "Giro"), h("th", null, "Ciudad"), h("th", null, "Contacto"), h("th", null, "Correo"), h("th", null, "Ficha"),
             )),
-            h("tbody", null, proveedores.map((p) => h("tr", { key: p.id },
+            h("tbody", null, proveedores.map((p) => h("tr", { key: p.id, style: { cursor: "pointer" }, onClick: () => setEditing(p) },
               h("td", null, p.razon_social),
               h("td", null, p.rut),
               h("td", null, p.tipo_documento),
@@ -437,6 +443,35 @@ function ProveedoresList({ proveedores, catalogos, refreshProveedores, notify })
               h("td", null, p.ciudad || "—"),
               h("td", null, [p.contacto_nombre, p.contacto_apellido].filter(Boolean).join(" ") || "—"),
               h("td", null, p.contacto_correo || "—"),
+              h("td", null, p.datos_completos
+                ? h("span", { className: "pill pill-ok" }, "Completa")
+                : h("span", { className: "pill pill-pend" }, "⚠ Completar")),
+            ))),
+          )
+    )
+  );
+}
+
+function HistoricoList({ historicas }) {
+  return h("div", { className: "page fade-up" },
+    h("div", { className: "card" },
+      h("h2", null, "Histórico Acquisys"),
+      h("div", { className: "hint", style: { marginBottom: 12 } }, "Datos migrados desde Acquisys (solo lectura) — órdenes creadas en OCSys aparecen en la pestaña \"Órdenes\""),
+      historicas.length === 0
+        ? h("div", { className: "empty" }, "Sin datos históricos importados")
+        : h("table", null,
+            h("thead", null, h("tr", null,
+              h("th", null, "N° Solicitud"), h("th", null, "N° Factura"), h("th", null, "Proveedor"),
+              h("th", null, "Fecha Emisión"), h("th", null, "Estado"), h("th", null, "Monto Total"), h("th", null, "Cta. Contable"),
+            )),
+            h("tbody", null, historicas.map((o, i) => h("tr", { key: o.id || i },
+              h("td", null, o.numero_solicitud || "—"),
+              h("td", null, o.numero_factura || "—"),
+              h("td", null, o.nombre_proveedor || "—"),
+              h("td", null, fmtDate(o.fecha_emision)),
+              h("td", null, estadoPill(o.estado)),
+              h("td", null, fmtMoney(o.monto_total)),
+              h("td", null, o.cu1 || "—"),
             ))),
           )
     )
@@ -447,6 +482,7 @@ function App() {
   const [tab, setTab] = useState("nueva");
   const [proveedores, setProveedores] = useState([]);
   const [ordenes, setOrdenes] = useState([]);
+  const [historicas, setHistoricas] = useState([]);
   const [catalogos, setCatalogos] = useState({ centrosCosto: [], cuentasContables: [], regiones: [], ciudades: [] });
   const [notif, notify] = useNotif();
 
@@ -462,6 +498,7 @@ function App() {
     loadProveedores();
     loadOrdenes();
     api("catalogos").then(setCatalogos).catch((e) => notify("err", e.message));
+    api("historico").then((d) => setHistoricas(d.historicas)).catch((e) => notify("err", e.message));
   }, []);
 
   return h("div", null,
@@ -474,10 +511,12 @@ function App() {
       h("button", { className: "nav-btn" + (tab === "nueva" ? " active" : ""), onClick: () => setTab("nueva") }, "Nueva OC"),
       h("button", { className: "nav-btn" + (tab === "ordenes" ? " active" : ""), onClick: () => setTab("ordenes") }, "Órdenes"),
       h("button", { className: "nav-btn" + (tab === "proveedores" ? " active" : ""), onClick: () => setTab("proveedores") }, "Proveedores"),
+      h("button", { className: "nav-btn" + (tab === "historico" ? " active" : ""), onClick: () => setTab("historico") }, "Histórico Acquisys"),
     ),
     tab === "nueva" && h(NuevaOC, { proveedores, catalogos, refreshProveedores: loadProveedores, notify, onCreated: loadOrdenes }),
     tab === "ordenes" && h(OrdenesList, { ordenes }),
     tab === "proveedores" && h(ProveedoresList, { proveedores, catalogos, refreshProveedores: loadProveedores, notify }),
+    tab === "historico" && h(HistoricoList, { historicas }),
   );
 }
 
