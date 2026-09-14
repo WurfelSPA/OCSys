@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>OCSys — Órdenes de Compra Patagónica</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#f0f2f5;--surf:#ffffff;--surf2:#f4f6f9;--surf3:#e9edf3;
+  --bdr:#d9dfe6;--bdr2:#c3ccd6;
+  --tx:#1a2230;--txm:#5c6b7a;--txd:#94a1ad;
+  --green:#0a7c4e;--gbg:#e8f5f0;
+  --amber:#a05c00;--abg:#fff8e8;
+  --red:#c0392b;--rbg:#fdf0ef;
+  --acc:#0e4a8f;--acc2:#1b7cb3;--accl:#0a3a70;--accbg:#e8f1fb;
+}
+html,body,#root{height:100%;font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--tx);font-size:13px}
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-thumb{background:var(--bdr2);border-radius:4px}
+input,select,textarea{font-family:'DM Mono',monospace;background:var(--surf);border:1px solid var(--bdr);color:var(--tx);border-radius:8px;padding:8px 12px;font-size:12px;outline:none;transition:border 0.2s;width:100%}
+input:focus,select:focus,textarea:focus{border-color:var(--acc2)}
+input::placeholder,textarea::placeholder{color:var(--txd)}
+button{font-family:'DM Sans',sans-serif;cursor:pointer;transition:all 0.15s}
+@keyframes fadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes spin{to{transform:rotate(360deg)}}
+.spin{display:inline-block;animation:spin 0.9s linear infinite}
+.fade-up{animation:fadeUp 0.3s cubic-bezier(.16,1,.3,1)}
+.header{background:var(--surf);border-bottom:1px solid var(--bdr);padding:14px 24px;display:flex;align-items:center;gap:16px}
+.header img{height:30px}
+.header h1{font-size:15px;font-weight:700;color:var(--tx)}
+.header .sub{font-size:11px;color:var(--txm)}
+.nav{display:flex;gap:8px;padding:14px 24px 0}
+.nav-btn{background:transparent;border:1px solid var(--bdr);color:var(--txm);border-radius:8px;padding:8px 16px;font-size:12px;font-weight:600}
+.nav-btn:hover{background:var(--surf2);color:var(--tx)}
+.nav-btn.active{background:var(--acc);border-color:var(--acc);color:#fff}
+.page{padding:20px 24px 60px;max-width:1200px;margin:0 auto}
+.card{background:var(--surf);border:1px solid var(--bdr);border-radius:14px;padding:22px 24px;margin-bottom:18px}
+.card h2{font-size:14px;font-weight:700;margin-bottom:14px;color:var(--tx)}
+.section-lbl{font-size:10px;font-weight:700;color:var(--acc);letter-spacing:.06em;text-transform:uppercase;margin:18px 0 10px;padding-top:14px;border-top:1px solid var(--bdr)}
+.section-lbl:first-child{margin-top:0;padding-top:0;border-top:none}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+.field{display:flex;flex-direction:column;gap:5px;margin-bottom:12px}
+.field label{font-size:11px;font-weight:600;color:var(--txm)}
+.row-inline{display:flex;gap:8px;align-items:flex-end}
+.btn-add{background:var(--accbg);border:1px solid var(--acc2);color:var(--acc);width:36px;height:36px;border-radius:8px;font-size:18px;font-weight:700;flex-shrink:0;display:flex;align-items:center;justify-content:center;line-height:1}
+.btn-add:hover{background:var(--acc);color:#fff}
+.btn-primary{background:linear-gradient(135deg,var(--acc),var(--acc2));color:#fff;border:none;border-radius:10px;padding:11px 28px;font-size:13px;font-weight:700;letter-spacing:-0.2px;box-shadow:0 4px 20px rgba(14,74,143,0.25)}
+.btn-primary:hover{opacity:0.9;transform:translateY(-1px)}
+.btn-primary:disabled{opacity:0.4;cursor:not-allowed;transform:none}
+.btn-ghost{background:transparent;border:1px solid var(--bdr);color:var(--txm);border-radius:8px;padding:10px 20px;font-size:12px;font-weight:600}
+.btn-ghost:hover{background:var(--surf2)}
+.overlay{position:fixed;inset:0;background:rgba(10,20,35,0.5);display:flex;align-items:center;justify-content:center;z-index:100;padding:20px;overflow:auto}
+.modal{background:var(--surf);border:1px solid var(--bdr2);border-radius:18px;padding:26px 28px;width:680px;max-width:100%;max-height:90vh;overflow:auto;animation:fadeUp 0.25s cubic-bezier(.16,1,.3,1)}
+.modal-hdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
+.modal-hdr h3{font-size:15px;font-weight:700}
+.modal-close{background:transparent;border:none;color:var(--txm);font-size:20px;line-height:1}
+.modal-close:hover{color:var(--tx)}
+.drop-zone{border:2px dashed var(--bdr2);border-radius:12px;padding:24px 20px;text-align:center;cursor:pointer;transition:all 0.2s;background:var(--surf2)}
+.drop-zone:hover{border-color:var(--acc2);background:var(--surf3)}
+.drop-zone.done{border-color:var(--green);border-style:solid;background:var(--gbg)}
+table{width:100%;border-collapse:collapse;font-size:11.5px}
+th{padding:8px 10px;background:var(--surf2);color:var(--txd);font-weight:700;text-transform:uppercase;font-size:9.5px;letter-spacing:.05em;border-bottom:1px solid var(--bdr);text-align:left;white-space:nowrap}
+td{padding:9px 10px;border-bottom:1px solid var(--bdr);font-size:11.5px;white-space:nowrap}
+tr:hover td{background:var(--surf2)}
+.pill{padding:3px 10px;border-radius:20px;font-size:10px;font-weight:600;display:inline-block}
+.pill-ok{background:var(--gbg);color:var(--green)}
+.pill-pend{background:var(--abg);color:var(--amber)}
+.pill-anul{background:var(--rbg);color:var(--red)}
+.notif{position:fixed;top:18px;right:18px;z-index:200;padding:12px 20px;border-radius:10px;font-size:13px;font-weight:500;animation:fadeIn 0.2s;max-width:380px;box-shadow:0 4px 16px rgba(0,0,0,0.15)}
+.notif-ok{background:var(--gbg);color:var(--green);border:1px solid #b0dfc8}
+.notif-err{background:var(--rbg);color:var(--red);border:1px solid #f0bcb6}
+.empty{padding:40px 20px;text-align:center;color:var(--txd);font-size:12px}
+.link{color:var(--acc);text-decoration:none;font-weight:600}
+.link:hover{text-decoration:underline}
+.hint{font-size:10.5px;color:var(--txd);margin-top:4px}
+@media (max-width:720px){.grid2,.grid3{grid-template-columns:1fr}.modal{padding:20px}}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const h = React.createElement;
+const { useState, useEffect, useCallback, useMemo } = React;
+
+function useNotif() {
+  const [notif, setNotif] = useState(null);
+  const show = useCallback((type, msg) => {
+    setNotif({ type, msg });
+    setTimeout(() => setNotif(null), 4000);
+  }, []);
+  return [notif, show];
+}
+
+function fmtMoney(n) {
+  if (n === null || n === undefined || n === "") return "—";
+  return "$" + Number(n).toLocaleString("es-CL");
+}
+
+function fmtDate(d) {
+  if (!d) return "—";
+  return new Date(d + "T00:00:00").toLocaleDateString("es-CL");
+}
+
+function estadoPill(estado) {
+  const map = {
+    "Aprobado": "pill-ok", "Factura Aprobada": "pill-ok",
+    "Pendiente": "pill-pend",
+    "Anulado": "pill-anul", "Rechazado": "pill-anul",
+  };
+  return h("span", { className: "pill " + (map[estado] || "pill-pend") }, estado || "Pendiente");
+}
+
+async function api(path, opts) {
+  const res = await fetch("/api/" + path, opts);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || "Error de servidor");
+  return data;
+}
+
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result.split(",")[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+const PROVEEDOR_BLANK = {
+  razon_social: "", tipo_documento: "Factura Afecta", rut: "", tamano_empresa: "",
+  giro_comercial: "", direccion_comercial: "", departamento_oficina: "",
+  region: "", ciudad: "", telefono: "", sitio_web: "",
+  contacto_nombre: "", contacto_apellido: "", contacto_telefono: "", contacto_celular: "", contacto_correo: "",
+  banco: "", tipo_cuenta: "", numero_cuenta: "",
+};
+
+function Field({ label, children }) {
+  return h("div", { className: "field" }, h("label", null, label), children);
+}
+
+function ProveedorModal({ regiones, onClose, onCreated, notify }) {
+  const [form, setForm] = useState(PROVEEDOR_BLANK);
+  const [saving, setSaving] = useState(false);
+  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  const submit = async () => {
+    if (!form.razon_social || !form.rut) {
+      notify("err", "Razón Social y RUT son obligatorios");
+      return;
+    }
+    setSaving(true);
+    try {
+      const { proveedor } = await api("proveedores", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form),
+      });
+      notify("ok", "Proveedor creado: " + proveedor.razon_social);
+      onCreated(proveedor);
+    } catch (e) {
+      notify("err", e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return h("div", { className: "overlay", onClick: (e) => e.target === e.currentTarget && onClose() },
+    h("div", { className: "modal" },
+      h("div", { className: "modal-hdr" },
+        h("h3", null, "Nuevo Proveedor"),
+        h("button", { className: "modal-close", onClick: onClose }, "×")
+      ),
+
+      h("div", { className: "section-lbl" }, "Datos para Crear Proveedor"),
+      h("div", { className: "grid2" },
+        h(Field, { label: "Razón Social *" }, h("input", { value: form.razon_social, onChange: set("razon_social"), placeholder: "Razón social" })),
+        h(Field, { label: "RUT *" }, h("input", { value: form.rut, onChange: set("rut"), placeholder: "76.123.456-7" })),
+        h(Field, { label: "Boleta / Factura Afecta / Factura Exenta" },
+          h("select", { value: form.tipo_documento, onChange: set("tipo_documento") },
+            h("option", { value: "Boleta" }, "Boleta"),
+            h("option", { value: "Factura Afecta" }, "Factura Afecta"),
+            h("option", { value: "Factura Exenta" }, "Factura Exenta"),
+          )),
+        h(Field, { label: "Tamaño de Empresa" },
+          h("select", { value: form.tamano_empresa, onChange: set("tamano_empresa") },
+            h("option", { value: "" }, "Selecciona"),
+            h("option", { value: "Microempresa" }, "Microempresa"),
+            h("option", { value: "Pequeña" }, "Pequeña"),
+            h("option", { value: "Mediana" }, "Mediana"),
+            h("option", { value: "Grande" }, "Grande"),
+          )),
+        h(Field, { label: "Giro Comercial" }, h("input", { value: form.giro_comercial, onChange: set("giro_comercial") })),
+        h(Field, { label: "Dirección Comercial" }, h("input", { value: form.direccion_comercial, onChange: set("direccion_comercial") })),
+        h(Field, { label: "Departamento / Oficina" }, h("input", { value: form.departamento_oficina, onChange: set("departamento_oficina") })),
+        h(Field, { label: "Región" },
+          h("select", { value: form.region, onChange: set("region") },
+            h("option", { value: "" }, "Selecciona región"),
+            (regiones || []).map((r) => h("option", { key: r.id, value: r.nombre }, r.nombre)),
+          )),
+        h(Field, { label: "Ciudad" }, h("input", { value: form.ciudad, onChange: set("ciudad"), placeholder: "Ciudad" })),
+        h(Field, { label: "Teléfono" }, h("input", { value: form.telefono, onChange: set("telefono") })),
+        h(Field, { label: "Sitio Web" }, h("input", { value: form.sitio_web, onChange: set("sitio_web") })),
+      ),
+
+      h("div", { className: "section-lbl" }, "Datos de Contacto"),
+      h("div", { className: "grid2" },
+        h(Field, { label: "Nombre Contacto" }, h("input", { value: form.contacto_nombre, onChange: set("contacto_nombre") })),
+        h(Field, { label: "Apellido Contacto" }, h("input", { value: form.contacto_apellido, onChange: set("contacto_apellido") })),
+        h(Field, { label: "Teléfono Contacto" }, h("input", { value: form.contacto_telefono, onChange: set("contacto_telefono") })),
+        h(Field, { label: "Celular Contacto" }, h("input", { value: form.contacto_celular, onChange: set("contacto_celular") })),
+        h(Field, { label: "Correo Usuario" }, h("input", { value: form.contacto_correo, onChange: set("contacto_correo"), type: "email" })),
+      ),
+
+      h("div", { className: "section-lbl" }, "Datos Bancarios"),
+      h("div", { className: "grid3" },
+        h(Field, { label: "Banco" }, h("input", { value: form.banco, onChange: set("banco") })),
+        h(Field, { label: "Tipo de Cuenta" },
+          h("select", { value: form.tipo_cuenta, onChange: set("tipo_cuenta") },
+            h("option", { value: "" }, "Selecciona"),
+            h("option", { value: "Cuenta Corriente" }, "Cuenta Corriente"),
+            h("option", { value: "Cuenta Vista" }, "Cuenta Vista"),
+            h("option", { value: "Cuenta de Ahorro" }, "Cuenta de Ahorro"),
+          )),
+        h(Field, { label: "Número de Cuenta" }, h("input", { value: form.numero_cuenta, onChange: set("numero_cuenta") })),
+      ),
+
+      h("div", { style: { display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 6 } },
+        h("button", { className: "btn-ghost", onClick: onClose }, "Cancelar"),
+        h("button", { className: "btn-primary", onClick: submit, disabled: saving }, saving ? "Guardando..." : "Aceptar"),
+      ),
+    )
+  );
+}
+
+function NuevaOC({ proveedores, catalogos, refreshProveedores, notify, onCreated }) {
+  const [showModal, setShowModal] = useState(false);
+  const [file, setFile] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({
+    proveedor_id: "", fecha: new Date().toISOString().slice(0, 10),
+    titulo: "", descripcion: "", motivo: "", gerencia: "",
+    centro_costo_codigo: "", cuenta_contable_codigo: "",
+    tipo_orden: "Afecto", tipo_compra: "Servicios", moneda: "CLP",
+    monto_neto: "", monto_iva: "", monto_total: "",
+    numero_hes: "", numero_egreso: "", numero_factura: "",
+  });
+  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  const setMontoNeto = (e) => {
+    const neto = e.target.value;
+    const iva = neto ? Math.round(Number(neto) * 0.19) : "";
+    const total = neto ? Math.round(Number(neto) * 1.19) : "";
+    setForm((f) => ({ ...f, monto_neto: neto, monto_iva: iva, monto_total: total }));
+  };
+
+  const handleCreated = (proveedor) => {
+    refreshProveedores();
+    setForm((f) => ({ ...f, proveedor_id: proveedor.id }));
+    setShowModal(false);
+  };
+
+  const submit = async () => {
+    if (!form.proveedor_id) return notify("err", "Selecciona un proveedor");
+    setSaving(true);
+    try {
+      let archivo_url = null, archivo_nombre = null;
+      if (file) {
+        const base64 = await fileToBase64(file);
+        const up = await api("upload", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ filename: file.name, base64 }),
+        });
+        archivo_url = up.url;
+        archivo_nombre = file.name;
+      }
+      const { orden } = await api("ordenes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...form, archivo_url, archivo_nombre }),
+      });
+      notify("ok", "OC " + orden.numero_oc + " creada");
+      onCreated();
+      setForm((f) => ({ ...f, titulo: "", descripcion: "", motivo: "", monto_neto: "", monto_iva: "", monto_total: "", numero_hes: "", numero_egreso: "", numero_factura: "" }));
+      setFile(null);
+    } catch (e) {
+      notify("err", e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return h("div", { className: "page fade-up" },
+    showModal && h(ProveedorModal, { regiones: catalogos.regiones, onClose: () => setShowModal(false), onCreated: handleCreated, notify }),
+
+    h("div", { className: "card" },
+      h("h2", null, "Nueva Orden de Compra"),
+
+      h(Field, { label: "Proveedor *" },
+        h("div", { className: "row-inline" },
+          h("select", { value: form.proveedor_id, onChange: set("proveedor_id") },
+            h("option", { value: "" }, "Selecciona un proveedor"),
+            proveedores.map((p) => h("option", { key: p.id, value: p.id }, p.razon_social + " — " + p.rut)),
+          ),
+          h("button", { className: "btn-add", title: "Agregar proveedor", onClick: () => setShowModal(true) }, "+"),
+        )
+      ),
+
+      h("div", { className: "section-lbl" }, "Detalle de la Orden"),
+      h("div", { className: "grid2" },
+        h(Field, { label: "Título" }, h("input", { value: form.titulo, onChange: set("titulo") })),
+        h(Field, { label: "Gerencia" }, h("input", { value: form.gerencia, onChange: set("gerencia") })),
+      ),
+      h(Field, { label: "Descripción" }, h("textarea", { rows: 2, value: form.descripcion, onChange: set("descripcion") })),
+      h(Field, { label: "Motivo" }, h("textarea", { rows: 2, value: form.motivo, onChange: set("motivo") })),
+
+      h("div", { className: "grid3" },
+        h(Field, { label: "Tipo de Orden" },
+          h("select", { value: form.tipo_orden, onChange: set("tipo_orden") },
+            h("option", { value: "Afecto" }, "Afecto"),
+            h("option", { value: "Exento" }, "Exento"),
+            h("option", { value: "Exento/Afecto" }, "Exento/Afecto"),
+          )),
+        h(Field, { label: "Tipo de Compra" },
+          h("select", { value: form.tipo_compra, onChange: set("tipo_compra") },
+            h("option", { value: "Servicios" }, "Servicios"),
+            h("option", { value: "Bienes" }, "Bienes"),
+          )),
+        h(Field, { label: "Moneda" },
+          h("select", { value: form.moneda, onChange: set("moneda") },
+            h("option", { value: "CLP" }, "CLP"),
+            h("option", { value: "USD" }, "USD"),
+            h("option", { value: "UF" }, "UF"),
+          )),
+      ),
+
+      h("div", { className: "grid2" },
+        h(Field, { label: "Centro de Costo" },
+          h("select", { value: form.centro_costo_codigo, onChange: set("centro_costo_codigo") },
+            h("option", { value: "" }, "Selecciona"),
+            catalogos.centrosCosto.map((c) => h("option", { key: c.codigo, value: c.codigo }, c.codigo + " — " + c.descripcion)),
+          )),
+        h(Field, { label: "Cuenta Contable" },
+          catalogos.cuentasContables.length
+            ? h("select", { value: form.cuenta_contable_codigo, onChange: set("cuenta_contable_codigo") },
+                h("option", { value: "" }, "Selecciona"),
+                catalogos.cuentasContables.map((c) => h("option", { key: c.codigo, value: c.codigo }, c.codigo + " — " + c.descripcion)),
+              )
+            : h("input", { value: form.cuenta_contable_codigo, onChange: set("cuenta_contable_codigo"), placeholder: "Aún sin catálogo — ingresa manualmente" })
+        ),
+      ),
+
+      h("div", { className: "section-lbl" }, "Montos"),
+      h("div", { className: "grid3" },
+        h(Field, { label: "Monto Neto" }, h("input", { type: "number", value: form.monto_neto, onChange: setMontoNeto })),
+        h(Field, { label: "Monto IVA" }, h("input", { type: "number", value: form.monto_iva, onChange: set("monto_iva") })),
+        h(Field, { label: "Monto Total" }, h("input", { type: "number", value: form.monto_total, onChange: set("monto_total") })),
+      ),
+
+      h("div", { className: "section-lbl" }, "Referencias"),
+      h("div", { className: "grid3" },
+        h(Field, { label: "Fecha" }, h("input", { type: "date", value: form.fecha, onChange: set("fecha") })),
+        h(Field, { label: "N° HES" }, h("input", { value: form.numero_hes, onChange: set("numero_hes") })),
+        h(Field, { label: "N° Egreso" }, h("input", { value: form.numero_egreso, onChange: set("numero_egreso") })),
+      ),
+
+      h("div", { className: "section-lbl" }, "Documento de la Orden de Compra"),
+      h("input", {
+        type: "file", id: "file-input", style: { display: "none" },
+        accept: ".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png",
+        onChange: (e) => setFile(e.target.files[0] || null),
+      }),
+      h("label", { htmlFor: "file-input", className: "drop-zone" + (file ? " done" : ""), style: { display: "block" } },
+        file ? ("✓ " + file.name) : "Haz clic para subir el PDF / Word / Excel / JPG / PNG de la orden"
+      ),
+      h("div", { className: "hint" }, "Formatos permitidos: PDF, Word, Excel, JPG, PNG"),
+
+      h("div", { style: { display: "flex", justifyContent: "flex-end", marginTop: 20 } },
+        h("button", { className: "btn-primary", onClick: submit, disabled: saving }, saving ? "Guardando..." : "Crear Orden de Compra"),
+      ),
+    )
+  );
+}
+
+function OrdenesList({ ordenes }) {
+  return h("div", { className: "page fade-up" },
+    h("div", { className: "card" },
+      h("h2", null, "Órdenes de Compra"),
+      ordenes.length === 0
+        ? h("div", { className: "empty" }, "Aún no hay órdenes de compra creadas en OCSys")
+        : h("table", null,
+            h("thead", null, h("tr", null,
+              h("th", null, "N° OC"), h("th", null, "Fecha"), h("th", null, "Proveedor"),
+              h("th", null, "Centro Costo"), h("th", null, "Monto Total"), h("th", null, "Estado"), h("th", null, "Archivo"),
+            )),
+            h("tbody", null, ordenes.map((o) => h("tr", { key: o.id },
+              h("td", null, o.numero_oc),
+              h("td", null, fmtDate(o.fecha)),
+              h("td", null, o.proveedores ? o.proveedores.razon_social : "—"),
+              h("td", null, o.centro_costo_codigo || "—"),
+              h("td", null, fmtMoney(o.monto_total)),
+              h("td", null, estadoPill(o.estado)),
+              h("td", null, o.archivo_url ? h("a", { className: "link", href: o.archivo_url, target: "_blank", rel: "noreferrer" }, "Ver") : "—"),
+            ))),
+          )
+    )
+  );
+}
+
+function ProveedoresList({ proveedores, catalogos, refreshProveedores, notify }) {
+  const [showModal, setShowModal] = useState(false);
+  return h("div", { className: "page fade-up" },
+    showModal && h(ProveedorModal, { regiones: catalogos.regiones, onClose: () => setShowModal(false), onCreated: () => { refreshProveedores(); setShowModal(false); }, notify }),
+    h("div", { className: "card" },
+      h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 } },
+        h("h2", { style: { marginBottom: 0 } }, "Proveedores"),
+        h("button", { className: "btn-primary", style: { padding: "8px 18px" }, onClick: () => setShowModal(true) }, "+ Nuevo Proveedor"),
+      ),
+      proveedores.length === 0
+        ? h("div", { className: "empty" }, "No hay proveedores cargados todavía")
+        : h("table", null,
+            h("thead", null, h("tr", null,
+              h("th", null, "Razón Social"), h("th", null, "RUT"), h("th", null, "Documento"),
+              h("th", null, "Giro"), h("th", null, "Ciudad"), h("th", null, "Contacto"), h("th", null, "Correo"),
+            )),
+            h("tbody", null, proveedores.map((p) => h("tr", { key: p.id },
+              h("td", null, p.razon_social),
+              h("td", null, p.rut),
+              h("td", null, p.tipo_documento),
+              h("td", null, p.giro_comercial || "—"),
+              h("td", null, p.ciudad || "—"),
+              h("td", null, [p.contacto_nombre, p.contacto_apellido].filter(Boolean).join(" ") || "—"),
+              h("td", null, p.contacto_correo || "—"),
+            ))),
+          )
+    )
+  );
+}
+
+function App() {
+  const [tab, setTab] = useState("nueva");
+  const [proveedores, setProveedores] = useState([]);
+  const [ordenes, setOrdenes] = useState([]);
+  const [catalogos, setCatalogos] = useState({ centrosCosto: [], cuentasContables: [], regiones: [], ciudades: [] });
+  const [notif, notify] = useNotif();
+
+  const loadProveedores = useCallback(() => {
+    api("proveedores").then((d) => setProveedores(d.proveedores)).catch((e) => notify("err", e.message));
+  }, [notify]);
+
+  const loadOrdenes = useCallback(() => {
+    api("ordenes").then((d) => setOrdenes(d.ordenes)).catch((e) => notify("err", e.message));
+  }, [notify]);
+
+  useEffect(() => {
+    loadProveedores();
+    loadOrdenes();
+    api("catalogos").then(setCatalogos).catch((e) => notify("err", e.message));
+  }, []);
+
+  return h("div", null,
+    notif && h("div", { className: "notif " + (notif.type === "ok" ? "notif-ok" : "notif-err") }, notif.msg),
+    h("div", { className: "header" },
+      h("img", { src: "/logo.jpg", alt: "Patagónica" }),
+      h("div", null, h("h1", null, "OCSys"), h("div", { className: "sub" }, "Órdenes de Compra — Patagónica Inmobiliaria")),
+    ),
+    h("div", { className: "nav" },
+      h("button", { className: "nav-btn" + (tab === "nueva" ? " active" : ""), onClick: () => setTab("nueva") }, "Nueva OC"),
+      h("button", { className: "nav-btn" + (tab === "ordenes" ? " active" : ""), onClick: () => setTab("ordenes") }, "Órdenes"),
+      h("button", { className: "nav-btn" + (tab === "proveedores" ? " active" : ""), onClick: () => setTab("proveedores") }, "Proveedores"),
+    ),
+    tab === "nueva" && h(NuevaOC, { proveedores, catalogos, refreshProveedores: loadProveedores, notify, onCreated: loadOrdenes }),
+    tab === "ordenes" && h(OrdenesList, { ordenes }),
+    tab === "proveedores" && h(ProveedoresList, { proveedores, catalogos, refreshProveedores: loadProveedores, notify }),
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(h(App));
+</script>
+</body>
+</html>
