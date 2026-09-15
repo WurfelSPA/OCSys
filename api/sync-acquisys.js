@@ -135,6 +135,10 @@ export default async function handler(req, res) {
       // (quedo con la fecha en que se corrio la migracion, no la real del
       // gasto) -- se corrige contra la fecha real de Acquisys si difiere.
       if (o.date_oc && existente.fecha !== o.date_oc) campos.fecha = o.date_oc;
+      // Mismo problema con la moneda: 43 ordenes quedaron como CLP aunque en
+      // Acquisys estaban en UF (el monto ya era el correcto, solo la
+      // etiqueta de moneda estaba mal) -- se corrige contra type_money.
+      if (o.type_money && existente.moneda !== o.type_money) campos.moneda = o.type_money;
       if (Object.keys(campos).length) {
         await db.from("ordenes_compra").update(campos).eq("id", existente.id);
       }
