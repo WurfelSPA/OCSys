@@ -1373,14 +1373,64 @@ function SincronizarAcquisys({ notify, refreshOrdenes, refreshProveedores }) {
   );
 }
 
+function VerificarClaveModal({ usuario, onClose, onVerificado, notify }) {
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  const verificar = async () => {
+    if (!password) return setErr("Ingresa la contraseña");
+    setBusy(true);
+    setErr("");
+    try {
+      await api("usuarios?action=verificar", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: usuario.id, password }),
+      });
+      onVerificado();
+    } catch (e) {
+      setErr(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return h("div", { className: "overlay", onClick: (e) => e.target === e.currentTarget && onClose() },
+    h("div", { className: "modal", style: { width: 360 } },
+      h("div", { className: "modal-hdr" },
+        h("h3", null, "Verificar identidad"),
+        h("button", { className: "modal-close", onClick: onClose }, "×"),
+      ),
+      h("p", { style: { fontSize: 13, color: "var(--txm)", marginBottom: 14 } },
+        "Ingresa la contraseña de " + (usuario.nombre || usuario.usuario) + " para ver o editar su perfil."),
+      h(Field, { label: "Contraseña" },
+        h("input", {
+          type: "password", value: password, onChange: (e) => setPassword(e.target.value), autoFocus: true,
+          onKeyDown: (e) => { if (e.key === "Enter") verificar(); },
+        })),
+      err && h("div", { className: "notif-err", style: { padding: "8px 12px", borderRadius: 8, marginTop: 8, fontSize: 13 } }, err),
+      h("div", { style: { display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 16 } },
+        h("button", { className: "btn-ghost", onClick: onClose }, "Cancelar"),
+        h("button", { className: "btn-primary", onClick: verificar, disabled: busy }, busy ? "Verificando..." : "Ingresar"),
+      ),
+    )
+  );
+}
+
 function AdministracionList({ usuarios, refreshUsuarios, notify, currentUser, refreshOrdenes, refreshProveedores }) {
   const [showModal, setShowModal] = useState(false);
+  const [verificando, setVerificando] = useState(null);
   const [editing, setEditing] = useState(null);
-  const closeAny = () => { setShowModal(false); setEditing(null); };
+  const closeAny = () => { setShowModal(false); setEditing(null); setVerificando(null); };
   return h("div", { className: "page fade-up" },
     (showModal || editing) && h(UsuarioModal, {
       editUsuario: editing, onClose: closeAny,
       onSaved: () => { refreshUsuarios(); closeAny(); }, notify,
+    }),
+    verificando && h(VerificarClaveModal, {
+      usuario: verificando, notify,
+      onClose: () => setVerificando(null),
+      onVerificado: () => { setEditing(verificando); setVerificando(null); },
     }),
     h("div", { className: "card" },
       h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 } },
@@ -1388,7 +1438,7 @@ function AdministracionList({ usuarios, refreshUsuarios, notify, currentUser, re
         h("button", { className: "btn-primary", style: { padding: "8px 18px" }, onClick: () => setShowModal(true) }, "+ Nuevo Usuario"),
       ),
       h(DataTable, {
-        columns: USUARIOS_COLUMNS, rows: usuarios, rowKey: (u) => u.id, onRowClick: setEditing,
+        columns: USUARIOS_COLUMNS, rows: usuarios, rowKey: (u) => u.id, onRowClick: setVerificando,
         searchFields: ["nombre", "apellido", "usuario"],
         searchPlaceholder: "Buscar por nombre, apellido o usuario",
         emptyText: "No hay usuarios cargados todavía",
