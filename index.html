@@ -1664,7 +1664,7 @@ function marcasEjeY(max, cantidad) {
   return marcas;
 }
 
-function GraficoMensual({ data, moneda }) {
+function GraficoMensual({ data, moneda, techo }) {
   const [grown, setGrown] = useState(false);
   const sig = data.map((d) => d.mes + ":" + d.barras.map((b) => b.value).join(",")).join("|");
   useEffect(() => {
@@ -1674,7 +1674,9 @@ function GraficoMensual({ data, moneda }) {
   }, [sig]);
 
   const maxDato = Math.max(1, ...data.flatMap((d) => d.barras.map((b) => b.value)));
-  const marcas = marcasEjeY(maxDato, 4);
+  // Techo manual (ej. 400M) evita que el eje se estire de mas por un valor
+  // puntual alto en otro periodo, dejando las barras chicas por defecto.
+  const marcas = techo ? [0, techo / 4, techo / 2, techo * 3 / 4, techo] : marcasEjeY(maxDato, 4);
   const maxEscala = marcas[marcas.length - 1] || maxDato;
   const ALTO = 140;
   const ZONA = ALTO - 16; // deja 16px de aire arriba para la etiqueta de valor de la barra mas alta
@@ -1807,7 +1809,7 @@ function Dashboard({ ordenes, proveedores, setTab }) {
       Object.keys(montoPorMes).sort().map((moneda) => h("div", { key: moneda, style: { marginTop: 18 } },
         h("div", { className: "section-lbl", style: { marginTop: 0, paddingTop: 0, borderTop: "none" } }, moneda),
         h("div", { style: { display: "flex", gap: 28, flexWrap: "wrap", alignItems: "center" } },
-          h("div", { style: { flex: "2 1 320px", minWidth: 0 } }, h(GraficoMensual, { data: montoPorMes[moneda], moneda })),
+          h("div", { style: { flex: "2 1 320px", minWidth: 0 } }, h(GraficoMensual, { data: montoPorMes[moneda], moneda, techo: moneda === "CLP" ? 400000000 : undefined })),
           h("div", { style: { flex: "1 1 260px", minWidth: 0 } },
             h(DonutParticipacion, { data: montoPorMes[moneda].map((d) => ({ mes: d.mes, valor: d.barras[0].value })), moneda }),
           ),
@@ -1825,7 +1827,7 @@ function Dashboard({ ordenes, proveedores, setTab }) {
         return h("div", { key: moneda, style: { marginTop: 18 } },
           h("div", { className: "section-lbl", style: { marginTop: 0, paddingTop: 0, borderTop: "none" } }, moneda),
           h("div", { style: { display: "flex", gap: 28, flexWrap: "wrap", alignItems: "center" } },
-            h("div", { style: { flex: "2 1 320px", minWidth: 0 } }, h(GraficoMensual, { data: ocVsFacturado[moneda], moneda })),
+            h("div", { style: { flex: "2 1 320px", minWidth: 0 } }, h(GraficoMensual, { data: ocVsFacturado[moneda], moneda, techo: moneda === "CLP" ? 400000000 : undefined })),
             h("div", { style: { flex: "1 1 220px", minWidth: 200 } },
               h(Medidor, {
                 pct, etiqueta: "% Facturado del Total OC",
