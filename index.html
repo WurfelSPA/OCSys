@@ -1048,7 +1048,8 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser }) {
     { key: "numero_hes", label: "N° HES" },
     { key: "numero_factura", label: "N° Factura" },
     { key: "centro_costo_codigo", label: "Centro Costo" },
-    { key: "monto_total", label: "Monto Total", render: (o) => fmtMoney(o.monto_total) },
+    { key: "moneda", label: "Moneda", render: (o) => o.moneda || "CLP" },
+    { key: "monto_total", label: "Monto Total", render: (o) => fmtMontoMoneda(o.monto_total, o.moneda || "CLP") },
     { key: "estado", label: "Estado", render: (o) => estadoPill(o.estado) },
     { key: "archivo", label: "Cotización", sortable: false, render: (o) => (o.archivo_url ? h("a", { className: "link", href: o.archivo_url, target: "_blank", rel: "noreferrer" }, truncar(o.archivo_nombre || "Ver", 280)) : "—") },
     { key: "archivo_oc", label: "OC", sortable: false, render: (o) => (o.archivo_oc_url ? h("a", { className: "link", href: o.archivo_oc_url, target: "_blank", rel: "noreferrer" }, truncar(o.archivo_oc_nombre || "Ver", 280)) : "—") },
@@ -1079,8 +1080,8 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser }) {
       h("h2", null, "Órdenes de Compra"),
       h(DataTable, {
         columns, rows: ordenes, rowKey: (o) => o.id,
-        searchFields: ["numero_oc", "numero_hes", "numero_egreso", "numero_factura"],
-        searchPlaceholder: "Buscar por N° OC, N° HES o N° Factura",
+        searchFields: ["numero_oc", "numero_hes", "numero_egreso", "numero_factura", "moneda"],
+        searchPlaceholder: "Buscar por N° OC, N° HES, N° Factura o Moneda (ej. UF)",
         emptyText: "Aún no hay órdenes de compra creadas en OCSys",
       }),
     )
@@ -1140,21 +1141,21 @@ function buildOCRows(ordenes) {
   return ordenes.map((o) => ({
     "N° OC": o.numero_oc, Proveedor: o.proveedores ? o.proveedores.razon_social : "",
     RUT: o.proveedores ? o.proveedores.rut : "", Fecha: o.fecha, "Centro Costo": o.centro_costo_codigo,
-    "Cuenta Contable": o.cuenta_contable_codigo, "Monto Neto": o.monto_neto, "Monto Total": o.monto_total, Estado: o.estado,
+    "Cuenta Contable": o.cuenta_contable_codigo, Moneda: o.moneda || "CLP", "Monto Neto": o.monto_neto, "Monto Total": o.monto_total, Estado: o.estado,
   }));
 }
 
 function buildHESRows(ordenes) {
   return ordenes.filter((o) => o.numero_hes || o.numero_egreso).map((o) => ({
     "N° OC": o.numero_oc, "N° HES": o.numero_hes, "N° Egreso": o.numero_egreso,
-    Proveedor: o.proveedores ? o.proveedores.razon_social : "", Fecha: o.fecha, "Monto Total": o.monto_total, Estado: o.estado,
+    Proveedor: o.proveedores ? o.proveedores.razon_social : "", Fecha: o.fecha, Moneda: o.moneda || "CLP", "Monto Total": o.monto_total, Estado: o.estado,
   }));
 }
 
 function buildFacturasRows(ordenes) {
   return ordenes.filter((o) => o.numero_factura).map((o) => ({
     "N° Factura": o.numero_factura, "N° OC": o.numero_oc,
-    Proveedor: o.proveedores ? o.proveedores.razon_social : "", Fecha: o.fecha, "Monto Total": o.monto_total, Estado: o.estado,
+    Proveedor: o.proveedores ? o.proveedores.razon_social : "", Fecha: o.fecha, Moneda: o.moneda || "CLP", "Monto Total": o.monto_total, Estado: o.estado,
   }));
 }
 
