@@ -131,6 +131,10 @@ export default async function handler(req, res) {
       if (!existente.numero_factura && factura) campos.numero_factura = factura;
       if (existente.monto_facturado == null && montoFacturado != null) campos.monto_facturado = montoFacturado;
       if ((!existente.cuotas || existente.cuotas.length === 0) && cuotas.length) campos.cuotas = cuotas;
+      // La migracion historica original guardo mal la fecha en muchos casos
+      // (quedo con la fecha en que se corrio la migracion, no la real del
+      // gasto) -- se corrige contra la fecha real de Acquisys si difiere.
+      if (o.date_oc && existente.fecha !== o.date_oc) campos.fecha = o.date_oc;
       if (Object.keys(campos).length) {
         await db.from("ordenes_compra").update(campos).eq("id", existente.id);
       }
