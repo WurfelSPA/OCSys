@@ -149,6 +149,7 @@ function estadoPill(estado) {
     "Aprobada": "pill-ok", "Aprobado": "pill-ok", "Factura Aprobada": "pill-ok",
     "Completada": "pill-info",
     "Anulado": "pill-anul", "Rechazado": "pill-anul",
+    "Proceso de Pago": "pill-pend", "Pagado": "pill-ok",
   };
   return h("span", { className: "pill " + (map[estado] || "pill-pend") }, estado || "Pendiente");
 }
@@ -1802,10 +1803,210 @@ function Dashboard({ ordenes, proveedores, setTab }) {
   );
 }
 
+function rendicionFormBlank() {
+  return {
+    fecha_gasto: new Date().toISOString().slice(0, 10),
+    nombre_apellido: "", descripcion: "", monto: "", cuenta_contable_codigo: "",
+  };
+}
+
+function RendicionComprobanteModal({ rendicion, onClose, onDone, notify }) {
+  const [file, setFile] = useState(null);
+  const [dragOver, setDragOver] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const submit = async () => {
+    if (!file) return notify("err", "Selecciona el comprobante de pago");
+    setSaving(true);
+    try {
+      const base64 = await fileToBase64(file);
+      const up = await api("upload", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filename: file.name, base64 }),
+      });
+      await api("rendiciones?id=" + rendicion.id, {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ archivo_comprobante_url: up.url, archivo_comprobante_nombre: file.name }),
+      });
+      notify("ok", "Rendición marcada como Pagada");
+      onDone();
+    } catch (e) {
+      notify("err", e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return h("div", { className: "overlay", onClick: (e) => e.target === e.currentTarget && onClose() },
+    h("div", { className: "modal", style: { width: 420 } },
+      h("div", { className: "modal-hdr" },
+        h("h3", null, "Subir comprobante de pago"),
+        h("button", { className: "modal-close", onClick: onClose }, "×"),
+      ),
+      h("p", { style: { fontSize: 13, color: "var(--txm)", marginBottom: 12 } },
+        "Rendición de " + rendicion.nombre_apellido + " — " + fmtMoney(rendicion.monto)),
+      h("input", {
+        type: "file", id: "comprobante-file", style: { display: "none" },
+        accept: ".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png",
+        onChange: (e) => setFile(e.target.files[0] || null),
+      }),
+      h("label", {
+        htmlFor: "comprobante-file",
+        className: "drop-zone" + (file ? " done" : "") + (dragOver ? " dragover" : ""),
+        style: { display: "block" },
+        ...fileDropHandlers(setFile, setDragOver),
+      }, file ? ("✓ " + file.name) : "Haz clic o arrastra aquí el comprobante de pago"),
+      h("div", { style: { display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 16 } },
+        h("button", { className: "btn-ghost", onClick: onClose }, "Cancelar"),
+        h("button", { className: "btn-primary", onClick: submit, disabled: saving }, saving ? "Guardando..." : "Confirmar"),
+      ),
+    )
+  );
+}
+
+function RendicionGastosPage({ rendiciones, refreshRendiciones, catalogos, notify, currentUser }) {
+  const [form, setForm] = useState(rendicionFormBlank());
+  const [file, setFile] = useState(null);
+  const [dragOver, setDragOver] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [subiendoComprobante, setSubiendoComprobante] = useState(null);
+
+  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  const registrarGasto = async () => {
+    if (!form.fecha_gasto || !form.nombre_apellido || !form.monto) {
+      return notify("err", "Fecha del Gasto, Nombre y Apellido y Monto son obligatorios");
+    }
+    setSaving(true);
+    try {
+      let archivo_boleta_url = null, archivo_boleta_nombre = null;
+      if (file) {
+        const base64 = await fileToBase64(file);
+        const up = await api("upload", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ filename: file.name, base64 }),
+        });
+        archivo_boleta_url = up.url;
+        archivo_boleta_nombre = file.name;
+      }
+      const { rendicion } = await api("rendiciones", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...form, archivo_boleta_url, archivo_boleta_nombre }),
+      });
+      notify("ok", "Gasto registrado: " + rendicion.nombre_apellido);
+      setForm(rendicionFormBlank());
+      setFile(null);
+      refreshRendiciones();
+    } catch (e) {
+      notify("err", e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const eliminarRendicion = async (r) => {
+    if (!window.confirm("¿Eliminar la rendición de \"" + r.nombre_apellido + "\"?")) return;
+    try {
+      await api("rendiciones?id=" + r.id, { method: "DELETE" });
+      notify("ok", "Rendición eliminada");
+      refreshRendiciones();
+    } catch (e) {
+      notify("err", e.message);
+    }
+  };
+
+  const puedeEliminar = currentUser && currentUser.nivel_aprobacion === 1;
+
+  const cuentaContableLabel = (codigo) => {
+    if (!codigo) return "—";
+    const c = catalogos.cuentasContables.find((cc) => cc.codigo === codigo);
+    return c ? c.codigo + " — " + c.descripcion : codigo;
+  };
+
+  const columns = useMemo(() => [
+    { key: "fecha_gasto", label: "Fecha del Gasto", render: (r) => fmtDate(r.fecha_gasto) },
+    { key: "nombre_apellido", label: "Nombre y Apellido" },
+    { key: "descripcion", label: "Descripción", render: (r) => truncar(r.descripcion, 220) },
+    { key: "monto", label: "Monto", render: (r) => fmtMoney(r.monto) },
+    { key: "cuenta_contable_codigo", label: "Cuenta Contable", render: (r) => truncar(cuentaContableLabel(r.cuenta_contable_codigo), 200) },
+    { key: "estado", label: "Estado", render: (r) => estadoPill(r.estado) },
+    { key: "archivo_boleta", label: "Boleta", sortable: false, render: (r) => (r.archivo_boleta_url ? h("a", { className: "link", href: r.archivo_boleta_url, target: "_blank", rel: "noreferrer" }, truncar(r.archivo_boleta_nombre || "Ver", 160)) : "—") },
+    {
+      key: "comprobante", label: "Comprobante de Pago", sortable: false,
+      render: (r) => r.archivo_comprobante_url
+        ? h("a", { className: "link", href: r.archivo_comprobante_url, target: "_blank", rel: "noreferrer" }, truncar(r.archivo_comprobante_nombre || "Ver", 160))
+        : h("button", { className: "btn-ghost", style: { padding: "4px 10px", fontSize: 11 }, onClick: () => setSubiendoComprobante(r) }, "Subir comprobante"),
+    },
+    ...(puedeEliminar ? [{
+      key: "eliminar", label: "", sortable: false,
+      render: (r) => h("button", { className: "btn-ghost", title: "Eliminar", style: { padding: "4px 8px", fontSize: 12, color: "var(--red)" }, onClick: () => eliminarRendicion(r) }, "🗑"),
+    }] : []),
+  ], [catalogos.cuentasContables, puedeEliminar]);
+
+  return h("div", { className: "page fade-up" },
+    subiendoComprobante && h(RendicionComprobanteModal, {
+      rendicion: subiendoComprobante, notify,
+      onClose: () => setSubiendoComprobante(null),
+      onDone: () => { setSubiendoComprobante(null); refreshRendiciones(); },
+    }),
+
+    h("div", { className: "card" },
+      h("div", { style: { display: "flex", alignItems: "baseline", gap: 8, marginBottom: 14 } },
+        h("h2", { style: { marginBottom: 0 } }, "Rendición de Gastos"),
+        h("div", { className: "hint", style: { fontSize: 12 } }, "(" + fmtDate(new Date().toISOString().slice(0, 10)) + ")"),
+      ),
+
+      h("div", { className: "grid3" },
+        h(Field, { label: "Fecha del Gasto *" }, h("input", { type: "date", value: form.fecha_gasto, onChange: set("fecha_gasto") })),
+        h(Field, { label: "Nombre y Apellido *" }, h("input", { value: form.nombre_apellido, onChange: set("nombre_apellido") })),
+        h(Field, { label: "Monto *" }, h("input", { type: "number", value: form.monto, onChange: set("monto") })),
+      ),
+      h("div", { className: "grid2" },
+        h(Field, { label: "Descripción" }, h("input", { value: form.descripcion, onChange: set("descripcion") })),
+        h(Field, { label: "Cuenta Contable" },
+          h(SearchSelect, {
+            options: catalogos.cuentasContables.map((c) => ({ value: c.codigo, label: c.codigo + " — " + c.descripcion })),
+            value: form.cuenta_contable_codigo,
+            onChange: (v) => setForm((f) => ({ ...f, cuenta_contable_codigo: v })),
+            placeholder: "Escribe para buscar cuenta contable...",
+          })),
+      ),
+
+      h("div", { className: "section-lbl" }, "Boleta"),
+      h("input", {
+        type: "file", id: "boleta-file", style: { display: "none" },
+        accept: ".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png",
+        onChange: (e) => setFile(e.target.files[0] || null),
+      }),
+      h("label", {
+        htmlFor: "boleta-file",
+        className: "drop-zone" + (file ? " done" : "") + (dragOver ? " dragover" : ""),
+        style: { display: "block" },
+        ...fileDropHandlers(setFile, setDragOver),
+      }, file ? ("✓ " + file.name) : "Haz clic o arrastra aquí la boleta (PDF / Word / Excel / JPG / PNG)"),
+
+      h("div", { style: { display: "flex", justifyContent: "flex-end", marginTop: 16 } },
+        h("button", { className: "btn-primary", onClick: registrarGasto, disabled: saving }, saving ? "Guardando..." : "Registrar Gasto"),
+      ),
+    ),
+
+    h("div", { className: "card", style: { marginTop: 20 } },
+      h("h2", null, "Rendiciones Ingresadas"),
+      h(DataTable, {
+        columns, rows: rendiciones, rowKey: (r) => r.id,
+        searchFields: ["nombre_apellido", "descripcion"],
+        searchPlaceholder: "Buscar por nombre o descripción",
+        emptyText: "No hay rendiciones ingresadas todavía",
+      }),
+    ),
+  );
+}
+
 function App({ currentUser, onLogout }) {
   const [tab, setTab] = useState("dashboard");
   const [proveedores, setProveedores] = useState([]);
   const [ordenes, setOrdenes] = useState([]);
+  const [rendiciones, setRendiciones] = useState([]);
   const [usuarios, setUsuarios] = useState([]);
   const [catalogos, setCatalogos] = useState({ centrosCosto: [], cuentasContables: [], regiones: [], ciudades: [], listos: false });
   const [notif, notify] = useNotif();
@@ -1822,10 +2023,15 @@ function App({ currentUser, onLogout }) {
     api("usuarios").then((d) => setUsuarios(d.usuarios)).catch((e) => notify("err", e.message));
   }, [notify]);
 
+  const loadRendiciones = useCallback(() => {
+    api("rendiciones").then((d) => setRendiciones(d.rendiciones)).catch((e) => notify("err", e.message));
+  }, [notify]);
+
   useEffect(() => {
     loadProveedores();
     loadOrdenes();
     loadUsuarios();
+    loadRendiciones();
     let cancelado = false;
     const cargarCatalogos = (intento) => {
       api("catalogos", { timeoutMs: 15000 })
@@ -1858,6 +2064,7 @@ function App({ currentUser, onLogout }) {
       h("button", { className: "nav-btn" + (tab === "dashboard" ? " active" : ""), onClick: () => setTab("dashboard") }, "Dashboard"),
       h("button", { className: "nav-btn" + (tab === "nueva" ? " active" : ""), onClick: () => setTab("nueva") }, "Nueva OC"),
       h("button", { className: "nav-btn" + (tab === "ordenes" ? " active" : ""), onClick: () => setTab("ordenes") }, "Órdenes"),
+      h("button", { className: "nav-btn" + (tab === "rendiciones" ? " active" : ""), onClick: () => setTab("rendiciones") }, "Rendición de Gastos"),
       h("button", { className: "nav-btn" + (tab === "proveedores" ? " active" : ""), onClick: () => setTab("proveedores") }, "Proveedores"),
       h("button", { className: "nav-btn" + (tab === "reportes" ? " active" : ""), onClick: () => setTab("reportes") }, "Reportes"),
       h("button", { className: "nav-btn" + (tab === "administracion" ? " active" : ""), onClick: () => setTab("administracion") }, "Administración"),
@@ -1865,6 +2072,7 @@ function App({ currentUser, onLogout }) {
     tab === "dashboard" && h(Dashboard, { ordenes, proveedores, setTab }),
     tab === "nueva" && h(NuevaOC, { proveedores, catalogos, refreshProveedores: loadProveedores, notify, onCreated: loadOrdenes, currentUser }),
     tab === "ordenes" && h(OrdenesList, { ordenes, refreshOrdenes: loadOrdenes, notify, currentUser }),
+    tab === "rendiciones" && h(RendicionGastosPage, { rendiciones, refreshRendiciones: loadRendiciones, catalogos, notify, currentUser }),
     tab === "proveedores" && h(ProveedoresList, { proveedores, catalogos, refreshProveedores: loadProveedores, notify, currentUser }),
     tab === "reportes" && h(ReportesList, { ordenes, proveedores, notify }),
     tab === "administracion" && h(AdministracionList, { usuarios, refreshUsuarios: loadUsuarios, notify, currentUser, refreshOrdenes: loadOrdenes, refreshProveedores: loadProveedores }),

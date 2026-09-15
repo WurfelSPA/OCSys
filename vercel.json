@@ -6,6 +6,7 @@
     "api/auth.js": { "maxDuration": 30 },
     "api/proveedores.js": { "maxDuration": 30 },
     "api/ordenes.js": { "maxDuration": 30 },
+    "api/rendiciones.js": { "maxDuration": 30 },
     "api/extraer-cotizacion.js": { "maxDuration": 60 },
     "api/sync-acquisys.js": { "maxDuration": 300 }
   }
