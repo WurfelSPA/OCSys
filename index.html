@@ -2106,7 +2106,7 @@ function App({ currentUser, onLogout }) {
     notif && h("div", { className: "notif notif-" + (notif.type === "ok" ? "ok" : notif.type === "warn" ? "warn" : "err") }, notif.msg),
     h("div", { className: "header" },
       h("img", { src: "/logo.jpg", alt: "Patagónica" }),
-      h("div", { style: { flex: 1 } }, h("h1", null, "OCSys"), h("div", { className: "sub" }, "Órdenes de Compra — Patagónica Inmobiliaria")),
+      h("div", { style: { flex: 1 } }, h("h1", null, "OCSys"), h("div", { className: "sub" }, "Órdenes de Compra — Patagónica Inmobiliaria · RUT 96.673.250-4")),
       h("div", { style: { fontSize: 12, color: "var(--txm)", display: "flex", alignItems: "center", gap: 12 } },
         (currentUser.nombre || currentUser.usuario),
         h("button", { className: "btn-ghost", style: { padding: "5px 12px", fontSize: 11 }, onClick: onLogout }, "Cerrar sesión"),
