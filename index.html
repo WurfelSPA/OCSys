@@ -951,6 +951,7 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, notify, onCreated
 function OrdenAccionModal({ orden, tipo, onClose, onDone, notify }) {
   const isAprobar = tipo === "aprobar";
   const [numeroFactura, setNumeroFactura] = useState("");
+  const [montoFacturado, setMontoFacturado] = useState("");
   const [file, setFile] = useState(null);
   const [dragOver, setDragOver] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -961,7 +962,7 @@ function OrdenAccionModal({ orden, tipo, onClose, onDone, notify }) {
     try {
       const payload = isAprobar
         ? { estado: "Aprobada" }
-        : { estado: "Completada", numero_factura: numeroFactura };
+        : { estado: "Completada", numero_factura: numeroFactura, monto_facturado: montoFacturado || null };
       if (!isAprobar && file) {
         const base64 = await fileToBase64(file);
         const up = await api("upload", {
@@ -1002,6 +1003,7 @@ function OrdenAccionModal({ orden, tipo, onClose, onDone, notify }) {
             "Se asignará automáticamente el N° HES y se enviará un correo al proveedor (" + ((orden.proveedores && orden.proveedores.razon_social) || "") + ") con la Orden de Compra adjunta.")
         : h(React.Fragment, null,
             h(Field, { label: "N° Factura *" }, h("input", { value: numeroFactura, onChange: (e) => setNumeroFactura(e.target.value), autoFocus: true })),
+            h(Field, { label: "Monto Facturado" }, h("input", { type: "number", value: montoFacturado, onChange: (e) => setMontoFacturado(e.target.value), placeholder: orden.monto_total })),
             h(Field, { label: "Factura (PDF/imagen)" },
               h("input", {
                 type: "file", id: "factura-file", style: { display: "none" },
