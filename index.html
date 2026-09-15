@@ -1491,6 +1491,93 @@ function fmtMontoMoneda(v, moneda) {
 }
 
 // Grafico de barras verticales por mes. `data`: [{ mes: "2026-09", barras: [{label,value,color}] }, ...] ya ordenado.
+// Medidor de una sola proporcion (0-100%): el relleno usa el acento, la pista
+// un paso mas claro de la misma rampa — nunca una torta de 2 secciones para
+// esto, un medidor es mas preciso y legible para un ratio simple.
+function Medidor({ pct, etiqueta, subtexto }) {
+  const pctClamp = Math.max(0, Math.min(100, pct));
+  return h("div", null,
+    h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8 } },
+      h("div", { style: { fontSize: 12.5, fontWeight: 600, color: "var(--txm)" } }, etiqueta),
+      h("div", { style: { fontSize: 24, fontWeight: 700, color: "var(--acc)" } }, Math.round(pctClamp) + "%"),
+    ),
+    h("div", { className: "bar-track", style: { height: 16, background: "var(--accbg)" } },
+      h("div", { className: "bar-fill", style: { width: pctClamp + "%", background: "var(--acc)", "--glow": "var(--acc)" } }),
+    ),
+    subtexto && h("div", { className: "hint", style: { marginTop: 8 } }, subtexto),
+  );
+}
+
+// Rampa ordinal (un solo tono, mas claro -> mas oscuro) para los meses de la
+// torta de participacion: el orden cronologico SI cambia el significado
+// (es una secuencia), asi que es un caso ordinal, no categorico — no hacen
+// falta 8 tonos fijos, un degrade monotono del acento es lo correcto.
+function tonoOrdinal(indice, total) {
+  const t = total <= 1 ? 0 : indice / (total - 1);
+  const l = 78 - t * 46; // 78% (mas antiguo) -> 32% (mas reciente)
+  return "hsl(208, 65%, " + l.toFixed(0) + "%)";
+}
+
+function polarACartesiano(cx, cy, r, anguloDeg) {
+  const rad = (anguloDeg - 90) * Math.PI / 180;
+  return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) };
+}
+function trazoAnillo(cx, cy, rExt, rInt, anguloInicio, anguloFin) {
+  const startOuter = polarACartesiano(cx, cy, rExt, anguloFin);
+  const endOuter = polarACartesiano(cx, cy, rExt, anguloInicio);
+  const startInner = polarACartesiano(cx, cy, rInt, anguloInicio);
+  const endInner = polarACartesiano(cx, cy, rInt, anguloFin);
+  const largeArc = anguloFin - anguloInicio > 180 ? 1 : 0;
+  return ["M", startOuter.x, startOuter.y, "A", rExt, rExt, 0, largeArc, 0, endOuter.x, endOuter.y,
+    "L", startInner.x, startInner.y, "A", rInt, rInt, 0, largeArc, 1, endInner.x, endInner.y, "Z"].join(" ");
+}
+
+// Torta (donut) de participacion por mes sobre el total del periodo.
+function DonutParticipacion({ data, moneda }) {
+  const total = data.reduce((s, d) => s + d.valor, 0);
+  if (total <= 0) return null;
+  const R = 68, r = 40, cx = 76, cy = 76, gapDeg = data.length > 1 ? 1.6 : 0;
+
+  let acumulado = 0;
+  const slices = data.map((d, i) => {
+    const frac = d.valor / total;
+    const inicio = acumulado * 360 + gapDeg / 2;
+    acumulado += frac;
+    const fin = acumulado * 360 - gapDeg / 2;
+    return {
+      ...d, pct: frac * 100,
+      color: tonoOrdinal(i, data.length),
+      path: fin > inicio ? trazoAnillo(cx, cy, R, r, inicio, fin) : null,
+    };
+  });
+
+  return h("div", { style: { display: "flex", alignItems: "center", gap: 20, flexWrap: "wrap" } },
+    h("div", { style: { position: "relative", flexShrink: 0 } },
+      h("svg", { width: 152, height: 152, viewBox: "0 0 152 152" },
+        slices.map((s, i) => s.path && h("path", {
+          key: i, d: s.path, fill: s.color,
+        }, h("title", null, fmtMesCorto(s.mes) + ": " + fmtMontoMoneda(s.valor, moneda) + " (" + s.pct.toFixed(1) + "%)"))),
+      ),
+      h("div", {
+        style: {
+          position: "absolute", inset: 0, display: "flex", flexDirection: "column",
+          alignItems: "center", justifyContent: "center", pointerEvents: "none", textAlign: "center",
+        },
+      },
+        h("div", { style: { fontSize: 9.5, color: "var(--txm)", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".04em" } }, "Total"),
+        h("div", { style: { fontSize: 13, fontWeight: 700, color: "var(--tx)" } }, fmtMontoMoneda(total, moneda)),
+      ),
+    ),
+    h("div", { style: { display: "flex", flexDirection: "column", gap: 6, flex: 1, minWidth: 140 } },
+      slices.map((s, i) => h("div", { key: i, style: { display: "flex", alignItems: "center", gap: 8, fontSize: 11.5 } },
+        h("span", { className: "stat-dot", style: { background: s.color, flexShrink: 0 } }),
+        h("span", { style: { color: "var(--txm)", flex: 1 } }, fmtMesCorto(s.mes)),
+        h("span", { style: { fontWeight: 700, color: "var(--tx)" } }, s.pct.toFixed(1) + "%"),
+      )),
+    ),
+  );
+}
+
 function GraficoMensual({ data, moneda }) {
   const [grown, setGrown] = useState(false);
   const sig = data.map((d) => d.mes + ":" + d.barras.map((b) => b.value).join(",")).join("|");
@@ -1609,16 +1696,35 @@ function Dashboard({ ordenes, proveedores, setTab }) {
       h("h2", null, "Monto Total de OC por Mes"),
       Object.keys(montoPorMes).sort().map((moneda) => h("div", { key: moneda, style: { marginTop: 18 } },
         h("div", { className: "section-lbl", style: { marginTop: 0, paddingTop: 0, borderTop: "none" } }, moneda),
-        h(GraficoMensual, { data: montoPorMes[moneda], moneda }),
+        h("div", { style: { display: "flex", gap: 28, flexWrap: "wrap", alignItems: "center" } },
+          h("div", { style: { flex: "2 1 320px", minWidth: 0 } }, h(GraficoMensual, { data: montoPorMes[moneda], moneda })),
+          h("div", { style: { flex: "1 1 260px", minWidth: 0 } },
+            h(DonutParticipacion, { data: montoPorMes[moneda].map((d) => ({ mes: d.mes, valor: d.barras[0].value })), moneda }),
+          ),
+        ),
       )),
     ),
     monedasConFactura.length > 0 && h("div", { className: "card", style: { marginTop: 20 } },
       h("h2", null, "OC vs. Monto Facturado"),
       h("p", { className: "hint", style: { marginBottom: 4 } }, "Compara lo emitido en órdenes de compra contra lo efectivamente facturado por mes."),
-      monedasConFactura.sort().map((moneda) => h("div", { key: moneda, style: { marginTop: 18 } },
-        h("div", { className: "section-lbl", style: { marginTop: 0, paddingTop: 0, borderTop: "none" } }, moneda),
-        h(GraficoMensual, { data: ocVsFacturado[moneda], moneda }),
-      )),
+      monedasConFactura.sort().map((moneda) => {
+        const totales = ocVsFacturado[moneda].reduce((acc, d) => ({
+          oc: acc.oc + d.barras[0].value, facturado: acc.facturado + d.barras[1].value,
+        }), { oc: 0, facturado: 0 });
+        const pct = totales.oc > 0 ? (totales.facturado / totales.oc) * 100 : 0;
+        return h("div", { key: moneda, style: { marginTop: 18 } },
+          h("div", { className: "section-lbl", style: { marginTop: 0, paddingTop: 0, borderTop: "none" } }, moneda),
+          h("div", { style: { display: "flex", gap: 28, flexWrap: "wrap", alignItems: "center" } },
+            h("div", { style: { flex: "2 1 320px", minWidth: 0 } }, h(GraficoMensual, { data: ocVsFacturado[moneda], moneda })),
+            h("div", { style: { flex: "1 1 220px", minWidth: 200 } },
+              h(Medidor, {
+                pct, etiqueta: "% Facturado del Total OC",
+                subtexto: fmtMontoMoneda(totales.facturado, moneda) + " facturado de " + fmtMontoMoneda(totales.oc, moneda) + " en OC",
+              }),
+            ),
+          ),
+        );
+      }),
       h("div", { className: "row-inline", style: { marginTop: 12, gap: 16 } },
         h("span", { style: { display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, color: "var(--txm)" } }, h("span", { className: "stat-dot", style: { background: "var(--acc)" } }), "OC"),
         h("span", { style: { display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, color: "var(--txm)" } }, h("span", { className: "stat-dot", style: { background: "var(--green)" } }), "Facturado"),
