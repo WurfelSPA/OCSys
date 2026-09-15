@@ -1494,7 +1494,7 @@ function fmtMontoMoneda(v, moneda) {
 // Medidor de una sola proporcion (0-100%): el relleno usa el acento, la pista
 // un paso mas claro de la misma rampa — nunca una torta de 2 secciones para
 // esto, un medidor es mas preciso y legible para un ratio simple.
-function Medidor({ pct, etiqueta, subtexto }) {
+function Medidor({ pct, etiqueta, facturado, oc, moneda }) {
   const pctClamp = Math.max(0, Math.min(100, pct));
   return h("div", null,
     h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8 } },
@@ -1504,7 +1504,10 @@ function Medidor({ pct, etiqueta, subtexto }) {
     h("div", { className: "bar-track", style: { height: 16, background: "var(--accbg)" } },
       h("div", { className: "bar-fill", style: { width: pctClamp + "%", background: "var(--acc)", "--glow": "var(--acc)" } }),
     ),
-    subtexto && h("div", { className: "hint", style: { marginTop: 8 } }, subtexto),
+    facturado !== undefined && h("div", { style: { marginTop: 12, display: "flex", flexDirection: "column", gap: 4 } },
+      h("div", { style: { fontSize: 16, fontWeight: 700, color: "var(--green)" } }, fmtMontoMoneda(facturado, moneda) + " facturado"),
+      h("div", { style: { fontSize: 15, fontWeight: 600, color: "var(--tx)" } }, "de " + fmtMontoMoneda(oc, moneda) + " en OC"),
+    ),
   );
 }
 
@@ -1578,6 +1581,36 @@ function DonutParticipacion({ data, moneda }) {
   );
 }
 
+function fmtCompacto(v, moneda) {
+  const abs = Math.abs(v);
+  const signo = v < 0 ? "-" : "";
+  if (moneda === "CLP") {
+    if (abs >= 1e9) return signo + "$" + (abs / 1e9).toFixed(1).replace(/\.0$/, "") + "MM";
+    if (abs >= 1e6) return signo + "$" + (abs / 1e6).toFixed(1).replace(/\.0$/, "") + "M";
+    if (abs >= 1e3) return signo + "$" + (abs / 1e3).toFixed(0) + "K";
+    return fmtMoney(v);
+  }
+  return moneda + " " + Number(v).toLocaleString("es-CL", { maximumFractionDigits: 1 });
+}
+
+// Redondea a un numero "limpio" para las marcas del eje Y (0 / 1.000 / 2.000...).
+function numeroLimpio(rango, redondear) {
+  const exp = Math.floor(Math.log10(rango || 1));
+  const frac = rango / Math.pow(10, exp);
+  let fracLimpia;
+  if (redondear) fracLimpia = frac < 1.5 ? 1 : frac < 3 ? 2 : frac < 7 ? 5 : 10;
+  else fracLimpia = frac <= 1 ? 1 : frac <= 2 ? 2 : frac <= 5 ? 5 : 10;
+  return fracLimpia * Math.pow(10, exp);
+}
+function marcasEjeY(max, cantidad) {
+  if (max <= 0) return [0];
+  const maxLimpio = numeroLimpio(max, false);
+  const paso = numeroLimpio(maxLimpio / (cantidad - 1), true);
+  const marcas = [];
+  for (let v = 0; v <= maxLimpio + paso * 0.5; v += paso) marcas.push(Math.round(v * 100) / 100);
+  return marcas;
+}
+
 function GraficoMensual({ data, moneda }) {
   const [grown, setGrown] = useState(false);
   const sig = data.map((d) => d.mes + ":" + d.barras.map((b) => b.value).join(",")).join("|");
@@ -1587,26 +1620,50 @@ function GraficoMensual({ data, moneda }) {
     return () => cancelAnimationFrame(r1);
   }, [sig]);
 
-  const max = Math.max(1, ...data.flatMap((d) => d.barras.map((b) => b.value)));
+  const maxDato = Math.max(1, ...data.flatMap((d) => d.barras.map((b) => b.value)));
+  const marcas = marcasEjeY(maxDato, 4);
+  const maxEscala = marcas[marcas.length - 1] || maxDato;
   const ALTO = 140;
+  const ZONA = ALTO - 16; // deja 16px de aire arriba para la etiqueta de valor de la barra mas alta
 
-  return h("div", { style: { overflowX: "auto" } },
-    h("div", { style: { display: "flex", alignItems: "flex-end", gap: 16, minHeight: ALTO + 40, padding: "4px 4px 0" } },
-      data.map((d) => h("div", { key: d.mes, style: { display: "flex", flexDirection: "column", alignItems: "center", gap: 8, flexShrink: 0 } },
-        h("div", { style: { display: "flex", alignItems: "flex-end", gap: 4, height: ALTO } },
-          d.barras.map((b, i) => h("div", {
+  return h("div", { style: { display: "flex" } },
+    h("div", { style: { position: "relative", width: 56, flexShrink: 0, height: ALTO } },
+      marcas.map((m, i) => h("div", {
+        key: i,
+        style: {
+          position: "absolute", right: 8, bottom: (m / maxEscala) * ZONA + "px", transform: "translateY(50%)",
+          fontSize: 9.5, color: "var(--txm)", whiteSpace: "nowrap",
+        },
+      }, fmtCompacto(m, moneda))),
+    ),
+    h("div", { style: { overflowX: "auto", flex: 1 } },
+      h("div", { style: { position: "relative", minWidth: "min-content" } },
+        h("div", { style: { position: "absolute", left: 0, right: 0, top: 0, height: ALTO } },
+          marcas.map((m, i) => h("div", {
             key: i,
-            title: b.label + " " + fmtMesCorto(d.mes) + ": " + fmtMontoMoneda(b.value, moneda),
-            className: "bar-fill", style: {
-              width: 16, borderRadius: "4px 4px 0 0", background: b.color, "--glow": b.color,
-              height: grown ? Math.max(2, (b.value / max) * ALTO) + "px" : "0px",
-              transition: "height 1.1s cubic-bezier(.22,.9,.24,1)",
-            },
+            style: { position: "absolute", left: 0, right: 0, bottom: (m / maxEscala) * ZONA + "px", borderTop: "1px solid var(--bdr)" },
           }))
         ),
-        h("div", { style: { fontSize: 10, color: "var(--txm)", fontWeight: 600, whiteSpace: "nowrap" } }, fmtMesCorto(d.mes)),
-      )),
-    )
+        h("div", { style: { display: "flex", alignItems: "flex-end", gap: 16, minHeight: ALTO + 40, padding: "4px 4px 0", position: "relative" } },
+          data.map((d) => h("div", { key: d.mes, style: { display: "flex", flexDirection: "column", alignItems: "center", gap: 8, flexShrink: 0 } },
+            h("div", { style: { display: "flex", alignItems: "flex-end", gap: 4, height: ALTO } },
+              d.barras.map((b, i) => h("div", { key: i, style: { display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-end", height: "100%" } },
+                grown && b.value > 0 && h("div", { style: { fontSize: 9, fontWeight: 700, color: "var(--txm)", marginBottom: 3, whiteSpace: "nowrap" } }, fmtCompacto(b.value, moneda)),
+                h("div", {
+                  title: b.label + " " + fmtMesCorto(d.mes) + ": " + fmtMontoMoneda(b.value, moneda),
+                  className: "bar-fill", style: {
+                    width: 16, borderRadius: "4px 4px 0 0", background: b.color, "--glow": b.color,
+                    height: grown ? Math.max(2, (b.value / maxEscala) * ZONA) + "px" : "0px",
+                    transition: "height 1.1s cubic-bezier(.22,.9,.24,1)",
+                  },
+                }),
+              ))
+            ),
+            h("div", { style: { fontSize: 10, color: "var(--txm)", fontWeight: 600, whiteSpace: "nowrap" } }, fmtMesCorto(d.mes)),
+          )),
+        ),
+      ),
+    ),
   );
 }
 
@@ -1719,7 +1776,7 @@ function Dashboard({ ordenes, proveedores, setTab }) {
             h("div", { style: { flex: "1 1 220px", minWidth: 200 } },
               h(Medidor, {
                 pct, etiqueta: "% Facturado del Total OC",
-                subtexto: fmtMontoMoneda(totales.facturado, moneda) + " facturado de " + fmtMontoMoneda(totales.oc, moneda) + " en OC",
+                facturado: totales.facturado, oc: totales.oc, moneda,
               }),
             ),
           ),
