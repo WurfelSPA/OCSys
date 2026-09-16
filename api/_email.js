@@ -126,15 +126,17 @@ export async function enviarCorreoAprobacion(orden) {
 }
 
 // Correo interno (no al proveedor) avisando al equipo de pagos que una OC
-// nativa quedó facturada y lista para pagar. Mientras no se definan los
-// destinatarios reales, PAGO_EMAIL_TO cae a wurfel.cl@gmail.com para poder
-// simular el envío a contabilidad sin arriesgar mandarlo a alguien real.
+// nativa quedó facturada y lista para pagar. El destinatario se resuelve en
+// este orden: correo_contabilidad configurado en Administración para la
+// empresa de la OC (editable sin redeploy) -> variable de entorno
+// PAGO_EMAIL_TO -> wurfel.cl@gmail.com como último respaldo para no arriesgar
+// mandarlo a alguien real si no hay nada configurado.
 export async function enviarCorreoFactura(orden) {
   if (!process.env.GMAIL_CLIENT_ID || !process.env.GMAIL_CLIENT_SECRET || !process.env.GMAIL_REFRESH_TOKEN) {
     throw new Error("Credenciales de Gmail no configuradas (GMAIL_CLIENT_ID/GMAIL_CLIENT_SECRET/GMAIL_REFRESH_TOKEN)");
   }
   const from = process.env.GMAIL_FROM || "facturacion@patagonica.cl";
-  const to = (process.env.PAGO_EMAIL_TO || "wurfel.cl@gmail.com")
+  const to = (orden.empresas?.correo_contabilidad || process.env.PAGO_EMAIL_TO || "wurfel.cl@gmail.com")
     .split(",").map((s) => s.trim()).filter(Boolean).join(", ");
 
   const numeroOc = orden.numero_oc_acquisys || orden.numero_oc;

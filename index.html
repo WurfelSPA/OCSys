@@ -1556,7 +1556,42 @@ function VerificarClaveModal({ usuario, onClose, onVerificado, notify }) {
   );
 }
 
-function AdministracionList({ usuarios, refreshUsuarios, notify, currentUser, refreshOrdenes, refreshProveedores, empresaId, empresa }) {
+function ConfiguracionCorreos({ empresa, notify, refreshEmpresas }) {
+  const [correo, setCorreo] = useState(empresa?.correo_contabilidad || "");
+  const [saving, setSaving] = useState(false);
+
+  const guardar = async () => {
+    setSaving(true);
+    try {
+      await api("empresas?id=" + empresa.id, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ correo_contabilidad: correo || null }),
+      });
+      notify("ok", "Correo de Contabilidad actualizado");
+      refreshEmpresas();
+    } catch (e) {
+      notify("err", e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return h("div", { className: "card", style: { marginTop: 20 } },
+    h("h2", null, "Correo de Contabilidad"),
+    h("p", { className: "hint", style: { marginBottom: 12 } },
+      "A este correo (o correos, separados por coma) se envía automáticamente la OC y la Factura cuando se factura una orden de " + (empresa?.nombre || "esta empresa") + "."),
+    h("div", { className: "row-inline" },
+      h("input", {
+        value: correo, onChange: (e) => setCorreo(e.target.value),
+        placeholder: "pagos@patagonica.cl, contabilidad@patagonica.cl", style: { flex: 1 }, disabled: saving,
+      }),
+      h("button", { className: "btn-primary", onClick: guardar, disabled: saving }, saving ? "Guardando..." : "Guardar"),
+    ),
+  );
+}
+
+function AdministracionList({ usuarios, refreshUsuarios, notify, currentUser, refreshOrdenes, refreshProveedores, refreshEmpresas, empresaId, empresa }) {
   const [showModal, setShowModal] = useState(false);
   const [verificando, setVerificando] = useState(null);
   const [editing, setEditing] = useState(null);
@@ -1583,6 +1618,7 @@ function AdministracionList({ usuarios, refreshUsuarios, notify, currentUser, re
         emptyText: "No hay usuarios cargados todavía",
       }),
     ),
+    currentUser && currentUser.nivel_aprobacion === 1 && h(ConfiguracionCorreos, { key: "correos-" + empresaId, empresa, notify, refreshEmpresas }),
     currentUser && currentUser.nivel_aprobacion === 1 && h(SincronizarAcquisys, { key: empresaId, notify, refreshOrdenes, refreshProveedores, empresaId, empresa }),
   );
 }
@@ -2349,8 +2385,12 @@ function App({ currentUser, onLogout }) {
       });
   }, [notify, empresaId]);
 
-  useEffect(() => {
+  const loadEmpresas = useCallback(() => {
     api("empresas").then((d) => setEmpresas(d.empresas)).catch((e) => notify("err", e.message));
+  }, [notify]);
+
+  useEffect(() => {
+    loadEmpresas();
     loadProveedores();
     loadUsuarios();
   }, []);
@@ -2397,7 +2437,7 @@ function App({ currentUser, onLogout }) {
     tab === "rendiciones" && h(RendicionGastosPage, { rendiciones, refreshRendiciones: loadRendiciones, catalogos, notify, currentUser, empresaId }),
     tab === "proveedores" && h(ProveedoresList, { proveedores, catalogos, refreshProveedores: loadProveedores, notify, currentUser }),
     tab === "reportes" && h(ReportesList, { ordenes, proveedores, notify }),
-    tab === "administracion" && h(AdministracionList, { usuarios, refreshUsuarios: loadUsuarios, notify, currentUser, refreshOrdenes: loadOrdenes, refreshProveedores: loadProveedores, empresaId, empresa: empresaActual }),
+    tab === "administracion" && h(AdministracionList, { usuarios, refreshUsuarios: loadUsuarios, notify, currentUser, refreshOrdenes: loadOrdenes, refreshProveedores: loadProveedores, refreshEmpresas: loadEmpresas, empresaId, empresa: empresaActual }),
   );
 }
 
