@@ -150,6 +150,7 @@ export default async function handler(req, res) {
     const tipoOrden = o.facture === "1" ? "Exento" : "Afecto";
     const neto = Number(o.amount_neto) || 0;
     const total = tipoOrden === "Afecto" ? Math.round(neto * 1.19 * 100) / 100 : neto;
+    const iva = tipoOrden === "Afecto" ? Math.round((total - neto) * 100) / 100 : 0;
     const cc = (o.centro_costo || [])[0];
     const cu = (o.cuenta_contable || [])[0];
     const ccCodigo = cc && centrosCostoValidos.has(cc.code) ? cc.code : null;
@@ -175,6 +176,7 @@ export default async function handler(req, res) {
       if (!existente.numero_hes && hes) campos.numero_hes = hes;
       if (!existente.numero_factura && factura) campos.numero_factura = factura;
       if (existente.monto_facturado == null && montoFacturado != null) campos.monto_facturado = montoFacturado;
+      if (existente.monto_iva == null) campos.monto_iva = iva;
       if ((!existente.cuotas || existente.cuotas.length === 0) && cuotas.length) campos.cuotas = cuotas;
       // La migracion historica original guardo mal la fecha en muchos casos
       // (quedo con la fecha en que se corrio la migracion, no la real del
@@ -226,6 +228,7 @@ export default async function handler(req, res) {
       tipo_orden: tipoOrden,
       moneda: o.type_money || "CLP",
       monto_neto: neto,
+      monto_iva: iva,
       monto_total: total,
       estado: o.status || "Activo",
       creado_por: o.responsible || null,
