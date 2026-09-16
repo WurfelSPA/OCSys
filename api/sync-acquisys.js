@@ -66,11 +66,13 @@ export default async function handler(req, res) {
 
   const db = supabase();
 
-  const [{ data: proveedoresExistentes }, { data: centrosCosto }, { data: cuentasContables }] = await Promise.all([
+  const [{ data: proveedoresExistentes }, { data: centrosCosto }, { data: cuentasContables }, { data: empresa }] = await Promise.all([
     db.from("proveedores").select("id, rut").eq("activo", true),
     db.from("centros_costo").select("codigo").eq("activo", true).eq("empresa_id", empresaId),
     db.from("cuentas_contables").select("codigo").eq("activo", true).eq("empresa_id", empresaId),
+    db.from("empresas").select("codigo").eq("id", empresaId).maybeSingle(),
   ]);
+  const empresaCodigo = empresa?.codigo || "EMP";
   const proveedorPorRut = new Map((proveedoresExistentes || []).map((p) => [rutNorm(p.rut), p.id]));
   const centrosCostoValidos = new Set((centrosCosto || []).map((c) => c.codigo));
   const cuentasContablesValidas = new Set((cuentasContables || []).map((c) => c.codigo));
@@ -152,8 +154,7 @@ export default async function handler(req, res) {
     }
 
     const proveedorId = await resolverProveedor(o);
-    const { data: creada, error } = await db.from("ordenes_compra").insert({
-      numero_oc: memo,
+    const camposOrden = {
       empresa_id: empresaId,
       proveedor_id: proveedorId,
       fecha: o.date_oc || undefined,
@@ -170,12 +171,23 @@ export default async function handler(req, res) {
       numero_factura: factura,
       monto_facturado: montoFacturado,
       cuotas,
-    }).select("id").single();
+    };
+
+    let numeroOcFinal = memo;
+    let { data: creada, error } = await db.from("ordenes_compra").insert({ numero_oc: numeroOcFinal, ...camposOrden }).select("id").single();
+    if (error && error.code === "23505") {
+      // El N de Memorandum ya existe para otra empresa (cada entidad en
+      // Acquisys numera de forma independiente) -- se antepone el codigo de
+      // esta empresa solo para el caso real de choque, sin renombrar nada
+      // que ya estuviera cargado.
+      numeroOcFinal = empresaCodigo + "-" + memo;
+      ({ data: creada, error } = await db.from("ordenes_compra").insert({ numero_oc: numeroOcFinal, ...camposOrden }).select("id").single());
+    }
     if (error) throw new Error("orden: " + error.message);
 
     if (o.cotizacion) await adjuntarCotizacion(db, creada.id, o.cotizacion, userToken);
 
-    return { numero_oc: memo, accion: "creada" };
+    return { numero_oc: numeroOcFinal, accion: "creada" };
   }
 
   const vistos = new Set();

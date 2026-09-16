@@ -104,12 +104,21 @@ export default async function handler(req, res) {
     if (!body.proveedor_id) {
       return res.status(400).json({ error: "proveedor_id es obligatorio" });
     }
+    const empresaId = Number(body.empresa_id) || 1;
     const estado = ESTADOS_OCSYS.includes(body.estado) ? body.estado : "Borrador";
+
+    const { data: empresa, error: empresaError } = await db.from("empresas").select("codigo").eq("id", empresaId).maybeSingle();
+    if (empresaError) return res.status(500).json({ error: empresaError.message });
+    const { data: siguiente, error: seqError } = await db.rpc("siguiente_numero_oc", { p_empresa_id: empresaId });
+    if (seqError) return res.status(500).json({ error: seqError.message });
+    const numero_oc = (empresa?.codigo || "OC") + "-OC-" + String(siguiente).padStart(5, "0");
+
     const { data, error } = await db
       .from("ordenes_compra")
       .insert({
+        numero_oc,
         proveedor_id: body.proveedor_id,
-        empresa_id: Number(body.empresa_id) || 1,
+        empresa_id: empresaId,
         fecha: body.fecha || undefined,
         titulo: body.titulo || null,
         descripcion: body.descripcion || null,
