@@ -1310,6 +1310,7 @@ function SincronizarAcquisys({ notify, refreshOrdenes, refreshProveedores, empre
   const [entityId, setEntityId] = useState(ENTITY_IDS_CONOCIDOS[empresaId] || "");
   const [corriendo, setCorriendo] = useState(false);
   const [log, setLog] = useState([]);
+  const [progresoPdf, setProgresoPdf] = useState(null);
 
   const agregarLog = (linea) => setLog((l) => [...l, linea]);
 
@@ -1349,9 +1350,10 @@ function SincronizarAcquisys({ notify, refreshOrdenes, refreshProveedores, empre
       const [{ ordenes }, { proveedores }] = await Promise.all([api("ordenes?empresa_id=" + empresaId), api("proveedores")]);
       const pendientes = ordenes.filter((o) => !o.archivo_oc_url);
       let ok = 0, err = 0;
+      setProgresoPdf({ actual: 0, total: pendientes.length });
       for (const orden of pendientes) {
         const proveedor = proveedores.find((p) => p.id === orden.proveedor_id);
-        if (!proveedor) { err++; continue; }
+        if (!proveedor) { err++; setProgresoPdf({ actual: ok + err, total: pendientes.length }); continue; }
         try {
           const pdfBlob = await generarPdfOC(orden, proveedor, orden.cuotas || [], empresa);
           const pdfBase64 = await fileToBase64(new File([pdfBlob], "OC.pdf", { type: "application/pdf" }));
@@ -1365,7 +1367,9 @@ function SincronizarAcquisys({ notify, refreshOrdenes, refreshProveedores, empre
           });
           ok++;
         } catch (e) { err++; }
+        setProgresoPdf({ actual: ok + err, total: pendientes.length });
       }
+      setProgresoPdf(null);
       agregarLog("PDFs de OC generados: " + ok + (err ? " (" + err + " con error)" : ""));
       refreshOrdenes();
       notify("ok", "Sincronización con Acquisys completada");
@@ -1398,7 +1402,7 @@ function SincronizarAcquisys({ notify, refreshOrdenes, refreshProveedores, empre
         marginTop: 14, background: "var(--surf2)", border: "1px solid var(--bdr)", borderRadius: 8,
         padding: 12, fontSize: 11.5, maxHeight: 220, overflow: "auto", whiteSpace: "pre-wrap",
       },
-    }, log.join("\n")),
+    }, log.join("\n") + (progresoPdf ? "\nGenerando PDF " + progresoPdf.actual + " de " + progresoPdf.total + "..." : "")),
   );
 }
 
