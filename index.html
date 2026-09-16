@@ -189,6 +189,7 @@ async function api(path, opts) {
 function formBlank() {
   return {
     proveedor_id: "", fecha: new Date().toISOString().slice(0, 10),
+    numero_cotizacion: "",
     titulo: "", descripcion: "", motivo: "", representante_compra: "",
     centro_costo_codigo: "", cuenta_contable_codigo: "",
     tipo_orden: "Afecto", tipo_compra: "Servicios", moneda: "CLP",
@@ -728,6 +729,7 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, notify, onCreated
       setForm((f) => ({
         ...f,
         proveedor_id: proveedorMatch ? proveedorMatch.id : f.proveedor_id,
+        numero_cotizacion: datos.numero_cotizacion || f.numero_cotizacion,
         titulo: (datos.titulo || "").slice(0, 150) || f.titulo,
         descripcion: datos.descripcion || f.descripcion,
         motivo: datos.motivo || f.motivo,
@@ -895,6 +897,8 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, notify, onCreated
       ),
       leyendoIA && h("div", { className: "pbar" }, h("div", { className: "pbar-fill" })),
       h("div", { className: "hint", style: { marginTop: 4 } }, "Formatos permitidos para subir: PDF, Word, Excel, JPG, PNG"),
+      h(Field, { label: "N° Cotización" },
+        h("input", { value: form.numero_cotizacion, onChange: set("numero_cotizacion"), placeholder: "Se completa automáticamente al leer con IA, o ingrésalo a mano" })),
 
       h(Field, { label: "Proveedor *" },
         h("div", { className: "row-inline" },
@@ -1118,6 +1122,10 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
   const puedeAprobar = currentUser && currentUser.nivel_aprobacion === 1;
 
   const eliminarOrden = async (o) => {
+    if (!puedeAprobar) {
+      notify("err", "Solo un administrador puede eliminar órdenes de compra.");
+      return;
+    }
     if (!window.confirm("¿Eliminar la OC " + (o.numero_oc_acquisys || o.numero_oc) + "? Dejará de verse en OCSys y en los informes.")) return;
     try {
       await api("ordenes?id=" + o.id, { method: "DELETE" });
@@ -1131,6 +1139,12 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
   const ordenesConVisible = useMemo(() => ordenes.map((o) => ({ ...o, numero_oc_visible: o.numero_oc_acquisys || o.numero_oc })), [ordenes]);
 
   const columns = useMemo(() => [
+    {
+      key: "archivo", label: "Cotiz.", sortable: false,
+      render: (o) => o.archivo_url
+        ? h("a", { className: "link", href: o.archivo_url, target: "_blank", rel: "noreferrer", title: o.archivo_nombre || "Ver cotización" }, o.numero_cotizacion || "Ver")
+        : "—",
+    },
     {
       key: "numero_oc_visible", label: "N° OC",
       render: (o) => h("div", null,
@@ -1149,11 +1163,15 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
         ? h("a", { className: "link", href: o.archivo_factura_url, target: "_blank", rel: "noreferrer", title: "Ver factura" }, o.numero_factura)
         : (o.numero_factura || "—"),
     },
+    {
+      key: "comprobante", label: "Comprobante", sortable: false,
+      render: (o) => o.archivo_comprobante_url
+        ? h("a", { className: "link", href: o.archivo_comprobante_url, target: "_blank", rel: "noreferrer", title: o.archivo_comprobante_nombre || "Ver comprobante de pago" }, "Ver")
+        : "—",
+    },
     { key: "centro_costo_codigo", label: "C. Costo" },
     { key: "monto_total", label: "Monto Total", sortValue: (o) => Number(o.monto_total) || 0, render: (o) => fmtMontoMoneda(o.monto_total, o.moneda || "CLP") },
     { key: "estado", label: "Estado", render: (o) => estadoPill(o.estado) },
-    { key: "archivo", label: "Cotiz.", sortable: false, render: (o) => (o.archivo_url ? h("a", { className: "link", href: o.archivo_url, target: "_blank", rel: "noreferrer", title: o.archivo_nombre || "Ver cotización" }, "📄") : "—") },
-    { key: "archivo_factura", label: "Fact.", sortable: false, render: (o) => (o.archivo_factura_url ? h("a", { className: "link", href: o.archivo_factura_url, target: "_blank", rel: "noreferrer", title: o.archivo_factura_nombre || "Ver factura" }, "📄") : "—") },
     {
       key: "accion", label: "Acción", sortable: false,
       render: (o) => o.estado === "Pendiente aprobación"
@@ -1166,10 +1184,14 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
         ? h("button", { className: "btn-ghost", style: { padding: "4px 10px", fontSize: 11 }, onClick: () => setAccion({ orden: o, tipo: "pagar" }) }, "Registrar Pago")
         : "—",
     },
-    ...(puedeAprobar ? [{
+    {
       key: "eliminar", label: "", sortable: false,
-      render: (o) => h("button", { className: "btn-ghost", title: "Eliminar OC", style: { padding: "4px 8px", fontSize: 12, color: "var(--red)" }, onClick: () => eliminarOrden(o) }, "🗑"),
-    }] : []),
+      render: (o) => h("button", {
+        className: "btn-ghost", title: puedeAprobar ? "Eliminar OC" : "Solo un administrador puede eliminar órdenes",
+        style: { padding: "4px 8px", fontSize: 12, color: puedeAprobar ? "var(--red)" : "var(--txd)" },
+        onClick: () => eliminarOrden(o),
+      }, "🗑"),
+    },
   ], [puedeAprobar]);
 
   return h("div", { className: "page fade-up" },

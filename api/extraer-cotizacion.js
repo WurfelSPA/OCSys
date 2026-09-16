@@ -4,6 +4,7 @@ import { readJsonBody } from "./_supabase.js";
 const RESPONSE_SCHEMA = {
   type: "object",
   properties: {
+    numero_cotizacion: { type: "string", description: "Número o folio de la cotización tal como aparece impreso en el documento (ej. 'N° 39512', 'Cotización N° 245', 'Folio 12'). Si el documento no indica un número, deja este campo como cadena vacía \"\" — no lo inventes." },
     proveedor_rut: { type: "string", description: "RUT del proveedor/emisor de la cotización, formato XX.XXX.XXX-X" },
     proveedor_razon_social: { type: "string", description: "Razón social o nombre del proveedor/emisor" },
     contacto_nombre: { type: "string", description: "Nombre de pila de la persona de contacto que firma o emite la cotización" },
@@ -23,6 +24,7 @@ const RESPONSE_SCHEMA = {
     monto_total: { type: "number", description: "Monto total (con IVA)" },
   },
   propertyOrdering: [
+    "numero_cotizacion",
     "proveedor_rut", "proveedor_razon_social",
     "contacto_nombre", "contacto_apellido", "contacto_telefono", "contacto_celular", "contacto_correo",
     "banco", "tipo_cuenta", "numero_cuenta",
@@ -65,7 +67,7 @@ export default async function handler(req, res) {
         contents: [{
           role: "user",
           parts: [
-            { text: "Esta es una cotización enviada por un proveedor a Patagónica Inmobiliaria. Extrae TODOS los datos solicitados en el esquema, incluyendo los datos bancarios (banco, tipo de cuenta, número de cuenta) y los datos de contacto (nombre, teléfono, celular, correo) si aparecen en el documento — no los omitas. Cada dato va SOLO en su propio campo: los montos van en monto_neto/monto_iva/monto_total, el banco y la cuenta van en banco/tipo_cuenta/numero_cuenta, nunca los repitas como texto dentro de titulo, descripcion o motivo. El titulo es un encabezado de máximo 8 palabras, sin cifras ni datos bancarios. El motivo debe quedar como cadena vacía si el documento no indica explícitamente para qué se solicita la compra — no escribas frases como 'no se indica motivo', simplemente déjalo vacío." },
+            { text: "Esta es una cotización enviada por un proveedor a Patagónica Inmobiliaria. Extrae TODOS los datos solicitados en el esquema, incluyendo el número o folio de la cotización (tal como aparece impreso en el documento, ej. 'N° 39512'), los datos bancarios (banco, tipo de cuenta, número de cuenta) y los datos de contacto (nombre, teléfono, celular, correo) si aparecen en el documento — no los omitas. Cada dato va SOLO en su propio campo: los montos van en monto_neto/monto_iva/monto_total, el banco y la cuenta van en banco/tipo_cuenta/numero_cuenta, nunca los repitas como texto dentro de titulo, descripcion o motivo. El titulo es un encabezado de máximo 8 palabras, sin cifras ni datos bancarios. El motivo debe quedar como cadena vacía si el documento no indica explícitamente para qué se solicita la compra — no escribas frases como 'no se indica motivo', simplemente déjalo vacío." },
             { inlineData: { mimeType, data: base64 } },
           ],
         }],
