@@ -2092,7 +2092,7 @@ function Dashboard({ ordenes, proveedores, setTab }) {
       Object.keys(montoPorMes).sort().map((moneda) => h("div", { key: moneda, style: { marginTop: 18 } },
         h("div", { className: "section-lbl", style: { marginTop: 0, paddingTop: 0, borderTop: "none" } }, moneda),
         h("div", { style: { display: "flex", gap: 28, flexWrap: "wrap", alignItems: "center" } },
-          h("div", { style: { flex: "2 1 320px", minWidth: 0 } }, h(GraficoMensual, { data: montoPorMes[moneda], moneda, techo: moneda === "CLP" ? 400000000 : undefined })),
+          h("div", { style: { flex: "2 1 320px", minWidth: 0 } }, h(GraficoMensual, { data: montoPorMes[moneda], moneda })),
           h("div", { style: { flex: "1 1 260px", minWidth: 0 } },
             h(DonutParticipacion, { data: montoPorMes[moneda].map((d) => ({ mes: d.mes, valor: d.barras[0].value })), moneda }),
           ),
@@ -2110,7 +2110,7 @@ function Dashboard({ ordenes, proveedores, setTab }) {
         return h("div", { key: moneda, style: { marginTop: 18 } },
           h("div", { className: "section-lbl", style: { marginTop: 0, paddingTop: 0, borderTop: "none" } }, moneda),
           h("div", { style: { display: "flex", gap: 28, flexWrap: "wrap", alignItems: "center" } },
-            h("div", { style: { flex: "2 1 320px", minWidth: 0 } }, h(GraficoMensual, { data: ocVsFacturado[moneda], moneda, techo: moneda === "CLP" ? 400000000 : undefined })),
+            h("div", { style: { flex: "2 1 320px", minWidth: 0 } }, h(GraficoMensual, { data: ocVsFacturado[moneda], moneda })),
             h("div", { style: { flex: "1 1 220px", minWidth: 200 } },
               h(Medidor, {
                 pct, etiqueta: "% Facturado del Total OC",
