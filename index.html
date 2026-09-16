@@ -1981,7 +1981,7 @@ function GraficoMensual({ data, moneda, techo }) {
             style: { position: "absolute", left: 0, right: 0, bottom: (m / maxEscala) * ZONA + "px", borderTop: "1px solid var(--bdr)" },
           }))
         ),
-        h("div", { style: { display: "flex", alignItems: "flex-end", gap: 16, minHeight: ALTO + 40, padding: "4px 4px 0", position: "relative" } },
+        h("div", { style: { display: "flex", alignItems: "flex-end", gap: 16, minHeight: ALTO + 40, padding: "0 4px", position: "relative" } },
           data.map((d) => h("div", { key: d.mes, style: { display: "flex", flexDirection: "column", alignItems: "center", gap: 8, flexShrink: 0 } },
             h("div", { style: { display: "flex", alignItems: "flex-end", gap: 4, height: ALTO } },
               d.barras.map((b, i) => h("div", { key: i, style: { display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-end", height: "100%" } },
