@@ -126,7 +126,18 @@ export default async function handler(req, res) {
       dias: d.days || 0, observacion: d.observation || "", monto: d.amount || 0, porcentaje: d.percent || 0,
     }));
 
-    const { data: existente } = await db.from("ordenes_compra").select("*").eq("numero_oc", memo).eq("empresa_id", empresaId).maybeSingle();
+    // Busca tanto por el memorandum crudo como por la version con prefijo de
+    // empresa (por si esta orden ya se creo asi en una sincronizacion previa
+    // debido a un choque con otra empresa) -- evita reintentar un insert que
+    // ya sabemos que va a chocar de nuevo.
+    const numeroOcPrefijado = empresaCodigo + "-" + memo;
+    const { data: existentes } = await db
+      .from("ordenes_compra")
+      .select("*")
+      .in("numero_oc", [memo, numeroOcPrefijado])
+      .eq("empresa_id", empresaId)
+      .limit(1);
+    const existente = (existentes || [])[0];
 
     if (existente) {
       const campos = {};
@@ -150,7 +161,7 @@ export default async function handler(req, res) {
         await adjuntarCotizacion(db, existente.id, o.cotizacion, userToken);
         cotizacionAdjuntada = true;
       }
-      return { numero_oc: memo, accion: "actualizada", campos: Object.keys(campos), cotizacionAdjuntada };
+      return { numero_oc: existente.numero_oc, accion: "actualizada", campos: Object.keys(campos), cotizacionAdjuntada };
     }
 
     const proveedorId = await resolverProveedor(o);
