@@ -15,6 +15,22 @@ export default async function handler(req, res) {
     if (!id) return res.status(400).json({ error: "id es obligatorio" });
     const body = await readJsonBody(req);
 
+    // Estos son los datos "de creacion" de la OC (los mismos que se cargan en
+    // Nueva OC) -- una vez que la orden entra a Aprobada (o mas alla), quedan
+    // congelados: ya se envio el HES/PDF al proveedor con esos datos, asi que
+    // corregirlos ahi generaria una OC inconsistente con lo ya enviado.
+    const CAMPOS_SOLO_ANTES_DE_APROBAR = [
+      "proveedor_id", "numero_cotizacion", "proyecto_id", "titulo", "descripcion", "motivo",
+      "creado_por", "centro_costo_codigo", "cuenta_contable_codigo", "tipo_orden", "tipo_compra",
+      "moneda", "monto_neto", "monto_iva", "monto_total", "fecha", "cuotas",
+    ];
+    if (CAMPOS_SOLO_ANTES_DE_APROBAR.some((k) => body[k] !== undefined)) {
+      const { data: actual } = await db.from("ordenes_compra").select("estado").eq("id", id).maybeSingle();
+      if (actual && !["Borrador", "Pendiente aprobación"].includes(actual.estado)) {
+        return res.status(403).json({ error: "La OC ya fue aprobada y no se puede editar" });
+      }
+    }
+
     const fields = {};
     let session = null;
     if (body.estado !== undefined) {
@@ -55,9 +71,21 @@ export default async function handler(req, res) {
     if (body.numero_hes !== undefined && body.estado === undefined) fields.numero_hes = body.numero_hes;
     if (body.numero_oc !== undefined) fields.numero_oc = body.numero_oc;
     if (body.numero_cotizacion !== undefined) fields.numero_cotizacion = body.numero_cotizacion;
+    if (body.proyecto_id !== undefined) fields.proyecto_id = body.proyecto_id || null;
     if (body.titulo !== undefined) fields.titulo = body.titulo;
     if (body.descripcion !== undefined) fields.descripcion = body.descripcion;
     if (body.motivo !== undefined) fields.motivo = body.motivo;
+    if (body.proveedor_id !== undefined) fields.proveedor_id = body.proveedor_id;
+    if (body.creado_por !== undefined) fields.creado_por = body.creado_por;
+    if (body.centro_costo_codigo !== undefined) fields.centro_costo_codigo = body.centro_costo_codigo || null;
+    if (body.cuenta_contable_codigo !== undefined) fields.cuenta_contable_codigo = body.cuenta_contable_codigo || null;
+    if (body.tipo_orden !== undefined) fields.tipo_orden = body.tipo_orden;
+    if (body.tipo_compra !== undefined) fields.tipo_compra = body.tipo_compra;
+    if (body.moneda !== undefined) fields.moneda = body.moneda;
+    if (body.monto_neto !== undefined) fields.monto_neto = body.monto_neto;
+    if (body.monto_iva !== undefined) fields.monto_iva = body.monto_iva;
+    if (body.monto_total !== undefined) fields.monto_total = body.monto_total;
+    if (body.fecha !== undefined) fields.fecha = body.fecha;
     if (body.cuotas !== undefined) fields.cuotas = Array.isArray(body.cuotas) ? body.cuotas : [];
 
     if (Object.keys(fields).length === 0) {
@@ -68,7 +96,7 @@ export default async function handler(req, res) {
       .from("ordenes_compra")
       .update({ ...fields, updated_at: new Date().toISOString() })
       .eq("id", id)
-      .select("*, proveedores(razon_social, rut, contacto_correo), empresas(correo_contabilidad)")
+      .select("*, proveedores(razon_social, rut, contacto_correo), empresas(correo_contabilidad), proyectos(nombre)")
       .single();
     if (error) return res.status(500).json({ error: error.message });
 
@@ -94,7 +122,7 @@ export default async function handler(req, res) {
     const empresaId = Number(req.query.empresa_id) || 1;
     const { data, error } = await db
       .from("ordenes_compra")
-      .select("*, proveedores(razon_social, rut)")
+      .select("*, proveedores(razon_social, rut), proyectos(nombre)")
       .eq("activo", true)
       .eq("empresa_id", empresaId)
       .order("created_at", { ascending: false });
@@ -143,6 +171,7 @@ export default async function handler(req, res) {
       .insert({
         numero_oc,
         numero_cotizacion: body.numero_cotizacion || null,
+        proyecto_id: body.proyecto_id || null,
         proveedor_id: body.proveedor_id,
         empresa_id: empresaId,
         fecha: body.fecha || undefined,

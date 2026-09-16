@@ -189,7 +189,7 @@ async function api(path, opts) {
 function formBlank() {
   return {
     proveedor_id: "", fecha: new Date().toISOString().slice(0, 10),
-    numero_cotizacion: "",
+    numero_cotizacion: "", proyecto_id: "",
     titulo: "", descripcion: "", motivo: "", representante_compra: "",
     centro_costo_codigo: "", cuenta_contable_codigo: "",
     tipo_orden: "Afecto", tipo_compra: "Servicios", moneda: "CLP",
@@ -664,7 +664,7 @@ function CuotasEditor({ cuotas, setCuotas, montoNeto, moneda }) {
   );
 }
 
-function NuevaOC({ proveedores, catalogos, refreshProveedores, notify, onCreated, currentUser, empresaId, empresa }) {
+function NuevaOC({ proveedores, catalogos, refreshProveedores, proyectos, refreshProyectos, notify, onCreated, currentUser, empresaId, empresa }) {
   const [showModal, setShowModal] = useState(false);
   const [provPrefill, setProvPrefill] = useState(null);
   const [provEditing, setProvEditing] = useState(null);
@@ -676,6 +676,30 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, notify, onCreated
   const [cuotas, setCuotas] = useState(distribuirCuotas(1, 0));
   const [form, setForm] = useState(formBlank());
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  // "Contenedor" es siempre el primer proyecto (se crea junto con la
+  // empresa) -- se preselecciona como default para que ninguna OC quede sin
+  // proyecto en los informes salvo que el usuario elija explicitamente otro.
+  useEffect(() => {
+    if (!form.proyecto_id && proyectos && proyectos.length) {
+      setForm((f) => (f.proyecto_id ? f : { ...f, proyecto_id: proyectos[0].id }));
+    }
+  }, [proyectos]);
+
+  const agregarProyecto = async () => {
+    const nombre = window.prompt("Nombre del nuevo proyecto:");
+    if (!nombre || !nombre.trim()) return;
+    try {
+      const { proyecto } = await api("proyectos", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nombre: nombre.trim(), empresa_id: empresaId }),
+      });
+      refreshProyectos();
+      setForm((f) => ({ ...f, proyecto_id: proyecto.id }));
+    } catch (e) {
+      notify("err", e.message);
+    }
+  };
 
   const setMontoNeto = (e) => {
     const neto = e.target.value;
@@ -939,7 +963,7 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, notify, onCreated
           )),
       ),
 
-      h("div", { className: "grid2" },
+      h("div", { className: "grid3" },
         h(Field, { label: "Centro de Costo" },
           h("select", {
             value: form.centro_costo_codigo, disabled: !catalogos.listos,
@@ -960,6 +984,16 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, notify, onCreated
                 placeholder: "Escribe para buscar cuenta contable...",
               })
         ),
+        h(Field, { label: "Proyectos" },
+          h("div", { className: "row-inline" },
+            h("select", {
+              value: form.proyecto_id, onChange: (e) => setForm((f) => ({ ...f, proyecto_id: e.target.value })),
+            },
+              h("option", { value: "" }, "Selecciona"),
+              proyectos.map((p) => h("option", { key: p.id, value: p.id }, p.nombre)),
+            ),
+            h("button", { className: "btn-add", title: "Agregar proyecto", type: "button", onClick: agregarProyecto }, "+"),
+          )),
       ),
 
       h("div", { className: "section-lbl" }, "Montos"),
@@ -1117,8 +1151,164 @@ function OrdenAccionModal({ orden, tipo, onClose, onDone, notify, proveedores, e
   );
 }
 
-function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores, empresa }) {
+function EditarOrdenModal({ orden, proveedores, catalogos, proyectos, refreshProyectos, empresaId, notify, onClose, onSaved }) {
+  const [form, setForm] = useState({
+    proveedor_id: orden.proveedor_id || "",
+    numero_cotizacion: orden.numero_cotizacion || "",
+    proyecto_id: orden.proyecto_id || "",
+    titulo: orden.titulo || "",
+    descripcion: orden.descripcion || "",
+    motivo: orden.motivo || "",
+    representante_compra: orden.creado_por || "",
+    fecha: orden.fecha || "",
+    centro_costo_codigo: orden.centro_costo_codigo || "",
+    cuenta_contable_codigo: orden.cuenta_contable_codigo || "",
+    tipo_orden: orden.tipo_orden || "Afecto",
+    tipo_compra: orden.tipo_compra || "Servicios",
+    moneda: orden.moneda || "CLP",
+    monto_neto: orden.monto_neto || "",
+    monto_iva: orden.monto_iva || "",
+    monto_total: orden.monto_total || "",
+  });
+  const [numCuotas, setNumCuotas] = useState((orden.cuotas || []).length || 1);
+  const [cuotas, setCuotas] = useState((orden.cuotas || []).length ? orden.cuotas : distribuirCuotas(1, orden.monto_neto || 0));
+  const [saving, setSaving] = useState(false);
+  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  const setMontoNeto = (e) => {
+    const neto = e.target.value;
+    const iva = neto ? Math.round(Number(neto) * 0.19) : "";
+    const total = neto ? Math.round(Number(neto) * 1.19) : "";
+    setForm((f) => ({ ...f, monto_neto: neto, monto_iva: iva, monto_total: total }));
+    setCuotas(distribuirCuotas(numCuotas, neto || 0));
+  };
+  const setNumCuotasField = (e) => {
+    const n = Math.max(1, Number(e.target.value) || 1);
+    setNumCuotas(n);
+    setCuotas(distribuirCuotas(n, form.monto_neto || 0));
+  };
+
+  const agregarProyecto = async () => {
+    const nombre = window.prompt("Nombre del nuevo proyecto:");
+    if (!nombre || !nombre.trim()) return;
+    try {
+      const { proyecto } = await api("proyectos", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nombre: nombre.trim(), empresa_id: empresaId }),
+      });
+      refreshProyectos();
+      setForm((f) => ({ ...f, proyecto_id: proyecto.id }));
+    } catch (e) {
+      notify("err", e.message);
+    }
+  };
+
+  const guardar = async () => {
+    if (!form.proveedor_id) return notify("err", "Selecciona un proveedor");
+    setSaving(true);
+    try {
+      await api("ordenes?id=" + orden.id, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...form, creado_por: form.representante_compra, cuotas }),
+      });
+      notify("ok", "OC actualizada");
+      onSaved();
+    } catch (e) {
+      notify("err", e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return h("div", { className: "overlay", onClick: (e) => e.target === e.currentTarget && onClose() },
+    h("div", { className: "modal", style: { width: 560, maxHeight: "90vh", overflowY: "auto" } },
+      h("div", { className: "modal-hdr" },
+        h("h3", null, "Editar OC " + (orden.numero_oc_acquisys || orden.numero_oc)),
+        h("button", { className: "modal-close", onClick: onClose }, "×")
+      ),
+      h(Field, { label: "Proveedor *" },
+        h(ProveedorPicker, { proveedores, value: form.proveedor_id, onChange: (id) => setForm((f) => ({ ...f, proveedor_id: id })) })),
+      h("div", { className: "grid2" },
+        h(Field, { label: "N° Cotización" }, h("input", { value: form.numero_cotizacion, onChange: set("numero_cotizacion") })),
+        h(Field, { label: "Fecha" }, h("input", { type: "date", value: form.fecha, onChange: set("fecha") })),
+      ),
+      h("div", { className: "grid2" },
+        h(Field, { label: "Título" }, h("input", { value: form.titulo, onChange: set("titulo") })),
+        h(Field, { label: "Representante de Compra" }, h("input", { value: form.representante_compra, onChange: set("representante_compra") })),
+      ),
+      h(Field, { label: "Descripción" }, h("textarea", { rows: 2, value: form.descripcion, onChange: set("descripcion") })),
+      h(Field, { label: "Motivo" }, h("textarea", { rows: 2, value: form.motivo, onChange: set("motivo") })),
+      h("div", { className: "grid3" },
+        h(Field, { label: "Tipo de Orden" },
+          h("select", { value: form.tipo_orden, onChange: set("tipo_orden") },
+            h("option", { value: "Afecto" }, "Afecto"),
+            h("option", { value: "Exento" }, "Exento"),
+          )),
+        h(Field, { label: "Tipo de Compra" },
+          h("select", { value: form.tipo_compra, onChange: set("tipo_compra") },
+            h("option", { value: "Servicios" }, "Servicios"),
+            h("option", { value: "Bienes" }, "Bienes"),
+          )),
+        h(Field, { label: "Moneda" },
+          h("select", { value: form.moneda, onChange: set("moneda") },
+            h("option", { value: "CLP" }, "CLP"),
+            h("option", { value: "USD" }, "USD"),
+            h("option", { value: "UF" }, "UF"),
+          )),
+      ),
+      h("div", { className: "grid3" },
+        h(Field, { label: "Centro de Costo" },
+          h("select", {
+            value: form.centro_costo_codigo, disabled: !catalogos.listos,
+            onChange: (e) => setForm((f) => ({ ...f, centro_costo_codigo: e.target.value, cuenta_contable_codigo: "" })),
+          },
+            h("option", { value: "" }, catalogos.listos ? "Selecciona" : "Cargando..."),
+            catalogos.centrosCosto.map((c) => h("option", { key: c.codigo, value: c.codigo }, c.codigo + " — " + c.descripcion)),
+          )),
+        h(Field, { label: "Cuenta Contable" },
+          !form.centro_costo_codigo
+            ? h("input", { disabled: true, placeholder: "Primero selecciona un Centro de Costo" })
+            : h(SearchSelect, {
+                options: catalogos.cuentasContables
+                  .filter((c) => c.centro_costo_codigo === form.centro_costo_codigo)
+                  .map((c) => ({ value: c.codigo, label: c.codigo + " — " + c.descripcion })),
+                value: form.cuenta_contable_codigo,
+                onChange: (v) => setForm((f) => ({ ...f, cuenta_contable_codigo: v })),
+                placeholder: "Escribe para buscar cuenta contable...",
+              })),
+        h(Field, { label: "Proyectos" },
+          h("div", { className: "row-inline" },
+            h("select", {
+              value: form.proyecto_id, onChange: (e) => setForm((f) => ({ ...f, proyecto_id: e.target.value })),
+            },
+              h("option", { value: "" }, "Selecciona"),
+              proyectos.map((p) => h("option", { key: p.id, value: p.id }, p.nombre)),
+            ),
+            h("button", { className: "btn-add", title: "Agregar proyecto", type: "button", onClick: agregarProyecto }, "+"),
+          )),
+      ),
+      h("div", { className: "section-lbl" }, "Montos"),
+      h("div", { className: "grid3" },
+        h(Field, { label: "Monto Neto" }, h("input", { type: "number", value: form.monto_neto, onChange: setMontoNeto })),
+        h(Field, { label: "Monto IVA" }, h("input", { type: "number", value: form.monto_iva, onChange: set("monto_iva") })),
+        h(Field, { label: "Monto Total" }, h("input", { type: "number", value: form.monto_total, onChange: set("monto_total") })),
+      ),
+      h("div", { className: "section-lbl" }, "Cuotas de Pago"),
+      h(Field, { label: "N° de Cuotas" }, h("input", { type: "number", min: 1, value: numCuotas, onChange: setNumCuotasField, style: { width: 90 } })),
+      h(CuotasEditor, { cuotas, setCuotas, montoNeto: form.monto_neto, moneda: form.moneda }),
+
+      h("div", { style: { display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 16 } },
+        h("button", { className: "btn-ghost", onClick: onClose }, "Cancelar"),
+        h("button", { className: "btn-primary", onClick: guardar, disabled: saving }, saving ? "Guardando..." : "Guardar cambios"),
+      ),
+    )
+  );
+}
+
+function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores, catalogos, proyectos, refreshProyectos, empresaId, empresa }) {
   const [accion, setAccion] = useState(null);
+  const [editando, setEditando] = useState(null);
   const puedeAprobar = currentUser && currentUser.nivel_aprobacion === 1;
 
   const eliminarOrden = async (o) => {
@@ -1185,6 +1375,12 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
         : "—",
     },
     {
+      key: "editar", label: "", sortable: false,
+      render: (o) => ["Borrador", "Pendiente aprobación"].includes(o.estado)
+        ? h("button", { className: "btn-ghost", title: "Editar OC", style: { padding: "4px 8px", fontSize: 12 }, onClick: () => setEditando(o) }, "✏️")
+        : null,
+    },
+    {
       key: "eliminar", label: "", sortable: false,
       render: (o) => h("button", {
         className: "btn-ghost", title: puedeAprobar ? "Eliminar OC" : "Solo un administrador puede eliminar órdenes",
@@ -1199,6 +1395,11 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
       orden: accion.orden, tipo: accion.tipo, notify, proveedores, empresa,
       onClose: () => setAccion(null),
       onDone: () => { refreshOrdenes(); setAccion(null); },
+    }),
+    editando && h(EditarOrdenModal, {
+      orden: editando, proveedores, catalogos, proyectos, refreshProyectos, empresaId, notify,
+      onClose: () => setEditando(null),
+      onSaved: () => { refreshOrdenes(); setEditando(null); },
     }),
     h("div", { className: "card" },
       h("h2", null, "Órdenes de Compra"),
@@ -1265,7 +1466,8 @@ function buildOCRows(ordenes) {
   return ordenes.map((o) => ({
     "N° OC": o.numero_oc, Proveedor: o.proveedores ? o.proveedores.razon_social : "",
     RUT: o.proveedores ? o.proveedores.rut : "", Fecha: o.fecha, "Centro Costo": o.centro_costo_codigo,
-    "Cuenta Contable": o.cuenta_contable_codigo, Moneda: o.moneda || "CLP", "Monto Neto": o.monto_neto, "Monto Total": o.monto_total, Estado: o.estado,
+    "Cuenta Contable": o.cuenta_contable_codigo, Proyecto: o.proyectos ? o.proyectos.nombre : "",
+    Moneda: o.moneda || "CLP", "Monto Neto": o.monto_neto, "Monto Total": o.monto_total, Estado: o.estado,
   }));
 }
 
@@ -2345,6 +2547,7 @@ function App({ currentUser, onLogout }) {
   const [ordenes, setOrdenes] = useState([]);
   const [rendiciones, setRendiciones] = useState([]);
   const [usuarios, setUsuarios] = useState([]);
+  const [proyectos, setProyectos] = useState([]);
   const [catalogos, setCatalogos] = useState({ centrosCosto: [], cuentasContables: [], regiones: [], ciudades: [], listos: false });
   const [notif, notify] = useNotif();
   const [empresas, setEmpresas] = useState([]);
@@ -2389,6 +2592,10 @@ function App({ currentUser, onLogout }) {
     api("empresas").then((d) => setEmpresas(d.empresas)).catch((e) => notify("err", e.message));
   }, [notify]);
 
+  const loadProyectos = useCallback(() => {
+    api("proyectos?empresa_id=" + empresaId).then((d) => setProyectos(d.proyectos)).catch((e) => notify("err", e.message));
+  }, [notify, empresaId]);
+
   useEffect(() => {
     loadEmpresas();
     loadProveedores();
@@ -2400,6 +2607,7 @@ function App({ currentUser, onLogout }) {
     loadOrdenes();
     loadRendiciones();
     loadCatalogos();
+    loadProyectos();
   }, [empresaId]);
 
   useEffect(() => {
@@ -2435,8 +2643,8 @@ function App({ currentUser, onLogout }) {
       h("button", { className: "nav-btn" + (tab === "administracion" ? " active" : ""), onClick: () => setTab("administracion") }, "Administración"),
     ),
     tab === "dashboard" && h(Dashboard, { ordenes, proveedores, setTab }),
-    tab === "nueva" && h(NuevaOC, { proveedores, catalogos, refreshProveedores: loadProveedores, notify, onCreated: loadOrdenes, currentUser, empresaId, empresa: empresaActual }),
-    tab === "ordenes" && h(OrdenesList, { ordenes, refreshOrdenes: loadOrdenes, notify, currentUser, proveedores, empresa: empresaActual }),
+    tab === "nueva" && h(NuevaOC, { proveedores, catalogos, refreshProveedores: loadProveedores, proyectos, refreshProyectos: loadProyectos, notify, onCreated: loadOrdenes, currentUser, empresaId, empresa: empresaActual }),
+    tab === "ordenes" && h(OrdenesList, { ordenes, refreshOrdenes: loadOrdenes, notify, currentUser, proveedores, catalogos, proyectos, refreshProyectos: loadProyectos, empresaId, empresa: empresaActual }),
     tab === "rendiciones" && h(RendicionGastosPage, { rendiciones, refreshRendiciones: loadRendiciones, catalogos, notify, currentUser, empresaId }),
     tab === "proveedores" && h(ProveedoresList, { proveedores, catalogos, refreshProveedores: loadProveedores, notify, currentUser }),
     tab === "reportes" && h(ReportesList, { ordenes, proveedores, notify }),
