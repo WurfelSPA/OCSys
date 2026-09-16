@@ -49,22 +49,33 @@ async function conConcurrencia(concurrencia, items, fn) {
   await Promise.all(Array.from({ length: Math.min(concurrencia, items.length) }, trabajador));
 }
 
+function esperar(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 // Detalle completo de una orden (Titulo/Motivo/Descripcion) -- no viene en
 // el listado /admin/order, solo en esta ficha individual por id de memo.
-async function obtenerDetalleMemo(idMemo, userToken) {
-  try {
-    const r = await fetch("https://acquisysbck.dkohome.cl/admin/memorandum/" + idMemo, {
-      headers: { user_token: userToken },
-    });
-    if (!r.ok) return null;
-    const dRaw = await r.json();
-    // El endpoint responde con un arreglo de un elemento, no un objeto suelto.
-    const d = Array.isArray(dRaw) ? dRaw[0] : dRaw;
-    if (!d) return null;
-    return { titulo: d.subject || null, descripcion: d.description || null, motivo: d.motive || null };
-  } catch (e) {
-    return null;
+// Acquisys no aguanta bien mucha concurrencia (fallaba intermitentemente
+// bajo carga en pruebas reales), asi que reintenta un par de veces antes
+// de rendirse.
+async function obtenerDetalleMemo(idMemo, userToken, intentos = 3) {
+  for (let intento = 1; intento <= intentos; intento++) {
+    try {
+      const r = await fetch("https://acquisysbck.dkohome.cl/admin/memorandum/" + idMemo, {
+        headers: { user_token: userToken },
+      });
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      const dRaw = await r.json();
+      // El endpoint responde con un arreglo de un elemento, no un objeto suelto.
+      const d = Array.isArray(dRaw) ? dRaw[0] : dRaw;
+      if (!d) return null;
+      return { titulo: d.subject || null, descripcion: d.description || null, motivo: d.motive || null };
+    } catch (e) {
+      if (intento === intentos) return null;
+      await esperar(400 * intento);
+    }
   }
+  return null;
 }
 
 async function adjuntarCotizacion(db, ordenId, cotizacionUrl, userToken) {
@@ -298,7 +309,7 @@ export default async function handler(req, res) {
     const existente = existentePorNumero.get(memo) || existentePorNumero.get(numeroOcPrefijado);
     if (!existente || !existente.titulo) idsMemoConDetallePendiente.add(o.id_memo);
   });
-  await conConcurrencia(8, Array.from(idsMemoConDetallePendiente), async (idMemo) => {
+  await conConcurrencia(4, Array.from(idsMemoConDetallePendiente), async (idMemo) => {
     const detalle = await obtenerDetalleMemo(idMemo, userToken);
     if (detalle) detallesPorId.set(idMemo, detalle);
   });
