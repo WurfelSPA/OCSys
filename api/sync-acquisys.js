@@ -153,6 +153,11 @@ export default async function handler(req, res) {
       // Acquisys estaban en UF (el monto ya era el correcto, solo la
       // etiqueta de moneda estaba mal) -- se corrige contra type_money.
       if (o.type_money && existente.moneda !== o.type_money) campos.moneda = o.type_money;
+      // N de Memorandum (numero_oc) y N de Orden real de Acquisys (num_order,
+      // ej. "OC-00281") son dos secuencias independientes que no se
+      // corresponden numericamente -- se guarda el segundo aparte para poder
+      // buscar por el numero que el equipo realmente usa a diario.
+      if (!existente.numero_oc_acquisys && o.num_order) campos.numero_oc_acquisys = o.num_order;
       if (Object.keys(campos).length) {
         await db.from("ordenes_compra").update(campos).eq("id", existente.id);
       }
@@ -168,6 +173,7 @@ export default async function handler(req, res) {
     const camposOrden = {
       empresa_id: empresaId,
       proveedor_id: proveedorId,
+      numero_oc_acquisys: o.num_order || null,
       fecha: o.date_oc || undefined,
       gerencia: o.gerencia || null,
       centro_costo_codigo: ccCodigo,

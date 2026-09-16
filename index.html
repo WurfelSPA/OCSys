@@ -1057,9 +1057,12 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser }) {
   const columns = useMemo(() => [
     {
       key: "numero_oc", label: "N° OC",
-      render: (o) => o.archivo_oc_url
-        ? h("a", { className: "link", href: o.archivo_oc_url, target: "_blank", rel: "noreferrer", title: "Ver PDF de la OC" }, o.numero_oc)
-        : o.numero_oc,
+      render: (o) => h("div", null,
+        o.archivo_oc_url
+          ? h("a", { className: "link", href: o.archivo_oc_url, target: "_blank", rel: "noreferrer", title: "Ver PDF de la OC" }, o.numero_oc)
+          : o.numero_oc,
+        o.numero_oc_acquisys && h("div", { style: { fontSize: 10, color: "var(--txd)" } }, o.numero_oc_acquisys),
+      ),
     },
     { key: "fecha", label: "Fecha", render: (o) => fmtDate(o.fecha) },
     { key: "proveedor", label: "Proveedor", sortValue: (o) => (o.proveedores ? o.proveedores.razon_social : ""), render: (o) => truncar(o.proveedores ? o.proveedores.razon_social : "—", 160) },
@@ -1096,7 +1099,7 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser }) {
       h("h2", null, "Órdenes de Compra"),
       h(DataTable, {
         columns, rows: ordenes, rowKey: (o) => o.id,
-        searchFields: ["numero_oc", "numero_hes", "numero_egreso", "numero_factura", "moneda"],
+        searchFields: ["numero_oc", "numero_oc_acquisys", "numero_hes", "numero_egreso", "numero_factura", "moneda"],
         searchPlaceholder: "Buscar por N° OC, N° HES, N° Factura o Moneda (ej. UF)",
         emptyText: "Aún no hay órdenes de compra creadas en OCSys",
       }),
