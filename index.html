@@ -641,7 +641,7 @@ function CuotasEditor({ cuotas, setCuotas, montoNeto, moneda }) {
   );
 }
 
-function NuevaOC({ proveedores, catalogos, refreshProveedores, notify, onCreated, currentUser }) {
+function NuevaOC({ proveedores, catalogos, refreshProveedores, notify, onCreated, currentUser, empresaId }) {
   const [showModal, setShowModal] = useState(false);
   const [provPrefill, setProvPrefill] = useState(null);
   const [provEditing, setProvEditing] = useState(null);
@@ -790,7 +790,7 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, notify, onCreated
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...form, estado, archivo_url, archivo_nombre, cuotas,
-          creado_por: form.representante_compra,
+          creado_por: form.representante_compra, empresa_id: empresaId,
         }),
         timeoutMs: 25000,
       });
@@ -1283,8 +1283,9 @@ const USUARIOS_COLUMNS = [
     : h("span", { className: "pill pill-pend" }, "Sin definir")) },
 ];
 
-function SincronizarAcquisys({ notify, refreshOrdenes, refreshProveedores }) {
+function SincronizarAcquisys({ notify, refreshOrdenes, refreshProveedores, empresaId }) {
   const [acquisysToken, setAcquisysToken] = useState("");
+  const [entityId, setEntityId] = useState(empresaId === 1 ? "4" : "");
   const [corriendo, setCorriendo] = useState(false);
   const [log, setLog] = useState([]);
 
@@ -1292,12 +1293,13 @@ function SincronizarAcquisys({ notify, refreshOrdenes, refreshProveedores }) {
 
   const sincronizar = async () => {
     if (!acquisysToken.trim()) return notify("err", "Pega el user_token de Acquisys primero");
+    if (!entityId.trim()) return notify("err", "Ingresa el entity_id de Acquisys para esta empresa");
     setCorriendo(true);
     setLog([]);
     try {
       agregarLog("Consultando órdenes en Acquisys...");
       const hoy = new Date().toISOString().slice(0, 10);
-      const url = "https://acquisysbck.dkohome.cl/admin/order?responsible_id=&gerencia=&status=&date_ini=2015-1-1&date_end=" + hoy + "&entity_id=4";
+      const url = "https://acquisysbck.dkohome.cl/admin/order?responsible_id=&gerencia=&status=&date_ini=2015-1-1&date_end=" + hoy + "&entity_id=" + entityId;
       const rAcq = await fetch(url, { headers: { accept: "application/json", user_token: acquisysToken } });
       if (!rAcq.ok) throw new Error("Acquisys respondió " + rAcq.status + " — el user_token puede haber expirado (dura ~24h)");
       const ordenesAcquisys = await rAcq.json();
@@ -1307,7 +1309,7 @@ function SincronizarAcquisys({ notify, refreshOrdenes, refreshProveedores }) {
       const resultado = await api("sync-acquisys", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userToken: acquisysToken, ordenes: ordenesAcquisys }),
+        body: JSON.stringify({ userToken: acquisysToken, ordenes: ordenesAcquisys, empresaId }),
         timeoutMs: 280000,
       });
       agregarLog(
@@ -1322,7 +1324,7 @@ function SincronizarAcquisys({ notify, refreshOrdenes, refreshProveedores }) {
       refreshProveedores();
 
       agregarLog("Generando PDF de OC para las órdenes que aún no lo tienen...");
-      const [{ ordenes }, { proveedores }] = await Promise.all([api("ordenes"), api("proveedores")]);
+      const [{ ordenes }, { proveedores }] = await Promise.all([api("ordenes?empresa_id=" + empresaId), api("proveedores")]);
       const pendientes = ordenes.filter((o) => !o.archivo_oc_url);
       let ok = 0, err = 0;
       for (const orden of pendientes) {
@@ -1362,6 +1364,10 @@ function SincronizarAcquisys({ notify, refreshOrdenes, refreshProveedores }) {
         value: acquisysToken, onChange: (e) => setAcquisysToken(e.target.value),
         placeholder: "Pega aquí el user_token de Acquisys (F12 → Network → header user_token)",
         style: { flex: 1 }, disabled: corriendo,
+      }),
+      h("input", {
+        value: entityId, onChange: (e) => setEntityId(e.target.value),
+        placeholder: "entity_id", style: { width: 90 }, disabled: corriendo,
       }),
       h("button", { className: "btn-primary", onClick: sincronizar, disabled: corriendo }, corriendo ? "Sincronizando..." : "Sincronizar"),
     ),
@@ -1418,7 +1424,7 @@ function VerificarClaveModal({ usuario, onClose, onVerificado, notify }) {
   );
 }
 
-function AdministracionList({ usuarios, refreshUsuarios, notify, currentUser, refreshOrdenes, refreshProveedores }) {
+function AdministracionList({ usuarios, refreshUsuarios, notify, currentUser, refreshOrdenes, refreshProveedores, empresaId }) {
   const [showModal, setShowModal] = useState(false);
   const [verificando, setVerificando] = useState(null);
   const [editing, setEditing] = useState(null);
@@ -1445,7 +1451,7 @@ function AdministracionList({ usuarios, refreshUsuarios, notify, currentUser, re
         emptyText: "No hay usuarios cargados todavía",
       }),
     ),
-    currentUser && currentUser.nivel_aprobacion === 1 && h(SincronizarAcquisys, { notify, refreshOrdenes, refreshProveedores }),
+    currentUser && currentUser.nivel_aprobacion === 1 && h(SincronizarAcquisys, { notify, refreshOrdenes, refreshProveedores, empresaId }),
   );
 }
 
@@ -1919,7 +1925,7 @@ function RendicionComprobanteModal({ rendicion, onClose, onDone, notify }) {
   );
 }
 
-function RendicionGastosPage({ rendiciones, refreshRendiciones, catalogos, notify, currentUser }) {
+function RendicionGastosPage({ rendiciones, refreshRendiciones, catalogos, notify, currentUser, empresaId }) {
   const [form, setForm] = useState(rendicionFormBlank());
   const [file, setFile] = useState(null);
   const [dragOver, setDragOver] = useState(false);
@@ -1946,7 +1952,7 @@ function RendicionGastosPage({ rendiciones, refreshRendiciones, catalogos, notif
       }
       const { rendicion } = await api("rendiciones", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...form, archivo_boleta_url, archivo_boleta_nombre }),
+        body: JSON.stringify({ ...form, archivo_boleta_url, archivo_boleta_nombre, empresa_id: empresaId }),
       });
       notify("ok", "Gasto registrado: " + rendicion.nombre_apellido);
       setForm(rendicionFormBlank());
@@ -2065,52 +2071,69 @@ function App({ currentUser, onLogout }) {
   const [usuarios, setUsuarios] = useState([]);
   const [catalogos, setCatalogos] = useState({ centrosCosto: [], cuentasContables: [], regiones: [], ciudades: [], listos: false });
   const [notif, notify] = useNotif();
+  const [empresas, setEmpresas] = useState([]);
+  const [empresaId, setEmpresaIdState] = useState(() => {
+    try { return Number(localStorage.getItem("ocsys_empresa_id")) || 1; } catch (e) { return 1; }
+  });
+  const setEmpresaId = (id) => {
+    setEmpresaIdState(id);
+    try { localStorage.setItem("ocsys_empresa_id", String(id)); } catch (e) { /* modo privado u otro bloqueo: no persiste, no es critico */ }
+  };
 
   const loadProveedores = useCallback(() => {
     api("proveedores").then((d) => setProveedores(d.proveedores)).catch((e) => notify("err", e.message));
   }, [notify]);
 
   const loadOrdenes = useCallback(() => {
-    api("ordenes").then((d) => setOrdenes(d.ordenes)).catch((e) => notify("err", e.message));
-  }, [notify]);
+    api("ordenes?empresa_id=" + empresaId).then((d) => setOrdenes(d.ordenes)).catch((e) => notify("err", e.message));
+  }, [notify, empresaId]);
 
   const loadUsuarios = useCallback(() => {
     api("usuarios").then((d) => setUsuarios(d.usuarios)).catch((e) => notify("err", e.message));
   }, [notify]);
 
   const loadRendiciones = useCallback(() => {
-    api("rendiciones").then((d) => setRendiciones(d.rendiciones)).catch((e) => notify("err", e.message));
-  }, [notify]);
+    api("rendiciones?empresa_id=" + empresaId).then((d) => setRendiciones(d.rendiciones)).catch((e) => notify("err", e.message));
+  }, [notify, empresaId]);
+
+  const loadCatalogos = useCallback((intento = 1) => {
+    api("catalogos?empresa_id=" + empresaId, { timeoutMs: 15000 })
+      .then((d) => setCatalogos({ ...d, listos: true }))
+      .catch((e) => {
+        if (intento < 3) {
+          setTimeout(() => loadCatalogos(intento + 1), 1500 * intento);
+        } else {
+          notify("err", "No se pudieron cargar los catálogos (Centro de Costo / Región / Cuenta Contable): " + e.message + " — recarga la página para reintentar.");
+          setCatalogos((c) => ({ ...c, listos: true }));
+        }
+      });
+  }, [notify, empresaId]);
 
   useEffect(() => {
+    api("empresas").then((d) => setEmpresas(d.empresas)).catch((e) => notify("err", e.message));
     loadProveedores();
-    loadOrdenes();
     loadUsuarios();
-    loadRendiciones();
-    let cancelado = false;
-    const cargarCatalogos = (intento) => {
-      api("catalogos", { timeoutMs: 15000 })
-        .then((d) => { if (!cancelado) setCatalogos({ ...d, listos: true }); })
-        .catch((e) => {
-          if (cancelado) return;
-          if (intento < 3) {
-            setTimeout(() => cargarCatalogos(intento + 1), 1500 * intento);
-          } else {
-            notify("err", "No se pudieron cargar los catálogos (Centro de Costo / Región / Cuenta Contable): " + e.message + " — recarga la página para reintentar.");
-            setCatalogos((c) => ({ ...c, listos: true }));
-          }
-        });
-    };
-    cargarCatalogos(1);
-    return () => { cancelado = true; };
   }, []);
+
+  useEffect(() => {
+    setCatalogos((c) => ({ ...c, listos: false }));
+    loadOrdenes();
+    loadRendiciones();
+    loadCatalogos();
+  }, [empresaId]);
+
+  const empresaActual = empresas.find((e) => e.id === empresaId);
 
   return h("div", null,
     notif && h("div", { className: "notif notif-" + (notif.type === "ok" ? "ok" : notif.type === "warn" ? "warn" : "err") }, notif.msg),
     h("div", { className: "header" },
       h("img", { src: "/logo.jpg", alt: "Patagónica" }),
-      h("div", { style: { flex: 1 } }, h("h1", null, "OCSys"), h("div", { className: "sub" }, "Órdenes de Compra — Patagónica Inmobiliaria · RUT 96.673.250-4")),
+      h("div", { style: { flex: 1 } }, h("h1", null, "OCSys"), h("div", { className: "sub" }, "Órdenes de Compra" + (empresaActual ? " — " + empresaActual.nombre + " · RUT " + empresaActual.rut : ""))),
       h("div", { style: { fontSize: 12, color: "var(--txm)", display: "flex", alignItems: "center", gap: 12 } },
+        empresas.length > 0 && h("select", {
+          value: empresaId, onChange: (e) => setEmpresaId(Number(e.target.value)),
+          style: { fontSize: 12, padding: "5px 8px", width: "auto" },
+        }, empresas.map((emp) => h("option", { key: emp.id, value: emp.id }, emp.nombre))),
         (currentUser.nombre || currentUser.usuario),
         h("button", { className: "btn-ghost", style: { padding: "5px 12px", fontSize: 11 }, onClick: onLogout }, "Cerrar sesión"),
       ),
@@ -2125,12 +2148,12 @@ function App({ currentUser, onLogout }) {
       h("button", { className: "nav-btn" + (tab === "administracion" ? " active" : ""), onClick: () => setTab("administracion") }, "Administración"),
     ),
     tab === "dashboard" && h(Dashboard, { ordenes, proveedores, setTab }),
-    tab === "nueva" && h(NuevaOC, { proveedores, catalogos, refreshProveedores: loadProveedores, notify, onCreated: loadOrdenes, currentUser }),
+    tab === "nueva" && h(NuevaOC, { proveedores, catalogos, refreshProveedores: loadProveedores, notify, onCreated: loadOrdenes, currentUser, empresaId }),
     tab === "ordenes" && h(OrdenesList, { ordenes, refreshOrdenes: loadOrdenes, notify, currentUser }),
-    tab === "rendiciones" && h(RendicionGastosPage, { rendiciones, refreshRendiciones: loadRendiciones, catalogos, notify, currentUser }),
+    tab === "rendiciones" && h(RendicionGastosPage, { rendiciones, refreshRendiciones: loadRendiciones, catalogos, notify, currentUser, empresaId }),
     tab === "proveedores" && h(ProveedoresList, { proveedores, catalogos, refreshProveedores: loadProveedores, notify, currentUser }),
     tab === "reportes" && h(ReportesList, { ordenes, proveedores, notify }),
-    tab === "administracion" && h(AdministracionList, { usuarios, refreshUsuarios: loadUsuarios, notify, currentUser, refreshOrdenes: loadOrdenes, refreshProveedores: loadProveedores }),
+    tab === "administracion" && h(AdministracionList, { usuarios, refreshUsuarios: loadUsuarios, notify, currentUser, refreshOrdenes: loadOrdenes, refreshProveedores: loadProveedores, empresaId }),
   );
 }
 

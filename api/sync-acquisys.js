@@ -58,7 +58,8 @@ export default async function handler(req, res) {
     return res.status(403).json({ error: "No tienes nivel de aprobación para sincronizar con Acquisys" });
   }
 
-  const { userToken, ordenes } = await readJsonBody(req);
+  const { userToken, ordenes, empresaId: empresaIdRaw } = await readJsonBody(req);
+  const empresaId = Number(empresaIdRaw) || 1;
   if (!userToken || !Array.isArray(ordenes) || !ordenes.length) {
     return res.status(400).json({ error: "userToken y ordenes (array) son obligatorios" });
   }
@@ -67,8 +68,8 @@ export default async function handler(req, res) {
 
   const [{ data: proveedoresExistentes }, { data: centrosCosto }, { data: cuentasContables }] = await Promise.all([
     db.from("proveedores").select("id, rut").eq("activo", true),
-    db.from("centros_costo").select("codigo").eq("activo", true),
-    db.from("cuentas_contables").select("codigo").eq("activo", true),
+    db.from("centros_costo").select("codigo").eq("activo", true).eq("empresa_id", empresaId),
+    db.from("cuentas_contables").select("codigo").eq("activo", true).eq("empresa_id", empresaId),
   ]);
   const proveedorPorRut = new Map((proveedoresExistentes || []).map((p) => [rutNorm(p.rut), p.id]));
   const centrosCostoValidos = new Set((centrosCosto || []).map((c) => c.codigo));
@@ -123,7 +124,7 @@ export default async function handler(req, res) {
       dias: d.days || 0, observacion: d.observation || "", monto: d.amount || 0, porcentaje: d.percent || 0,
     }));
 
-    const { data: existente } = await db.from("ordenes_compra").select("*").eq("numero_oc", memo).maybeSingle();
+    const { data: existente } = await db.from("ordenes_compra").select("*").eq("numero_oc", memo).eq("empresa_id", empresaId).maybeSingle();
 
     if (existente) {
       const campos = {};
@@ -153,6 +154,7 @@ export default async function handler(req, res) {
     const proveedorId = await resolverProveedor(o);
     const { data: creada, error } = await db.from("ordenes_compra").insert({
       numero_oc: memo,
+      empresa_id: empresaId,
       proveedor_id: proveedorId,
       fecha: o.date_oc || undefined,
       gerencia: o.gerencia || null,

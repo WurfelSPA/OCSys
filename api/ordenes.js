@@ -67,10 +67,12 @@ export default async function handler(req, res) {
   }
 
   if (req.method === "GET") {
+    const empresaId = Number(req.query.empresa_id) || 1;
     const { data, error } = await db
       .from("ordenes_compra")
       .select("*, proveedores(razon_social, rut)")
       .eq("activo", true)
+      .eq("empresa_id", empresaId)
       .order("created_at", { ascending: false });
     if (error) return res.status(500).json({ error: error.message });
     return res.status(200).json({ ordenes: data });
@@ -107,6 +109,7 @@ export default async function handler(req, res) {
       .from("ordenes_compra")
       .insert({
         proveedor_id: body.proveedor_id,
+        empresa_id: Number(body.empresa_id) || 1,
         fecha: body.fecha || undefined,
         titulo: body.titulo || null,
         descripcion: body.descripcion || null,

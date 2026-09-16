@@ -7,10 +7,11 @@ export default async function handler(req, res) {
   }
 
   const db = supabase();
+  const empresaId = Number(req.query.empresa_id) || 1;
 
   const [centrosCosto, cuentasContables, regiones, ciudades] = await Promise.all([
-    db.from("centros_costo").select("codigo, descripcion").eq("activo", true).order("descripcion"),
-    db.from("cuentas_contables").select("codigo, descripcion, centro_costo_codigo").eq("activo", true).order("descripcion"),
+    db.from("centros_costo").select("codigo, descripcion").eq("activo", true).eq("empresa_id", empresaId).order("descripcion"),
+    db.from("cuentas_contables").select("codigo, descripcion, centro_costo_codigo").eq("activo", true).eq("empresa_id", empresaId).order("descripcion"),
     db.from("regiones").select("id, nombre").order("nombre"),
     db.from("ciudades").select("id, region_id, nombre").order("nombre"),
   ]);
