@@ -2242,7 +2242,7 @@ function agruparOCvsFacturadoPorMesYMoneda(ordenes) {
   return resultado;
 }
 
-function Dashboard({ ordenes, proveedores, setTab }) {
+function Dashboard({ ordenes, setTab }) {
   const counts = useMemo(() => {
     const c = { "Borrador": 0, "Pendiente aprobación": 0, "Aprobada": 0, "Facturada": 0, "Completada": 0, "Otros (histórico)": 0 };
     ordenes.forEach((o) => { c[normalizarEstadoCategoria(o.estado)]++; });
@@ -2259,79 +2259,65 @@ function Dashboard({ ordenes, proveedores, setTab }) {
     { label: "Total", value: ordenes.length, color: "var(--tx)" },
   ];
 
-  const proveedoresIncompletos = proveedores.filter((p) => !p.datos_completos).length;
-
   const montoPorMes = useMemo(() => agruparMontoPorMesYMoneda(ordenes), [ordenes]);
   const ocVsFacturado = useMemo(() => agruparOCvsFacturadoPorMesYMoneda(ordenes), [ordenes]);
   const monedasConFactura = Object.keys(ocVsFacturado).filter((m) => ocVsFacturado[m].some((d) => d.barras[1].value > 0));
 
   return h("div", { className: "page fade-up" },
-    h("div", { className: "card" },
-      h("h2", null, "Estado de Órdenes de Compra"),
-      h("div", { className: "stat-strip" },
-        items.map((it) => h("div", {
-          key: it.label, className: "stat-item",
-          onClick: () => setTab("ordenes"),
-        },
-          h("div", { className: "stat-num", style: { color: it.color } }, it.value),
-          h("div", { className: "stat-lbl" }, h("span", { className: "stat-dot", style: { background: it.color } }), it.label),
-        )),
-      ),
-    ),
-    h("div", { className: "card", style: { marginTop: 20 } },
-      h("h2", null, "Distribución por Estado"),
-      h("div", { style: { marginTop: 16 } },
-        h(BarraEstadosOC, { items: items.filter((it) => it.label !== "Total") }),
-      ),
-    ),
-    Object.keys(montoPorMes).length > 0 && h("div", { className: "card", style: { marginTop: 20 } },
-      h("h2", null, "Monto Total de OC por Mes"),
-      Object.keys(montoPorMes).sort().map((moneda) => h("div", { key: moneda, style: { marginTop: 18 } },
-        h("div", { className: "section-lbl", style: { marginTop: 0, paddingTop: 0, borderTop: "none" } }, moneda),
-        h("div", { style: { display: "flex", gap: 28, flexWrap: "wrap", alignItems: "center" } },
-          h("div", { style: { flex: "2 1 320px", minWidth: 0 } }, h(GraficoMensual, { data: montoPorMes[moneda], moneda })),
-          h("div", { style: { flex: "1 1 260px", minWidth: 0 } },
-            h(DonutParticipacion, { data: montoPorMes[moneda].map((d) => ({ mes: d.mes, valor: d.barras[0].value })), moneda }),
-          ),
+    h("div", { style: { display: "flex", gap: 20, flexWrap: "wrap", alignItems: "stretch" } },
+      h("div", { className: "card", style: { flex: "1 1 440px" } },
+        h("h2", null, "Estado de Órdenes de Compra"),
+        h("div", { className: "stat-strip" },
+          items.map((it) => h("div", {
+            key: it.label, className: "stat-item",
+            onClick: () => setTab("ordenes"),
+          },
+            h("div", { className: "stat-num", style: { color: it.color } }, it.value),
+            h("div", { className: "stat-lbl" }, h("span", { className: "stat-dot", style: { background: it.color } }), it.label),
+          )),
         ),
-      )),
+      ),
+      h("div", { className: "card", style: { flex: "1 1 440px" } },
+        h("h2", null, "Distribución por Estado"),
+        h("div", { style: { marginTop: 16 } },
+          h(BarraEstadosOC, { items: items.filter((it) => it.label !== "Total") }),
+        ),
+      ),
     ),
-    monedasConFactura.length > 0 && h("div", { className: "card", style: { marginTop: 20 } },
-      h("h2", null, "OC vs. Monto Facturado"),
-      h("p", { className: "hint", style: { marginBottom: 4 } }, "Compara lo emitido en órdenes de compra contra lo efectivamente facturado por mes."),
-      monedasConFactura.sort().map((moneda) => {
-        const totales = ocVsFacturado[moneda].reduce((acc, d) => ({
-          oc: acc.oc + d.barras[0].value, facturado: acc.facturado + d.barras[1].value,
-        }), { oc: 0, facturado: 0 });
-        const pct = totales.oc > 0 ? (totales.facturado / totales.oc) * 100 : 0;
-        return h("div", { key: moneda, style: { marginTop: 18 } },
+    h("div", { style: { display: "flex", gap: 20, flexWrap: "wrap", alignItems: "flex-start", marginTop: 20 } },
+      Object.keys(montoPorMes).length > 0 && h("div", { className: "card", style: { flex: "1 1 440px" } },
+        h("h2", null, "Monto Total de OC por Mes"),
+        Object.keys(montoPorMes).sort().map((moneda) => h("div", { key: moneda, style: { marginTop: 18 } },
           h("div", { className: "section-lbl", style: { marginTop: 0, paddingTop: 0, borderTop: "none" } }, moneda),
-          h("div", { style: { display: "flex", gap: 28, flexWrap: "wrap", alignItems: "center" } },
-            h("div", { style: { flex: "2 1 320px", minWidth: 0 } }, h(GraficoMensual, { data: ocVsFacturado[moneda], moneda })),
-            h("div", { style: { flex: "1 1 220px", minWidth: 200 } },
-              h(Medidor, {
-                pct, etiqueta: "% Facturado del Total OC",
-                facturado: totales.facturado, oc: totales.oc, moneda,
-              }),
+          h("div", { style: { display: "flex", gap: 20, flexWrap: "wrap", alignItems: "center" } },
+            h("div", { style: { flex: "2 1 240px", minWidth: 0 } }, h(GraficoMensual, { data: montoPorMes[moneda], moneda })),
+            h("div", { style: { flex: "1 1 180px", minWidth: 0 } },
+              h(DonutParticipacion, { data: montoPorMes[moneda].map((d) => ({ mes: d.mes, valor: d.barras[0].value })), moneda }),
             ),
           ),
-        );
-      }),
-      h("div", { className: "row-inline", style: { marginTop: 12, gap: 16 } },
-        h("span", { style: { display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, color: "var(--txm)" } }, h("span", { className: "stat-dot", style: { background: "var(--acc)" } }), "OC"),
-        h("span", { style: { display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, color: "var(--txm)" } }, h("span", { className: "stat-dot", style: { background: "var(--green)" } }), "Facturado"),
+        )),
       ),
-    ),
-    proveedoresIncompletos > 0 && h("div", { className: "card", style: { marginTop: 20 } },
-      h("div", {
-        className: "row-inline", style: { justifyContent: "space-between", cursor: "pointer" },
-        onClick: () => setTab("proveedores"),
-      },
-        h("div", null,
-          h("h2", { style: { marginBottom: 4 } }, "⚠ Proveedores con ficha incompleta"),
-          h("div", { className: "hint" }, proveedoresIncompletos + (proveedoresIncompletos === 1 ? " proveedor necesita" : " proveedores necesitan") + " completar sus datos"),
+      monedasConFactura.length > 0 && h("div", { className: "card", style: { flex: "1 1 440px" } },
+        h("h2", null, "OC vs. Monto Facturado"),
+        h("p", { className: "hint", style: { marginBottom: 4 } }, "Compara lo emitido en órdenes de compra contra lo efectivamente facturado por mes."),
+        monedasConFactura.sort().map((moneda) => {
+          const totales = ocVsFacturado[moneda].reduce((acc, d) => ({
+            oc: acc.oc + d.barras[0].value, facturado: acc.facturado + d.barras[1].value,
+          }), { oc: 0, facturado: 0 });
+          const pct = totales.oc > 0 ? (totales.facturado / totales.oc) * 100 : 0;
+          return h("div", { key: moneda, style: { marginTop: 18 } },
+            h("div", { className: "section-lbl", style: { marginTop: 0, paddingTop: 0, borderTop: "none" } }, moneda),
+            h(GraficoMensual, { data: ocVsFacturado[moneda], moneda }),
+            h(Medidor, {
+              pct, etiqueta: "% Facturado del Total OC",
+              facturado: totales.facturado, oc: totales.oc, moneda,
+            }),
+          );
+        }),
+        h("div", { className: "row-inline", style: { marginTop: 12, gap: 16 } },
+          h("span", { style: { display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, color: "var(--txm)" } }, h("span", { className: "stat-dot", style: { background: "var(--acc)" } }), "OC"),
+          h("span", { style: { display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, color: "var(--txm)" } }, h("span", { className: "stat-dot", style: { background: "var(--green)" } }), "Facturado"),
         ),
-        h("span", { className: "pill pill-pend" }, proveedoresIncompletos),
       ),
     ),
   );
@@ -2637,7 +2623,7 @@ function App({ currentUser, onLogout }) {
       h("button", { className: "nav-btn" + (tab === "reportes" ? " active" : ""), onClick: () => setTab("reportes") }, "Reportes"),
       h("button", { className: "nav-btn" + (tab === "administracion" ? " active" : ""), onClick: () => setTab("administracion") }, "Administración"),
     ),
-    tab === "dashboard" && h(Dashboard, { ordenes, proveedores, setTab }),
+    tab === "dashboard" && h(Dashboard, { ordenes, setTab }),
     tab === "nueva" && h(NuevaOC, { proveedores, catalogos, refreshProveedores: loadProveedores, proyectos, refreshProyectos: loadProyectos, notify, onCreated: loadOrdenes, currentUser, empresaId, empresa: empresaActual }),
     tab === "ordenes" && h(OrdenesList, { ordenes, refreshOrdenes: loadOrdenes, notify, currentUser, proveedores, catalogos, proyectos, refreshProyectos: loadProyectos, empresaId, empresa: empresaActual }),
     tab === "rendiciones" && h(RendicionGastosPage, { rendiciones, refreshRendiciones: loadRendiciones, catalogos, notify, currentUser, empresaId }),
