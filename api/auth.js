@@ -1,6 +1,15 @@
+import { createHash } from "node:crypto";
 import { supabase, readJsonBody } from "./_supabase.js";
-import { verifyPassword } from "./_auth.js";
+import { verifyPassword, hashPassword } from "./_auth.js";
 import { signToken, verifyToken, computeExpiry, makeCookie, clearCookie, parseCookie } from "./_session.js";
+import { enviarCorreoResetPassword } from "./_email.js";
+
+// Huella corta del hash de contraseña vigente -- se guarda dentro del token
+// de reset para que deje de servir apenas la contraseña cambia (por este
+// mismo flujo o por cualquier otro), sin necesitar una tabla de tokens.
+function pwVersion(passwordHash) {
+  return createHash("sha256").update(passwordHash || "").digest("hex").slice(0, 16);
+}
 
 export default async function handler(req, res) {
   const action = req.query.action || "";
@@ -33,6 +42,59 @@ export default async function handler(req, res) {
     const token = signToken(payload, SESSION_SECRET);
     res.setHeader("Set-Cookie", makeCookie(token, exp - Math.floor(Date.now() / 1000)));
     return res.status(200).json({ ok: true, ...payload });
+  }
+
+  if (action === "solicitar-reset") {
+    const body = await readJsonBody(req);
+    const usuario = (body.usuario || "").trim().toLowerCase();
+    const respuesta = { ok: true, mensaje: "Si el usuario existe y tiene un correo registrado, te enviaremos un enlace para restablecer tu contraseña." };
+    if (!usuario) return res.status(400).json({ error: "Ingresa tu usuario" });
+
+    const db = supabase();
+    const { data: user } = await db.from("usuarios").select("*").eq("usuario", usuario).eq("activo", true).maybeSingle();
+    // Respuesta siempre genérica (no revela si el usuario existe o tiene
+    // correo) -- el envío real, si corresponde, ocurre "en silencio" antes.
+    if (user && user.correo) {
+      try {
+        const tokenPayload = {
+          purpose: "reset", id: user.id, pwv: pwVersion(user.password_hash),
+          exp: Math.floor(Date.now() / 1000) + 30 * 60,
+        };
+        const token = signToken(tokenPayload, SESSION_SECRET);
+        const base = process.env.APP_URL || "https://oc-sys.vercel.app";
+        const resetUrl = base + "/?reset=" + token;
+        await enviarCorreoResetPassword(user, resetUrl);
+      } catch (e) {
+        // No se expone el detalle al cliente para no filtrar si el correo
+        // falló por credenciales, por el usuario no tener correo, etc.
+      }
+    }
+    return res.status(200).json(respuesta);
+  }
+
+  if (action === "reset-password") {
+    const body = await readJsonBody(req);
+    const token = body.token || "";
+    const password = body.password || "";
+    if (!token) return res.status(400).json({ error: "Enlace inválido" });
+    if (!password || password.length < 6) {
+      return res.status(400).json({ error: "La contraseña debe tener al menos 6 caracteres" });
+    }
+    const payload = verifyToken(token, SESSION_SECRET);
+    if (!payload || payload.purpose !== "reset") {
+      return res.status(400).json({ error: "El enlace no es válido o expiró. Solicita uno nuevo." });
+    }
+    const db = supabase();
+    const { data: user } = await db.from("usuarios").select("*").eq("id", payload.id).eq("activo", true).maybeSingle();
+    if (!user || pwVersion(user.password_hash) !== payload.pwv) {
+      return res.status(400).json({ error: "El enlace ya fue usado o no es válido. Solicita uno nuevo." });
+    }
+    const { error } = await db
+      .from("usuarios")
+      .update({ password_hash: hashPassword(password), updated_at: new Date().toISOString() })
+      .eq("id", user.id);
+    if (error) return res.status(500).json({ error: error.message });
+    return res.status(200).json({ ok: true });
   }
 
   if (action === "logout") {

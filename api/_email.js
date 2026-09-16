@@ -112,3 +112,24 @@ export async function enviarCorreoAprobacion(orden, aprobador) {
   const token = await getGmailToken();
   await sendGmail(token, to, from, asunto, html, attachment);
 }
+
+export async function enviarCorreoResetPassword(usuario, resetUrl) {
+  if (!process.env.GMAIL_CLIENT_ID || !process.env.GMAIL_CLIENT_SECRET || !process.env.GMAIL_REFRESH_TOKEN) {
+    throw new Error("Credenciales de Gmail no configuradas (GMAIL_CLIENT_ID/GMAIL_CLIENT_SECRET/GMAIL_REFRESH_TOKEN)");
+  }
+  const from = process.env.GMAIL_FROM || "facturacion@patagonica.cl";
+  const to = usuario.correo;
+  if (!to) throw new Error("El usuario no tiene correo registrado");
+
+  const asunto = "Restablecer tu contraseña de OCSys";
+  const html = `<!DOCTYPE html><html><body style="font-family:Arial,sans-serif;color:#1a1a1a;font-size:14px">
+    <p>Hola ${usuario.nombre},</p>
+    <p>Recibimos una solicitud para restablecer tu contraseña de OCSys. Si fuiste tú, haz clic en el siguiente enlace (válido por 30 minutos):</p>
+    <p><a href="${resetUrl}" style="background:#1c5ea8;color:#fff;padding:10px 18px;border-radius:6px;text-decoration:none;display:inline-block">Restablecer contraseña</a></p>
+    <p>Si no solicitaste esto, puedes ignorar este correo — tu contraseña actual seguirá funcionando.</p>
+    <p>Saludos,<br>OCSys — Patagónica Inmobiliaria</p>
+  </body></html>`;
+
+  const token = await getGmailToken();
+  await sendGmail(token, to, from, asunto, html, null);
+}

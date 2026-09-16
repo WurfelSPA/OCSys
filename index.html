@@ -1235,7 +1235,7 @@ function ReportesList({ ordenes, proveedores, notify }) {
   );
 }
 
-const USUARIO_BLANK = { nombre: "", apellido: "", usuario: "", nivel_aprobacion: "0", password: "" };
+const USUARIO_BLANK = { nombre: "", apellido: "", usuario: "", correo: "", nivel_aprobacion: "0", password: "" };
 
 function UsuarioModal({ onClose, onSaved, notify, editUsuario }) {
   const [form, setForm] = useState(editUsuario
@@ -1275,6 +1275,9 @@ function UsuarioModal({ onClose, onSaved, notify, editUsuario }) {
       h(Field, { label: "Nombre *" }, h("input", { value: form.nombre, onChange: set("nombre") })),
       h(Field, { label: "Apellido *" }, h("input", { value: form.apellido, onChange: set("apellido") })),
       h(Field, { label: "Usuario (login) *" }, h("input", { value: form.usuario, onChange: set("usuario") })),
+      h(Field, { label: "Correo" },
+        h("input", { type: "email", value: form.correo, onChange: set("correo"), placeholder: "nombre@patagonica.cl" })),
+      h("div", { className: "hint", style: { marginTop: -8, marginBottom: 10 } }, "Se usa solo para recuperar la contraseña si se olvida."),
       h(Field, { label: "Nivel de Aprobación de OC" },
         h("select", { value: form.nivel_aprobacion, onChange: set("nivel_aprobacion") },
           h("option", { value: "0" }, "0 — No puede aprobar OC"),
@@ -1486,6 +1489,7 @@ function LoginScreen({ onLoggedIn }) {
   const [password, setPassword] = useState("");
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
+  const [modoOlvido, setModoOlvido] = useState(false);
 
   const doLogin = () => {
     if (!usuario || !password) { setMsg("Completa todos los campos"); return; }
@@ -1506,13 +1510,18 @@ function LoginScreen({ onLoggedIn }) {
   const wrap = { minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "linear-gradient(135deg,#0a1f3d 0%,#0e2f5c 50%,#0e4a8f 100%)" };
   const card = { background: "#fff", borderRadius: 20, padding: "44px 40px", width: "100%", maxWidth: 380, boxShadow: "0 20px 60px rgba(0,0,0,.3)" };
   const lbl = { fontSize: 11, fontWeight: 700, color: "var(--txm)", display: "block", marginBottom: 6, textTransform: "uppercase", letterSpacing: ".05em" };
+  const cabecera = h("div", { style: { textAlign: "center", marginBottom: 28 } },
+    h("img", { src: "/logo.jpg", style: { maxWidth: 220, display: "block", margin: "0 auto" } }),
+    h("div", { style: { fontSize: 11, color: "var(--txm)", marginTop: 10, letterSpacing: ".04em" } }, "Portal de Órdenes de Compra"),
+  );
+
+  if (modoOlvido) {
+    return h("div", { style: wrap }, h("div", { style: card }, cabecera, h(OlvideClaveForm, { lbl, onVolver: () => setModoOlvido(false) })));
+  }
 
   return h("div", { style: wrap },
     h("div", { style: card },
-      h("div", { style: { textAlign: "center", marginBottom: 28 } },
-        h("img", { src: "/logo.jpg", style: { maxWidth: 220, display: "block", margin: "0 auto" } }),
-        h("div", { style: { fontSize: 11, color: "var(--txm)", marginTop: 10, letterSpacing: ".04em" } }, "Portal de Órdenes de Compra"),
-      ),
+      cabecera,
       h("h1", { style: { fontSize: 20, fontWeight: 700, marginBottom: 6 } }, "Iniciar sesión"),
       h("p", { style: { color: "var(--txm)", fontSize: 13, marginBottom: 24 } }, "Ingresa con tu usuario de OCSys."),
       h("label", { style: lbl }, "Usuario"),
@@ -1520,10 +1529,110 @@ function LoginScreen({ onLoggedIn }) {
       h("label", { style: lbl }, "Contraseña"),
       h("input", {
         type: "password", value: password, onChange: (e) => setPassword(e.target.value), placeholder: "••••••••",
-        style: { marginBottom: 16 }, autoComplete: "current-password", onKeyDown: (e) => { if (e.key === "Enter") doLogin(); },
+        style: { marginBottom: 8 }, autoComplete: "current-password", onKeyDown: (e) => { if (e.key === "Enter") doLogin(); },
       }),
+      h("div", { style: { textAlign: "right", marginBottom: 16 } },
+        h("a", { className: "link", style: { fontSize: 12.5, cursor: "pointer" }, onClick: () => { setModoOlvido(true); setMsg(""); } }, "¿Olvidaste tu contraseña?")),
       msg && h("div", { className: "notif-err", style: { padding: "8px 12px", borderRadius: 8, marginBottom: 12, fontSize: 13 } }, msg),
       h("button", { className: "btn-primary", style: { width: "100%" }, onClick: doLogin, disabled: busy }, busy ? "Ingresando..." : "Ingresar"),
+    )
+  );
+}
+
+function OlvideClaveForm({ lbl, onVolver }) {
+  const [usuario, setUsuario] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [enviado, setEnviado] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  const enviar = () => {
+    if (!usuario.trim()) { setMsg("Ingresa tu usuario"); return; }
+    setBusy(true); setMsg("");
+    fetch("/api/auth?action=solicitar-reset", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ usuario }),
+    })
+      .then((r) => r.json().then((d) => ({ ok: r.ok, d })))
+      .then(({ ok, d }) => { if (ok) setEnviado(true); else setMsg(d.error || "No se pudo procesar la solicitud"); })
+      .catch(() => setMsg("Error de conexión"))
+      .finally(() => setBusy(false));
+  };
+
+  if (enviado) {
+    return h("div", null,
+      h("h1", { style: { fontSize: 20, fontWeight: 700, marginBottom: 12 } }, "Revisa tu correo"),
+      h("p", { style: { color: "var(--txm)", fontSize: 13.5, marginBottom: 24, lineHeight: 1.5 } },
+        "Si el usuario existe y tiene un correo registrado, te enviamos un enlace para restablecer tu contraseña. Válido por 30 minutos."),
+      h("button", { className: "btn-ghost", style: { width: "100%" }, onClick: onVolver }, "Volver a iniciar sesión"),
+    );
+  }
+
+  return h("div", null,
+    h("h1", { style: { fontSize: 20, fontWeight: 700, marginBottom: 6 } }, "Recuperar contraseña"),
+    h("p", { style: { color: "var(--txm)", fontSize: 13, marginBottom: 24 } }, "Ingresa tu usuario y te enviaremos un enlace a tu correo registrado."),
+    h("label", { style: lbl }, "Usuario"),
+    h("input", {
+      value: usuario, onChange: (e) => setUsuario(e.target.value), placeholder: "amelendez", style: { marginBottom: 16 },
+      autoComplete: "username", onKeyDown: (e) => { if (e.key === "Enter") enviar(); },
+    }),
+    msg && h("div", { className: "notif-err", style: { padding: "8px 12px", borderRadius: 8, marginBottom: 12, fontSize: 13 } }, msg),
+    h("button", { className: "btn-primary", style: { width: "100%", marginBottom: 10 }, onClick: enviar, disabled: busy }, busy ? "Enviando..." : "Enviar enlace"),
+    h("button", { className: "btn-ghost", style: { width: "100%" }, onClick: onVolver, disabled: busy }, "Volver a iniciar sesión"),
+  );
+}
+
+function ResetPasswordScreen({ token, onListo }) {
+  const [password, setPassword] = useState("");
+  const [password2, setPassword2] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  const [listo, setListo] = useState(false);
+
+  const wrap = { minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "linear-gradient(135deg,#0a1f3d 0%,#0e2f5c 50%,#0e4a8f 100%)" };
+  const card = { background: "#fff", borderRadius: 20, padding: "44px 40px", width: "100%", maxWidth: 380, boxShadow: "0 20px 60px rgba(0,0,0,.3)" };
+  const lbl = { fontSize: 11, fontWeight: 700, color: "var(--txm)", display: "block", marginBottom: 6, textTransform: "uppercase", letterSpacing: ".05em" };
+
+  const guardar = () => {
+    if (password.length < 6) { setMsg("La contraseña debe tener al menos 6 caracteres"); return; }
+    if (password !== password2) { setMsg("Las contraseñas no coinciden"); return; }
+    setBusy(true); setMsg("");
+    fetch("/api/auth?action=reset-password", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token, password }),
+    })
+      .then((r) => r.json().then((d) => ({ ok: r.ok, d })))
+      .then(({ ok, d }) => { if (ok) setListo(true); else setMsg(d.error || "No se pudo restablecer la contraseña"); })
+      .catch(() => setMsg("Error de conexión"))
+      .finally(() => setBusy(false));
+  };
+
+  return h("div", { style: wrap },
+    h("div", { style: card },
+      h("div", { style: { textAlign: "center", marginBottom: 28 } },
+        h("img", { src: "/logo.jpg", style: { maxWidth: 220, display: "block", margin: "0 auto" } }),
+      ),
+      listo
+        ? h("div", null,
+            h("h1", { style: { fontSize: 20, fontWeight: 700, marginBottom: 12 } }, "Contraseña actualizada"),
+            h("p", { style: { color: "var(--txm)", fontSize: 13.5, marginBottom: 24 } }, "Ya puedes ingresar con tu nueva contraseña."),
+            h("button", { className: "btn-primary", style: { width: "100%" }, onClick: onListo }, "Ir a iniciar sesión"),
+          )
+        : h("div", null,
+            h("h1", { style: { fontSize: 20, fontWeight: 700, marginBottom: 6 } }, "Nueva contraseña"),
+            h("p", { style: { color: "var(--txm)", fontSize: 13, marginBottom: 24 } }, "Define tu nueva contraseña de OCSys."),
+            h("label", { style: lbl }, "Contraseña nueva"),
+            h("input", {
+              type: "password", value: password, onChange: (e) => setPassword(e.target.value), placeholder: "••••••••",
+              style: { marginBottom: 16 }, autoComplete: "new-password",
+            }),
+            h("label", { style: lbl }, "Repetir contraseña"),
+            h("input", {
+              type: "password", value: password2, onChange: (e) => setPassword2(e.target.value), placeholder: "••••••••",
+              style: { marginBottom: 16 }, autoComplete: "new-password", onKeyDown: (e) => { if (e.key === "Enter") guardar(); },
+            }),
+            msg && h("div", { className: "notif-err", style: { padding: "8px 12px", borderRadius: 8, marginBottom: 12, fontSize: 13 } }, msg),
+            h("button", { className: "btn-primary", style: { width: "100%" }, onClick: guardar, disabled: busy }, busy ? "Guardando..." : "Guardar contraseña"),
+          ),
     )
   );
 }
@@ -2190,6 +2299,7 @@ function App({ currentUser, onLogout }) {
 function Root() {
   const [checking, setChecking] = useState(true);
   const [currentUser, setCurrentUser] = useState(null);
+  const [resetToken, setResetToken] = useState(() => new URLSearchParams(window.location.search).get("reset"));
 
   const checkSession = useCallback(() => {
     return fetch("/api/auth?action=me")
@@ -2198,14 +2308,26 @@ function Root() {
   }, []);
 
   useEffect(() => {
+    if (resetToken) return; // no consume sesión mientras se restablece la contraseña
     checkSession().finally(() => setChecking(false));
     const interval = setInterval(checkSession, 5 * 60 * 1000); // cada 5 min: detecta cierre por inactividad (4h) o medianoche
     return () => clearInterval(interval);
-  }, [checkSession]);
+  }, [checkSession, resetToken]);
 
   const onLogout = () => {
     fetch("/api/auth?action=logout").finally(() => setCurrentUser(null));
   };
+
+  if (resetToken) {
+    return h(ResetPasswordScreen, {
+      token: resetToken,
+      onListo: () => {
+        window.history.replaceState({}, "", window.location.pathname);
+        setResetToken(null);
+        setChecking(true);
+      },
+    });
+  }
 
   if (checking) return null;
   if (!currentUser) return h(LoginScreen, { onLoggedIn: setCurrentUser });
