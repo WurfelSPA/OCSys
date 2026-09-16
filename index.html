@@ -1054,18 +1054,21 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser }) {
   };
 
   const columns = useMemo(() => [
-    { key: "numero_oc", label: "N° OC" },
+    {
+      key: "numero_oc", label: "N° OC",
+      render: (o) => o.archivo_oc_url
+        ? h("a", { className: "link", href: o.archivo_oc_url, target: "_blank", rel: "noreferrer", title: "Ver PDF de la OC" }, o.numero_oc)
+        : o.numero_oc,
+    },
     { key: "fecha", label: "Fecha", render: (o) => fmtDate(o.fecha) },
-    { key: "proveedor", label: "Proveedor", sortValue: (o) => (o.proveedores ? o.proveedores.razon_social : ""), render: (o) => (o.proveedores ? o.proveedores.razon_social : "—") },
+    { key: "proveedor", label: "Proveedor", sortValue: (o) => (o.proveedores ? o.proveedores.razon_social : ""), render: (o) => truncar(o.proveedores ? o.proveedores.razon_social : "—", 160) },
     { key: "numero_hes", label: "N° HES" },
     { key: "numero_factura", label: "N° Factura" },
-    { key: "centro_costo_codigo", label: "Centro Costo" },
-    { key: "moneda", label: "Moneda", render: (o) => o.moneda || "CLP" },
-    { key: "monto_total", label: "Monto Total", render: (o) => fmtMontoMoneda(o.monto_total, o.moneda || "CLP") },
+    { key: "centro_costo_codigo", label: "C. Costo" },
+    { key: "monto_total", label: "Monto Total", sortValue: (o) => Number(o.monto_total) || 0, render: (o) => fmtMontoMoneda(o.monto_total, o.moneda || "CLP") },
     { key: "estado", label: "Estado", render: (o) => estadoPill(o.estado) },
-    { key: "archivo", label: "Cotización", sortable: false, render: (o) => (o.archivo_url ? h("a", { className: "link", href: o.archivo_url, target: "_blank", rel: "noreferrer" }, truncar(o.archivo_nombre || "Ver", 280)) : "—") },
-    { key: "archivo_oc", label: "OC", sortable: false, render: (o) => (o.archivo_oc_url ? h("a", { className: "link", href: o.archivo_oc_url, target: "_blank", rel: "noreferrer" }, truncar(o.archivo_oc_nombre || "Ver", 280)) : "—") },
-    { key: "archivo_factura", label: "Factura", sortable: false, render: (o) => (o.archivo_factura_url ? h("a", { className: "link", href: o.archivo_factura_url, target: "_blank", rel: "noreferrer" }, truncar(o.archivo_factura_nombre || "Ver", 220)) : "—") },
+    { key: "archivo", label: "Cotiz.", sortable: false, render: (o) => (o.archivo_url ? h("a", { className: "link", href: o.archivo_url, target: "_blank", rel: "noreferrer", title: o.archivo_nombre || "Ver cotización" }, "📄") : "—") },
+    { key: "archivo_factura", label: "Fact.", sortable: false, render: (o) => (o.archivo_factura_url ? h("a", { className: "link", href: o.archivo_factura_url, target: "_blank", rel: "noreferrer", title: o.archivo_factura_nombre || "Ver factura" }, "📄") : "—") },
     {
       key: "accion", label: "Acción", sortable: false,
       render: (o) => o.estado === "Pendiente aprobación"
