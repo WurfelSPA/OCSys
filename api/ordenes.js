@@ -1,8 +1,11 @@
 import { supabase, readJsonBody } from "./_supabase.js";
 import { verifyToken, parseCookie } from "./_session.js";
-import { enviarCorreoAprobacion } from "./_email.js";
+import { enviarCorreoAprobacion, enviarCorreoFactura } from "./_email.js";
 
-const ESTADOS_OCSYS = ["Borrador", "Pendiente aprobación", "Aprobada", "Completada"];
+// Aprobada -> se asigna HES y se envia la OC al proveedor.
+// Facturada -> se subio la factura del proveedor; se avisa al equipo de pagos.
+// Completada -> se subio el comprobante de pago, cierra el ciclo.
+const ESTADOS_OCSYS = ["Borrador", "Pendiente aprobación", "Aprobada", "Facturada", "Completada"];
 
 export default async function handler(req, res) {
   const db = supabase();
@@ -23,10 +26,17 @@ export default async function handler(req, res) {
         if (!session || session.nivel_aprobacion !== 1) {
           return res.status(403).json({ error: "No tienes nivel de aprobación para aprobar órdenes de compra" });
         }
-        fields.numero_hes = Date.now().toString();
+        // El cliente puede generar y enviar su propio numero_hes junto con
+        // el PDF ya regenerado con ese mismo HES (para que el correo de
+        // aprobacion salga con el PDF correcto desde el primer envio, sin
+        // un segundo paso). Si no lo manda, se genera aqui como antes.
+        fields.numero_hes = body.numero_hes || Date.now().toString();
       }
-      if (body.estado === "Completada" && !body.numero_factura) {
-        return res.status(400).json({ error: "numero_factura es obligatorio para completar la OC" });
+      if (body.estado === "Facturada" && !body.numero_factura) {
+        return res.status(400).json({ error: "numero_factura es obligatorio para facturar la OC" });
+      }
+      if (body.estado === "Completada" && !body.archivo_comprobante_url) {
+        return res.status(400).json({ error: "El comprobante de pago es obligatorio para completar la OC" });
       }
       fields.estado = body.estado;
     }
@@ -38,6 +48,8 @@ export default async function handler(req, res) {
     if (body.archivo_oc_nombre !== undefined) fields.archivo_oc_nombre = body.archivo_oc_nombre;
     if (body.archivo_url !== undefined) fields.archivo_url = body.archivo_url;
     if (body.archivo_nombre !== undefined) fields.archivo_nombre = body.archivo_nombre;
+    if (body.archivo_comprobante_url !== undefined) fields.archivo_comprobante_url = body.archivo_comprobante_url;
+    if (body.archivo_comprobante_nombre !== undefined) fields.archivo_comprobante_nombre = body.archivo_comprobante_nombre;
     // Correccion manual de historicos migrados (no genera HES nuevo, a diferencia
     // de la transicion a "Aprobada" mas arriba, que sí lo asigna automaticamente).
     if (body.numero_hes !== undefined && body.estado === undefined) fields.numero_hes = body.numero_hes;
@@ -62,7 +74,14 @@ export default async function handler(req, res) {
     let correoError = null;
     if (body.estado === "Aprobada") {
       try {
-        await enviarCorreoAprobacion(data, session);
+        await enviarCorreoAprobacion(data);
+      } catch (e) {
+        correoError = e.message;
+      }
+    }
+    if (body.estado === "Facturada") {
+      try {
+        await enviarCorreoFactura(data);
       } catch (e) {
         correoError = e.message;
       }

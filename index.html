@@ -153,7 +153,8 @@ function estadoPill(estado) {
     "Borrador": "pill-draft",
     "Pendiente aprobación": "pill-pend", "Pendiente": "pill-pend",
     "Aprobada": "pill-ok", "Aprobado": "pill-ok", "Factura Aprobada": "pill-ok",
-    "Completada": "pill-info",
+    "Facturada": "pill-info",
+    "Completada": "pill-ok",
     "Anulado": "pill-anul", "Rechazado": "pill-anul",
     "Proceso de Pago": "pill-pend", "Pagado": "pill-ok",
   };
@@ -978,6 +979,8 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, notify, onCreated
 
 function OrdenAccionModal({ orden, tipo, onClose, onDone, notify, proveedores, empresa }) {
   const isAprobar = tipo === "aprobar";
+  const isFacturar = tipo === "facturar";
+  const isPagar = tipo === "pagar";
   const [numeroFactura, setNumeroFactura] = useState("");
   const [montoFacturado, setMontoFacturado] = useState("");
   const [file, setFile] = useState(null);
@@ -985,22 +988,53 @@ function OrdenAccionModal({ orden, tipo, onClose, onDone, notify, proveedores, e
   const [saving, setSaving] = useState(false);
 
   const submit = async () => {
-    if (!isAprobar && !numeroFactura) return notify("err", "Ingresa el N° de Factura");
+    if (isFacturar && !numeroFactura) return notify("err", "Ingresa el N° de Factura");
+    if (isPagar && !file) return notify("err", "Sube el comprobante de pago");
     setSaving(true);
     try {
-      const payload = isAprobar
-        ? { estado: "Aprobada" }
-        : { estado: "Completada", numero_factura: numeroFactura, monto_facturado: montoFacturado || null };
-      if (!isAprobar && file) {
+      let payload;
+      if (isAprobar) {
+        payload = { estado: "Aprobada" };
+        // Solo las OC nativas de OCSys (sin numero_oc_acquisys) muestran el
+        // HES en el PDF -- se genera aqui mismo, antes de aprobar, para que
+        // el correo de aprobacion salga con el PDF ya correcto desde el
+        // primer envio (en vez de enviarlo sin HES y recien despues
+        // enterarse del numero real).
+        if (!orden.numero_oc_acquisys) {
+          const proveedor = (proveedores || []).find((p) => p.id === orden.proveedor_id);
+          if (proveedor) {
+            const numeroHes = Date.now().toString();
+            const pdfBlob = await generarPdfOC({ ...orden, numero_hes: numeroHes }, proveedor, orden.cuotas || [], empresa);
+            const pdfBase64 = await fileToBase64(new File([pdfBlob], "OC.pdf", { type: "application/pdf" }));
+            const up = await api("upload", {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ filename: orden.numero_oc + ".pdf", base64: pdfBase64 }),
+            });
+            payload.numero_hes = numeroHes;
+            payload.archivo_oc_url = up.url;
+            payload.archivo_oc_nombre = orden.numero_oc + ".pdf";
+          }
+        }
+      } else if (isFacturar) {
+        payload = { estado: "Facturada", numero_factura: numeroFactura, monto_facturado: montoFacturado || null };
+        if (file) {
+          const base64 = await fileToBase64(file);
+          const up = await api("upload", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ filename: file.name, base64 }),
+          });
+          payload.archivo_factura_url = up.url;
+          payload.archivo_factura_nombre = file.name;
+        }
+      } else {
         const base64 = await fileToBase64(file);
         const up = await api("upload", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
+          method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ filename: file.name, base64 }),
         });
-        payload.archivo_factura_url = up.url;
-        payload.archivo_factura_nombre = file.name;
+        payload = { estado: "Completada", archivo_comprobante_url: up.url, archivo_comprobante_nombre: file.name };
       }
+
       const { orden: actualizada, correoError } = await api("ordenes?id=" + orden.id, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -1009,29 +1043,11 @@ function OrdenAccionModal({ orden, tipo, onClose, onDone, notify, proveedores, e
       if (isAprobar) {
         notify(correoError ? "warn" : "ok",
           "OC aprobada con HES " + actualizada.numero_hes + (correoError ? " — correo no enviado: " + correoError : " — correo enviado al proveedor"));
-        // Solo las OC nativas de OCSys (sin numero_oc_acquisys) muestran el
-        // HES en el PDF -- se regenera aqui porque recien en la aprobacion
-        // se conoce el HES. El correo de aprobacion ya se envio con el PDF
-        // anterior (sin HES); esta version nueva queda para la descarga.
-        if (!actualizada.numero_oc_acquisys) {
-          try {
-            const proveedor = (proveedores || []).find((p) => p.id === actualizada.proveedor_id);
-            if (proveedor) {
-              const pdfBlob = await generarPdfOC(actualizada, proveedor, actualizada.cuotas || [], empresa);
-              const pdfBase64 = await fileToBase64(new File([pdfBlob], "OC.pdf", { type: "application/pdf" }));
-              const up = await api("upload", {
-                method: "POST", headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ filename: actualizada.numero_oc + ".pdf", base64: pdfBase64 }),
-              });
-              await api("ordenes?id=" + actualizada.id, {
-                method: "PUT", headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ archivo_oc_url: up.url, archivo_oc_nombre: actualizada.numero_oc + ".pdf" }),
-              });
-            }
-          } catch (e) { /* si falla la regeneracion, el PDF anterior (sin HES) sigue disponible */ }
-        }
+      } else if (isFacturar) {
+        notify(correoError ? "warn" : "ok",
+          "OC facturada con Factura " + numeroFactura + (correoError ? " — correo a pagos no enviado: " + correoError : " — correo enviado a pagos"));
       } else {
-        notify("ok", "OC completada con Factura " + numeroFactura);
+        notify("ok", "OC completada — ciclo cerrado");
       }
       onDone();
     } catch (e) {
@@ -1041,32 +1057,54 @@ function OrdenAccionModal({ orden, tipo, onClose, onDone, notify, proveedores, e
     }
   };
 
+  const tituloModal = isAprobar ? "Aprobar OC " : isFacturar ? "Facturar OC " : "Registrar Pago OC ";
+  const fileFieldId = isFacturar ? "factura-file" : "comprobante-file";
+
   return h("div", { className: "overlay", onClick: (e) => e.target === e.currentTarget && onClose() },
     h("div", { className: "modal", style: { width: 420 } },
       h("div", { className: "modal-hdr" },
-        h("h3", null, (isAprobar ? "Aprobar OC " : "Completar OC ") + (orden.numero_oc_acquisys || orden.numero_oc)),
+        h("h3", null, tituloModal + (orden.numero_oc_acquisys || orden.numero_oc)),
         h("button", { className: "modal-close", onClick: onClose }, "×")
       ),
-      isAprobar
-        ? h("p", { style: { fontSize: 13, color: "var(--txm)", marginBottom: 4 } },
-            "Se asignará automáticamente el N° HES y se enviará un correo al proveedor (" + ((orden.proveedores && orden.proveedores.razon_social) || "") + ") con la Orden de Compra adjunta.")
-        : h(React.Fragment, null,
-            h(Field, { label: "N° Factura *" }, h("input", { value: numeroFactura, onChange: (e) => setNumeroFactura(e.target.value), autoFocus: true })),
-            h(Field, { label: "Monto Facturado" }, h("input", { type: "number", value: montoFacturado, onChange: (e) => setMontoFacturado(e.target.value), placeholder: orden.monto_total })),
-            h(Field, { label: "Factura (PDF/imagen)" },
-              h("input", {
-                type: "file", id: "factura-file", style: { display: "none" },
-                accept: ".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png",
-                onChange: (e) => setFile(e.target.files[0] || null),
-              })),
-            h("label", {
-              htmlFor: "factura-file",
-              className: "drop-zone" + (file ? " done" : "") + (dragOver ? " dragover" : ""),
-              style: { display: "block" },
-              ...fileDropHandlers(setFile, setDragOver),
-            },
-              file ? ("✓ " + file.name) : "Haz clic o arrastra aquí la factura"),
-          ),
+      isAprobar &&
+        h("p", { style: { fontSize: 13, color: "var(--txm)", marginBottom: 4 } },
+          "Se asignará automáticamente el N° HES y se enviará un correo al proveedor (" + ((orden.proveedores && orden.proveedores.razon_social) || "") + ") con la Orden de Compra adjunta."),
+      isFacturar &&
+        h(React.Fragment, null,
+          h(Field, { label: "N° Factura *" }, h("input", { value: numeroFactura, onChange: (e) => setNumeroFactura(e.target.value), autoFocus: true })),
+          h(Field, { label: "Monto Facturado" }, h("input", { type: "number", value: montoFacturado, onChange: (e) => setMontoFacturado(e.target.value), placeholder: orden.monto_total })),
+          h(Field, { label: "Factura (PDF/imagen)" },
+            h("input", {
+              type: "file", id: fileFieldId, style: { display: "none" },
+              accept: ".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png",
+              onChange: (e) => setFile(e.target.files[0] || null),
+            })),
+          h("label", {
+            htmlFor: fileFieldId,
+            className: "drop-zone" + (file ? " done" : "") + (dragOver ? " dragover" : ""),
+            style: { display: "block" },
+            ...fileDropHandlers(setFile, setDragOver),
+          },
+            file ? ("✓ " + file.name) : "Haz clic o arrastra aquí la factura"),
+        ),
+      isPagar &&
+        h(React.Fragment, null,
+          h("p", { style: { fontSize: 13, color: "var(--txm)", marginBottom: 10 } },
+            "Sube el comprobante de la transferencia al proveedor. Al confirmarlo, la OC quedará marcada como Completada."),
+          h(Field, { label: "Comprobante de Pago *" },
+            h("input", {
+              type: "file", id: fileFieldId, style: { display: "none" },
+              accept: ".pdf,.jpg,.jpeg,.png",
+              onChange: (e) => setFile(e.target.files[0] || null),
+            })),
+          h("label", {
+            htmlFor: fileFieldId,
+            className: "drop-zone" + (file ? " done" : "") + (dragOver ? " dragover" : ""),
+            style: { display: "block" },
+            ...fileDropHandlers(setFile, setDragOver),
+          },
+            file ? ("✓ " + file.name) : "Haz clic o arrastra aquí el comprobante de pago"),
+        ),
       h("div", { style: { display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 16 } },
         h("button", { className: "btn-ghost", onClick: onClose }, "Cancelar"),
         h("button", { className: "btn-primary", onClick: submit, disabled: saving }, saving ? "Guardando..." : "Confirmar"),
@@ -1105,7 +1143,12 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
     { key: "fecha", label: "Fecha", render: (o) => fmtDate(o.fecha) },
     { key: "proveedor", label: "Proveedor", sortValue: (o) => (o.proveedores ? o.proveedores.razon_social : ""), render: (o) => truncar(o.proveedores ? o.proveedores.razon_social : "—", 160) },
     { key: "numero_hes", label: "N° HES" },
-    { key: "numero_factura", label: "N° Factura" },
+    {
+      key: "numero_factura", label: "N° Factura",
+      render: (o) => o.archivo_factura_url
+        ? h("a", { className: "link", href: o.archivo_factura_url, target: "_blank", rel: "noreferrer", title: "Ver factura" }, o.numero_factura)
+        : (o.numero_factura || "—"),
+    },
     { key: "centro_costo_codigo", label: "C. Costo" },
     { key: "monto_total", label: "Monto Total", sortValue: (o) => Number(o.monto_total) || 0, render: (o) => fmtMontoMoneda(o.monto_total, o.moneda || "CLP") },
     { key: "estado", label: "Estado", render: (o) => estadoPill(o.estado) },
@@ -1118,7 +1161,9 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
             ? h("button", { className: "btn-ghost", style: { padding: "4px 10px", fontSize: 11 }, onClick: () => setAccion({ orden: o, tipo: "aprobar" }) }, "Aprobar")
             : h("span", { className: "hint" }, "Requiere aprobador"))
         : o.estado === "Aprobada"
-        ? h("button", { className: "btn-ghost", style: { padding: "4px 10px", fontSize: 11 }, onClick: () => setAccion({ orden: o, tipo: "completar" }) }, "Completar")
+        ? h("button", { className: "btn-ghost", style: { padding: "4px 10px", fontSize: 11 }, onClick: () => setAccion({ orden: o, tipo: "facturar" }) }, "Facturar")
+        : o.estado === "Facturada"
+        ? h("button", { className: "btn-ghost", style: { padding: "4px 10px", fontSize: 11 }, onClick: () => setAccion({ orden: o, tipo: "pagar" }) }, "Registrar Pago")
         : "—",
     },
     ...(puedeAprobar ? [{
@@ -1681,6 +1726,7 @@ function normalizarEstadoCategoria(estado) {
     "Borrador": "Borrador",
     "Pendiente aprobación": "Pendiente aprobación", "Pendiente": "Pendiente aprobación",
     "Aprobada": "Aprobada", "Aprobado": "Aprobada",
+    "Facturada": "Facturada",
     "Completada": "Completada", "Factura Aprobada": "Completada",
   };
   return map[estado] || "Otros (histórico)";
@@ -1943,7 +1989,7 @@ function agruparOCvsFacturadoPorMesYMoneda(ordenes) {
 
 function Dashboard({ ordenes, proveedores, setTab }) {
   const counts = useMemo(() => {
-    const c = { "Borrador": 0, "Pendiente aprobación": 0, "Aprobada": 0, "Completada": 0, "Otros (histórico)": 0 };
+    const c = { "Borrador": 0, "Pendiente aprobación": 0, "Aprobada": 0, "Facturada": 0, "Completada": 0, "Otros (histórico)": 0 };
     ordenes.forEach((o) => { c[normalizarEstadoCategoria(o.estado)]++; });
     return c;
   }, [ordenes]);
@@ -1952,6 +1998,7 @@ function Dashboard({ ordenes, proveedores, setTab }) {
     { label: "Borrador", value: counts["Borrador"], color: "var(--txm)" },
     { label: "Pendiente aprobación", value: counts["Pendiente aprobación"], color: "var(--amber)" },
     { label: "Aprobadas", value: counts["Aprobada"], color: "var(--green)" },
+    { label: "Facturadas", value: counts["Facturada"], color: "var(--acc2)" },
     { label: "Completadas", value: counts["Completada"], color: "var(--acc)" },
     ...(counts["Otros (histórico)"] > 0 ? [{ label: "Otros (histórico)", value: counts["Otros (histórico)"], color: "var(--red)" }] : []),
     { label: "Total", value: ordenes.length, color: "var(--tx)" },
