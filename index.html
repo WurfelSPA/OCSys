@@ -187,7 +187,7 @@ async function api(path, opts) {
 function formBlank() {
   return {
     proveedor_id: "", fecha: new Date().toISOString().slice(0, 10),
-    titulo: "", descripcion: "", motivo: "", gerencia: "", representante_compra: "",
+    titulo: "", descripcion: "", motivo: "", representante_compra: "",
     centro_costo_codigo: "", cuenta_contable_codigo: "",
     tipo_orden: "Afecto", tipo_compra: "Servicios", moneda: "CLP",
     monto_neto: "", monto_iva: "", monto_total: "",
@@ -891,9 +891,8 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, notify, onCreated
       h(ProveedorInfoPanel, { proveedor: proveedores.find((p) => p.id === form.proveedor_id) }),
 
       h("div", { className: "section-lbl" }, "Detalle de la Orden"),
-      h("div", { className: "grid3" },
+      h("div", { className: "grid2" },
         h(Field, { label: "Título" }, h("input", { value: form.titulo, onChange: set("titulo") })),
-        h(Field, { label: "Gerencia" }, h("input", { value: form.gerencia, onChange: set("gerencia") })),
         h(Field, { label: "Representante de Compra *" }, h("input", { value: form.representante_compra, onChange: set("representante_compra") })),
       ),
       h(Field, { label: "Descripción" }, h("textarea", { rows: 2, value: form.descripcion, onChange: set("descripcion") })),
