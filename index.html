@@ -2136,7 +2136,7 @@ function App({ currentUser, onLogout }) {
   return h("div", null,
     notif && h("div", { className: "notif notif-" + (notif.type === "ok" ? "ok" : notif.type === "warn" ? "warn" : "err") }, notif.msg),
     h("div", { className: "header" },
-      h("img", { src: "/logo.jpg", alt: "Patagónica" }),
+      h("img", { src: empresaId === 2 ? "/logo-campomar.jpg" : "/logo.jpg", alt: empresaActual ? empresaActual.nombre : "Patagónica" }),
       h("div", { style: { flex: 1 } }, h("h1", null, "OCSys"), h("div", { className: "sub" }, "Órdenes de Compra" + (empresaActual ? " — " + empresaActual.nombre + " · RUT " + empresaActual.rut : ""))),
       h("div", { style: { fontSize: 12, color: "var(--txm)", display: "flex", alignItems: "center", gap: 12 } },
         empresas.length > 0 && h("select", {
