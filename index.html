@@ -1290,7 +1290,8 @@ const USUARIOS_COLUMNS = [
 
 function SincronizarAcquisys({ notify, refreshOrdenes, refreshProveedores, empresaId }) {
   const [acquisysToken, setAcquisysToken] = useState("");
-  const [entityId, setEntityId] = useState(empresaId === 1 ? "4" : "");
+  const ENTITY_IDS_CONOCIDOS = { 1: "4", 2: "6" };
+  const [entityId, setEntityId] = useState(ENTITY_IDS_CONOCIDOS[empresaId] || "");
   const [corriendo, setCorriendo] = useState(false);
   const [log, setLog] = useState([]);
 
@@ -1456,7 +1457,7 @@ function AdministracionList({ usuarios, refreshUsuarios, notify, currentUser, re
         emptyText: "No hay usuarios cargados todavía",
       }),
     ),
-    currentUser && currentUser.nivel_aprobacion === 1 && h(SincronizarAcquisys, { notify, refreshOrdenes, refreshProveedores, empresaId }),
+    currentUser && currentUser.nivel_aprobacion === 1 && h(SincronizarAcquisys, { key: empresaId, notify, refreshOrdenes, refreshProveedores, empresaId }),
   );
 }
 
