@@ -42,6 +42,9 @@ export default async function handler(req, res) {
     // de la transicion a "Aprobada" mas arriba, que sí lo asigna automaticamente).
     if (body.numero_hes !== undefined && body.estado === undefined) fields.numero_hes = body.numero_hes;
     if (body.numero_oc !== undefined) fields.numero_oc = body.numero_oc;
+    if (body.titulo !== undefined) fields.titulo = body.titulo;
+    if (body.descripcion !== undefined) fields.descripcion = body.descripcion;
+    if (body.motivo !== undefined) fields.motivo = body.motivo;
     if (body.cuotas !== undefined) fields.cuotas = Array.isArray(body.cuotas) ? body.cuotas : [];
 
     if (Object.keys(fields).length === 0) {
