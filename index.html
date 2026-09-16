@@ -590,7 +590,7 @@ async function generarPdfOC(orden, proveedor, cuotas, empresa) {
   doc.text("RUT: " + proveedor.rut, 120, 67.5);
 
   doc.setFontSize(20); doc.setTextColor(140);
-  doc.text("Orden de Compra #" + orden.numero_oc, left, 82);
+  doc.text("Orden de Compra #" + (orden.numero_oc_acquisys || orden.numero_oc), left, 82);
 
   doc.setFontSize(9); doc.setTextColor(40);
   doc.setFont(undefined, "bold");
@@ -1008,7 +1008,7 @@ function OrdenAccionModal({ orden, tipo, onClose, onDone, notify }) {
   return h("div", { className: "overlay", onClick: (e) => e.target === e.currentTarget && onClose() },
     h("div", { className: "modal", style: { width: 420 } },
       h("div", { className: "modal-hdr" },
-        h("h3", null, (isAprobar ? "Aprobar OC " : "Completar OC ") + orden.numero_oc),
+        h("h3", null, (isAprobar ? "Aprobar OC " : "Completar OC ") + (orden.numero_oc_acquisys || orden.numero_oc)),
         h("button", { className: "modal-close", onClick: onClose }, "×")
       ),
       isAprobar
@@ -1044,7 +1044,7 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser }) {
   const puedeAprobar = currentUser && currentUser.nivel_aprobacion === 1;
 
   const eliminarOrden = async (o) => {
-    if (!window.confirm("¿Eliminar la OC " + o.numero_oc + "? Dejará de verse en OCSys y en los informes.")) return;
+    if (!window.confirm("¿Eliminar la OC " + (o.numero_oc_acquisys || o.numero_oc) + "? Dejará de verse en OCSys y en los informes.")) return;
     try {
       await api("ordenes?id=" + o.id, { method: "DELETE" });
       notify("ok", "OC " + o.numero_oc + " eliminada");
@@ -1054,14 +1054,16 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser }) {
     }
   };
 
+  const ordenesConVisible = useMemo(() => ordenes.map((o) => ({ ...o, numero_oc_visible: o.numero_oc_acquisys || o.numero_oc })), [ordenes]);
+
   const columns = useMemo(() => [
     {
-      key: "numero_oc", label: "N° OC",
+      key: "numero_oc_visible", label: "N° OC",
       render: (o) => h("div", null,
         o.archivo_oc_url
-          ? h("a", { className: "link", href: o.archivo_oc_url, target: "_blank", rel: "noreferrer", title: "Ver PDF de la OC" }, o.numero_oc)
-          : o.numero_oc,
-        o.numero_oc_acquisys && h("div", { style: { fontSize: 10, color: "var(--txd)" } }, o.numero_oc_acquisys),
+          ? h("a", { className: "link", href: o.archivo_oc_url, target: "_blank", rel: "noreferrer", title: "Ver PDF de la OC" }, o.numero_oc_visible)
+          : o.numero_oc_visible,
+        o.numero_oc_acquisys && h("div", { style: { fontSize: 10, color: "var(--txd)" } }, o.numero_oc),
       ),
     },
     { key: "fecha", label: "Fecha", render: (o) => fmtDate(o.fecha) },
@@ -1098,8 +1100,8 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser }) {
     h("div", { className: "card" },
       h("h2", null, "Órdenes de Compra"),
       h(DataTable, {
-        columns, rows: ordenes, rowKey: (o) => o.id,
-        searchFields: ["numero_oc", "numero_oc_acquisys", "numero_hes", "numero_egreso", "numero_factura", "moneda"],
+        columns, rows: ordenesConVisible, rowKey: (o) => o.id,
+        searchFields: ["numero_oc_visible", "numero_hes", "numero_egreso", "numero_factura", "moneda"],
         searchPlaceholder: "Buscar por N° OC, N° HES, N° Factura o Moneda (ej. UF)",
         emptyText: "Aún no hay órdenes de compra creadas en OCSys",
       }),
