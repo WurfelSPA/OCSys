@@ -836,15 +836,19 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, notify, onCreated
 
       notify("ok", (estado === "Borrador" ? "Borrador guardado: " : "OC generada: ") + orden.numero_oc);
       onCreated();
-      setForm(formBlank());
-      setFile(null);
-      setNumCuotas(1);
-      setCuotas(distribuirCuotas(1, 0));
+      limpiarFormulario();
     } catch (e) {
       notify("err", e.message);
     } finally {
       setSaving(false);
     }
+  };
+
+  const limpiarFormulario = () => {
+    setForm(formBlank());
+    setFile(null);
+    setNumCuotas(1);
+    setCuotas(distribuirCuotas(1, 0));
   };
 
   return h("div", { className: "page fade-up" },
@@ -858,6 +862,10 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, notify, onCreated
       h("div", { style: { display: "flex", alignItems: "baseline", gap: 8, marginBottom: 14 } },
         h("h2", { style: { marginBottom: 0 } }, "Nueva Orden de Compra"),
         h("div", { className: "hint", style: { fontSize: 12 } }, "(" + fmtDate(form.fecha) + ")"),
+        h("button", {
+          className: "btn-ghost", style: { marginLeft: "auto", padding: "4px 12px", fontSize: 12 },
+          onClick: () => { if (window.confirm("¿Limpiar el formulario? Se perderán los datos ingresados.")) limpiarFormulario(); },
+        }, "Limpiar formulario"),
       ),
 
       h("div", { className: "section-lbl" }, "Cotización del Proveedor"),

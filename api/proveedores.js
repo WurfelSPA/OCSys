@@ -70,7 +70,24 @@ export default async function handler(req, res) {
 
     const { data, error } = await db.from("proveedores").insert(fields).select().single();
     if (error) {
-      if (error.code === "23505") return res.status(409).json({ error: "Ya existe un proveedor con ese RUT" });
+      if (error.code === "23505") {
+        // El RUT ya existe -- puede ser un proveedor activo real (choque
+        // genuino) o uno inactivo (eliminado antes): en ese segundo caso se
+        // reactiva y actualiza en vez de bloquear, porque el listado normal
+        // solo trae activos y el usuario no tiene forma de verlo ni elegirlo.
+        const { data: existente, error: buscarError } = await db
+          .from("proveedores").select("*").eq("rut", body.rut).maybeSingle();
+        if (!buscarError && existente && !existente.activo) {
+          const { data: reactivado, error: reactivarError } = await db
+            .from("proveedores")
+            .update({ ...fields, activo: true, updated_at: new Date().toISOString() })
+            .eq("id", existente.id)
+            .select()
+            .single();
+          if (!reactivarError) return res.status(200).json({ proveedor: reactivado, reactivado: true });
+        }
+        return res.status(409).json({ error: "Ya existe un proveedor con ese RUT" });
+      }
       return res.status(500).json({ error: error.message });
     }
     return res.status(201).json({ proveedor: data });
