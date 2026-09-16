@@ -34,6 +34,36 @@ function calcularDatosCompletos(fields) {
   return tieneContactoTelefonico && CAMPOS_PARA_FICHA_COMPLETA.every((k) => !!fields[k]);
 }
 
+// Ejecuta fn sobre cada item con un maximo de "concurrencia" en paralelo --
+// se usa para el detalle de memorandum (un fetch por orden) sin disparar
+// cientos de peticiones simultaneas a Acquisys ni agotar el tiempo limite
+// de la funcion serverless.
+async function conConcurrencia(concurrencia, items, fn) {
+  let i = 0;
+  async function trabajador() {
+    while (i < items.length) {
+      const idx = i++;
+      await fn(items[idx], idx);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(concurrencia, items.length) }, trabajador));
+}
+
+// Detalle completo de una orden (Titulo/Motivo/Descripcion) -- no viene en
+// el listado /admin/order, solo en esta ficha individual por id de memo.
+async function obtenerDetalleMemo(idMemo, userToken) {
+  try {
+    const r = await fetch("https://acquisysbck.dkohome.cl/admin/memorandum/" + idMemo, {
+      headers: { user_token: userToken },
+    });
+    if (!r.ok) return null;
+    const d = await r.json();
+    return { titulo: d.subject || null, descripcion: d.description || null, motivo: d.motive || null };
+  } catch (e) {
+    return null;
+  }
+}
+
 async function adjuntarCotizacion(db, ordenId, cotizacionUrl, userToken) {
   const filename = (cotizacionUrl || "").split("/").pop();
   const r = await fetch(cotizacionUrl, { headers: { user_token: userToken } });
@@ -74,6 +104,12 @@ export default async function handler(req, res) {
   ]);
   const empresaCodigo = empresa?.codigo || "EMP";
   const proveedorPorRut = new Map((proveedoresExistentes || []).map((p) => [rutNorm(p.rut), p.id]));
+  // Se llenan mas abajo, antes del loop principal, con consultas en lote
+  // (una sola query de ordenes existentes y un pool acotado de fetch de
+  // detalle) en vez de una por orden -- evita agotar el tiempo limite de
+  // la funcion cuando hay cientos de ordenes.
+  const existentePorNumero = new Map();
+  const detallesPorId = new Map();
   const centrosCostoValidos = new Set((centrosCosto || []).map((c) => c.codigo));
   const cuentasContablesValidas = new Set((cuentasContables || []).map((c) => c.codigo));
 
@@ -129,15 +165,10 @@ export default async function handler(req, res) {
     // Busca tanto por el memorandum crudo como por la version con prefijo de
     // empresa (por si esta orden ya se creo asi en una sincronizacion previa
     // debido a un choque con otra empresa) -- evita reintentar un insert que
-    // ya sabemos que va a chocar de nuevo.
+    // ya sabemos que va a chocar de nuevo. Se resuelve contra el mapa
+    // precargado en lote (no una query por orden).
     const numeroOcPrefijado = empresaCodigo + "-" + memo;
-    const { data: existentes } = await db
-      .from("ordenes_compra")
-      .select("*")
-      .in("numero_oc", [memo, numeroOcPrefijado])
-      .eq("empresa_id", empresaId)
-      .limit(1);
-    const existente = (existentes || [])[0];
+    const existente = existentePorNumero.get(memo) || existentePorNumero.get(numeroOcPrefijado);
 
     if (existente) {
       const campos = {};
@@ -158,6 +189,16 @@ export default async function handler(req, res) {
       // corresponden numericamente -- se guarda el segundo aparte para poder
       // buscar por el numero que el equipo realmente usa a diario.
       if (!existente.numero_oc_acquisys && o.num_order) campos.numero_oc_acquisys = o.num_order;
+      // Titulo/Descripcion/Motivo no vienen en el listado, solo en la ficha
+      // de detalle por id de memo -- se completan si aun faltan.
+      if (!existente.titulo && o.id_memo) {
+        const detalle = detallesPorId.get(o.id_memo);
+        if (detalle) {
+          if (detalle.titulo) campos.titulo = detalle.titulo;
+          if (detalle.descripcion) campos.descripcion = detalle.descripcion;
+          if (detalle.motivo) campos.motivo = detalle.motivo;
+        }
+      }
       if (Object.keys(campos).length) {
         await db.from("ordenes_compra").update(campos).eq("id", existente.id);
       }
@@ -170,11 +211,15 @@ export default async function handler(req, res) {
     }
 
     const proveedorId = await resolverProveedor(o);
+    const detalleNuevo = o.id_memo ? detallesPorId.get(o.id_memo) : null;
     const camposOrden = {
       empresa_id: empresaId,
       proveedor_id: proveedorId,
       numero_oc_acquisys: o.num_order || null,
       fecha: o.date_oc || undefined,
+      titulo: detalleNuevo?.titulo || null,
+      descripcion: detalleNuevo?.descripcion || null,
+      motivo: detalleNuevo?.motivo || null,
       gerencia: o.gerencia || null,
       centro_costo_codigo: ccCodigo,
       cuenta_contable_codigo: cuCodigo,
@@ -213,6 +258,43 @@ export default async function handler(req, res) {
     if (!memo || vistos.has(memo)) return false;
     vistos.add(memo);
     return true;
+  });
+
+  // Carga en lote de las ordenes ya existentes (una sola query en vez de
+  // una por orden) para poder resolver "existente" sin ir a la base de
+  // datos dentro del loop principal.
+  const memoKeys = [];
+  unicas.forEach((o) => {
+    const memo = memoDeUrl(o.cotizacion);
+    if (memo) {
+      memoKeys.push(memo);
+      memoKeys.push(empresaCodigo + "-" + memo);
+    }
+  });
+  if (memoKeys.length) {
+    const { data: existentesTodas } = await db
+      .from("ordenes_compra")
+      .select("*")
+      .eq("empresa_id", empresaId)
+      .in("numero_oc", memoKeys);
+    (existentesTodas || []).forEach((e) => existentePorNumero.set(e.numero_oc, e));
+  }
+
+  // Titulo/Descripcion/Motivo solo vienen en la ficha de detalle por id de
+  // memo (no en el listado) -- se piden con concurrencia acotada, y solo
+  // para las ordenes que de verdad los necesitan (nuevas o a las que aun
+  // les falte el titulo), para no repetir llamados en cada sincronizacion.
+  const idsMemoConDetallePendiente = new Set();
+  unicas.forEach((o) => {
+    if (!o.id_memo) return;
+    const memo = memoDeUrl(o.cotizacion);
+    const numeroOcPrefijado = empresaCodigo + "-" + memo;
+    const existente = existentePorNumero.get(memo) || existentePorNumero.get(numeroOcPrefijado);
+    if (!existente || !existente.titulo) idsMemoConDetallePendiente.add(o.id_memo);
+  });
+  await conConcurrencia(8, Array.from(idsMemoConDetallePendiente), async (idMemo) => {
+    const detalle = await obtenerDetalleMemo(idMemo, userToken);
+    if (detalle) detallesPorId.set(idMemo, detalle);
   });
 
   const resultados = [];
