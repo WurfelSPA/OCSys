@@ -21,6 +21,11 @@
   --red:#c0392b;--rbg:#fdf0ef;
   --acc:#0e4a8f;--acc2:#1b7cb3;--accl:#0a3a70;--accbg:#e8f1fb;
 }
+/* Campo Mar usa tonos verdes en vez de los azules de Patagonica, para que
+   siempre sea obvio con que empresa se esta trabajando. */
+[data-empresa="2"]{
+  --acc:#0a7c4e;--acc2:#1fa06a;--accl:#075c39;--accbg:#e6f5ed;
+}
 html,body,#root{height:100%;font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--tx);font-size:13px}
 ::-webkit-scrollbar{width:4px;height:4px}
 ::-webkit-scrollbar-thumb{background:var(--bdr2);border-radius:4px}
@@ -2120,6 +2125,10 @@ function App({ currentUser, onLogout }) {
     loadOrdenes();
     loadRendiciones();
     loadCatalogos();
+  }, [empresaId]);
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-empresa", String(empresaId));
   }, [empresaId]);
 
   const empresaActual = empresas.find((e) => e.id === empresaId);
