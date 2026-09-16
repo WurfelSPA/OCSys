@@ -592,6 +592,13 @@ async function generarPdfOC(orden, proveedor, cuotas, empresa) {
   doc.setFontSize(20); doc.setTextColor(140);
   doc.text("Orden de Compra #" + (orden.numero_oc_acquisys || orden.numero_oc), left, 82);
 
+  // El N° HES solo se muestra en OC nativas de OCSys (sin numero_oc_acquisys)
+  // -- las importadas de Acquisys quedan igual que siempre, sin este dato.
+  if (!orden.numero_oc_acquisys && orden.numero_hes) {
+    doc.setFontSize(12); doc.setTextColor(140);
+    doc.text("N° HES: " + orden.numero_hes, left, 88.5);
+  }
+
   doc.setFontSize(9); doc.setTextColor(40);
   doc.setFont(undefined, "bold");
   doc.text("Representante de Compra", left, 92);
@@ -961,7 +968,7 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, notify, onCreated
   );
 }
 
-function OrdenAccionModal({ orden, tipo, onClose, onDone, notify }) {
+function OrdenAccionModal({ orden, tipo, onClose, onDone, notify, proveedores, empresa }) {
   const isAprobar = tipo === "aprobar";
   const [numeroFactura, setNumeroFactura] = useState("");
   const [montoFacturado, setMontoFacturado] = useState("");
@@ -994,6 +1001,27 @@ function OrdenAccionModal({ orden, tipo, onClose, onDone, notify }) {
       if (isAprobar) {
         notify(correoError ? "warn" : "ok",
           "OC aprobada con HES " + actualizada.numero_hes + (correoError ? " — correo no enviado: " + correoError : " — correo enviado al proveedor"));
+        // Solo las OC nativas de OCSys (sin numero_oc_acquisys) muestran el
+        // HES en el PDF -- se regenera aqui porque recien en la aprobacion
+        // se conoce el HES. El correo de aprobacion ya se envio con el PDF
+        // anterior (sin HES); esta version nueva queda para la descarga.
+        if (!actualizada.numero_oc_acquisys) {
+          try {
+            const proveedor = (proveedores || []).find((p) => p.id === actualizada.proveedor_id);
+            if (proveedor) {
+              const pdfBlob = await generarPdfOC(actualizada, proveedor, actualizada.cuotas || [], empresa);
+              const pdfBase64 = await fileToBase64(new File([pdfBlob], "OC.pdf", { type: "application/pdf" }));
+              const up = await api("upload", {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ filename: actualizada.numero_oc + ".pdf", base64: pdfBase64 }),
+              });
+              await api("ordenes?id=" + actualizada.id, {
+                method: "PUT", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ archivo_oc_url: up.url, archivo_oc_nombre: actualizada.numero_oc + ".pdf" }),
+              });
+            }
+          } catch (e) { /* si falla la regeneracion, el PDF anterior (sin HES) sigue disponible */ }
+        }
       } else {
         notify("ok", "OC completada con Factura " + numeroFactura);
       }
@@ -1039,7 +1067,7 @@ function OrdenAccionModal({ orden, tipo, onClose, onDone, notify }) {
   );
 }
 
-function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser }) {
+function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores, empresa }) {
   const [accion, setAccion] = useState(null);
   const puedeAprobar = currentUser && currentUser.nivel_aprobacion === 1;
 
@@ -1093,7 +1121,7 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser }) {
 
   return h("div", { className: "page fade-up" },
     accion && h(OrdenAccionModal, {
-      orden: accion.orden, tipo: accion.tipo, notify,
+      orden: accion.orden, tipo: accion.tipo, notify, proveedores, empresa,
       onClose: () => setAccion(null),
       onDone: () => { refreshOrdenes(); setAccion(null); },
     }),
@@ -2288,7 +2316,7 @@ function App({ currentUser, onLogout }) {
     ),
     tab === "dashboard" && h(Dashboard, { ordenes, proveedores, setTab }),
     tab === "nueva" && h(NuevaOC, { proveedores, catalogos, refreshProveedores: loadProveedores, notify, onCreated: loadOrdenes, currentUser, empresaId, empresa: empresaActual }),
-    tab === "ordenes" && h(OrdenesList, { ordenes, refreshOrdenes: loadOrdenes, notify, currentUser }),
+    tab === "ordenes" && h(OrdenesList, { ordenes, refreshOrdenes: loadOrdenes, notify, currentUser, proveedores, empresa: empresaActual }),
     tab === "rendiciones" && h(RendicionGastosPage, { rendiciones, refreshRendiciones: loadRendiciones, catalogos, notify, currentUser, empresaId }),
     tab === "proveedores" && h(ProveedoresList, { proveedores, catalogos, refreshProveedores: loadProveedores, notify, currentUser }),
     tab === "reportes" && h(ReportesList, { ordenes, proveedores, notify }),
