@@ -57,7 +57,10 @@ async function obtenerDetalleMemo(idMemo, userToken) {
       headers: { user_token: userToken },
     });
     if (!r.ok) return null;
-    const d = await r.json();
+    const dRaw = await r.json();
+    // El endpoint responde con un arreglo de un elemento, no un objeto suelto.
+    const d = Array.isArray(dRaw) ? dRaw[0] : dRaw;
+    if (!d) return null;
     return { titulo: d.subject || null, descripcion: d.description || null, motivo: d.motive || null };
   } catch (e) {
     return null;
