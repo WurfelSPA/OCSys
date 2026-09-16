@@ -462,8 +462,11 @@ function SearchSelect({ options, value, onChange, placeholder, disabled }) {
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const base = q ? options.filter((o) => o.label.toLowerCase().includes(q)) : options;
-    return base.slice(0, 40);
+    // Sin busqueda se muestra la lista completa (la caja ya es desplazable) --
+    // el tope de 40 solo aplica mientras se filtra, para no mostrar de mas si
+    // el texto escrito calza con demasiadas cuentas.
+    if (!q) return options;
+    return options.filter((o) => o.label.toLowerCase().includes(q)).slice(0, 40);
   }, [options, query]);
 
   return h("div", { className: "ac-wrap" },
