@@ -680,15 +680,6 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, proyectos, refres
   const [form, setForm] = useState(formBlank());
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
-  // "Contenedor" es siempre el primer proyecto (se crea junto con la
-  // empresa) -- se preselecciona como default para que ninguna OC quede sin
-  // proyecto en los informes salvo que el usuario elija explicitamente otro.
-  useEffect(() => {
-    if (!form.proyecto_id && proyectos && proyectos.length) {
-      setForm((f) => (f.proyecto_id ? f : { ...f, proyecto_id: proyectos[0].id }));
-    }
-  }, [proyectos]);
-
   const agregarProyecto = async () => {
     const nombre = window.prompt("Nombre del nuevo proyecto:");
     if (!nombre || !nombre.trim()) return;
