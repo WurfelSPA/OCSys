@@ -553,22 +553,30 @@ function fmtMontoPdf(n, moneda) {
   return v.toLocaleString("es-CL", { maximumFractionDigits: 0 });
 }
 
-async function generarPdfOC(orden, proveedor, cuotas) {
+const EMPRESA_PDF_INFO = {
+  1: { logo: "/logo.jpg", correoDte: "dte@patagonica.cl" },
+  2: { logo: "/logo-campomar.jpg", correoDte: "contabilidad@patagonica.cl" },
+};
+
+async function generarPdfOC(orden, proveedor, cuotas, empresa) {
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   const moneda = orden.moneda;
   const left = 20, right = 190;
+  const info = EMPRESA_PDF_INFO[empresa?.id] || EMPRESA_PDF_INFO[1];
+  const nombreEmpresa = empresa?.nombre || "Patagónica Inmobiliaria";
+  const rutEmpresa = empresa?.rut || "96.673.250-4";
 
   try {
-    const logoData = await loadImageAsDataURL("/logo.jpg");
+    const logoData = await loadImageAsDataURL(info.logo);
     doc.addImage(logoData, "JPEG", left, 14, 32, 8);
   } catch (e) { /* si no carga el logo, se sigue sin él */ }
 
   doc.setFontSize(9); doc.setTextColor(40);
-  doc.text("Patagónica Inmobiliaria", left, 30);
+  doc.text(nombreEmpresa, left, 30);
   doc.text("Av. Americo Vespucio Norte 2680 - Piso 12", left, 34.5);
-  doc.text("RUT: 96.673.250-4", left, 39);
-  doc.text("Correo DTE: dte@patagonica.cl", left, 43.5);
+  doc.text("RUT: " + rutEmpresa, left, 39);
+  doc.text("Correo DTE: " + info.correoDte, left, 43.5);
   doc.setDrawColor(210); doc.line(left, 47, right, 47);
 
   doc.setFont(undefined, "bold"); doc.text("Dirección de Envío", left, 54);
@@ -621,7 +629,7 @@ async function generarPdfOC(orden, proveedor, cuotas) {
 
   const pageH = doc.internal.pageSize.getHeight();
   doc.setFontSize(8); doc.setTextColor(150);
-  doc.text("OCSys - Patagónica Inmobiliaria © Todos los Derechos Reservados", left, pageH - 12);
+  doc.text("OCSys - " + nombreEmpresa + " © Todos los Derechos Reservados", left, pageH - 12);
   doc.text("1/1", right, pageH - 12, { align: "right" });
 
   return doc.output("blob");
@@ -646,7 +654,7 @@ function CuotasEditor({ cuotas, setCuotas, montoNeto, moneda }) {
   );
 }
 
-function NuevaOC({ proveedores, catalogos, refreshProveedores, notify, onCreated, currentUser, empresaId }) {
+function NuevaOC({ proveedores, catalogos, refreshProveedores, notify, onCreated, currentUser, empresaId, empresa }) {
   const [showModal, setShowModal] = useState(false);
   const [provPrefill, setProvPrefill] = useState(null);
   const [provEditing, setProvEditing] = useState(null);
@@ -802,7 +810,7 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, notify, onCreated
 
       if (estado === "Pendiente aprobación") {
         const proveedor = proveedores.find((p) => p.id === form.proveedor_id);
-        const pdfBlob = await generarPdfOC(orden, proveedor, cuotas);
+        const pdfBlob = await generarPdfOC(orden, proveedor, cuotas, empresa);
         const pdfBase64 = await fileToBase64(new File([pdfBlob], "OC.pdf", { type: "application/pdf" }));
         const up = await api("upload", {
           method: "POST",
@@ -1288,7 +1296,7 @@ const USUARIOS_COLUMNS = [
     : h("span", { className: "pill pill-pend" }, "Sin definir")) },
 ];
 
-function SincronizarAcquisys({ notify, refreshOrdenes, refreshProveedores, empresaId }) {
+function SincronizarAcquisys({ notify, refreshOrdenes, refreshProveedores, empresaId, empresa }) {
   const [acquisysToken, setAcquisysToken] = useState("");
   const ENTITY_IDS_CONOCIDOS = { 1: "4", 2: "6" };
   const [entityId, setEntityId] = useState(ENTITY_IDS_CONOCIDOS[empresaId] || "");
@@ -1337,7 +1345,7 @@ function SincronizarAcquisys({ notify, refreshOrdenes, refreshProveedores, empre
         const proveedor = proveedores.find((p) => p.id === orden.proveedor_id);
         if (!proveedor) { err++; continue; }
         try {
-          const pdfBlob = await generarPdfOC(orden, proveedor, orden.cuotas || []);
+          const pdfBlob = await generarPdfOC(orden, proveedor, orden.cuotas || [], empresa);
           const pdfBase64 = await fileToBase64(new File([pdfBlob], "OC.pdf", { type: "application/pdf" }));
           const up = await api("upload", {
             method: "POST", headers: { "Content-Type": "application/json" },
@@ -1430,7 +1438,7 @@ function VerificarClaveModal({ usuario, onClose, onVerificado, notify }) {
   );
 }
 
-function AdministracionList({ usuarios, refreshUsuarios, notify, currentUser, refreshOrdenes, refreshProveedores, empresaId }) {
+function AdministracionList({ usuarios, refreshUsuarios, notify, currentUser, refreshOrdenes, refreshProveedores, empresaId, empresa }) {
   const [showModal, setShowModal] = useState(false);
   const [verificando, setVerificando] = useState(null);
   const [editing, setEditing] = useState(null);
@@ -1457,7 +1465,7 @@ function AdministracionList({ usuarios, refreshUsuarios, notify, currentUser, re
         emptyText: "No hay usuarios cargados todavía",
       }),
     ),
-    currentUser && currentUser.nivel_aprobacion === 1 && h(SincronizarAcquisys, { key: empresaId, notify, refreshOrdenes, refreshProveedores, empresaId }),
+    currentUser && currentUser.nivel_aprobacion === 1 && h(SincronizarAcquisys, { key: empresaId, notify, refreshOrdenes, refreshProveedores, empresaId, empresa }),
   );
 }
 
@@ -2158,12 +2166,12 @@ function App({ currentUser, onLogout }) {
       h("button", { className: "nav-btn" + (tab === "administracion" ? " active" : ""), onClick: () => setTab("administracion") }, "Administración"),
     ),
     tab === "dashboard" && h(Dashboard, { ordenes, proveedores, setTab }),
-    tab === "nueva" && h(NuevaOC, { proveedores, catalogos, refreshProveedores: loadProveedores, notify, onCreated: loadOrdenes, currentUser, empresaId }),
+    tab === "nueva" && h(NuevaOC, { proveedores, catalogos, refreshProveedores: loadProveedores, notify, onCreated: loadOrdenes, currentUser, empresaId, empresa: empresaActual }),
     tab === "ordenes" && h(OrdenesList, { ordenes, refreshOrdenes: loadOrdenes, notify, currentUser }),
     tab === "rendiciones" && h(RendicionGastosPage, { rendiciones, refreshRendiciones: loadRendiciones, catalogos, notify, currentUser, empresaId }),
     tab === "proveedores" && h(ProveedoresList, { proveedores, catalogos, refreshProveedores: loadProveedores, notify, currentUser }),
     tab === "reportes" && h(ReportesList, { ordenes, proveedores, notify }),
-    tab === "administracion" && h(AdministracionList, { usuarios, refreshUsuarios: loadUsuarios, notify, currentUser, refreshOrdenes: loadOrdenes, refreshProveedores: loadProveedores, empresaId }),
+    tab === "administracion" && h(AdministracionList, { usuarios, refreshUsuarios: loadUsuarios, notify, currentUser, refreshOrdenes: loadOrdenes, refreshProveedores: loadProveedores, empresaId, empresa: empresaActual }),
   );
 }
 
