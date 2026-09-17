@@ -16,6 +16,7 @@ const RESPONSE_SCHEMA = {
     tipo_cuenta: { type: "string", description: "Tipo de cuenta bancaria (Cuenta Corriente, Cuenta Vista, Cuenta de Ahorro)" },
     numero_cuenta: { type: "string", description: "Número de cuenta bancaria" },
     descripcion: { type: "string", description: "Descripción detallada de lo cotizado: qué incluye, alcance, ítems o condiciones relevantes. NO incluyas aquí montos, banco ni número de cuenta — esos ya tienen sus propios campos." },
+    condiciones: { type: "string", description: "Condiciones comerciales explícitas del documento: plazos de entrega, condiciones o forma de pago, validez de la cotización, garantía, u otros términos similares. Si el documento NO indica ninguna condición de este tipo, deja este campo como cadena vacía \"\" — no lo inventes ni repitas aquí la descripción." },
     motivo: { type: "string", description: "Motivo o justificación de la compra/contratación, SOLO si el documento lo menciona explícitamente (por ejemplo, una nota del proveedor sobre para qué se solicita el servicio). Si el documento NO lo indica explícitamente, este campo debe quedar como cadena vacía \"\" — no expliques por qué está vacío, no escribas nada." },
     titulo: { type: "string", description: "Encabezado de MÁXIMO 8 palabras que resuma la descripción de arriba, como el asunto de un correo. PROHIBIDO incluir montos, nombres de banco, números de cuenta, u oraciones explicativas. Ejemplo correcto: 'Automatización de flujos de trabajo'. Ejemplo incorrecto (no hagas esto): una oración larga o con cifras." },
     moneda: { type: "string", enum: ["CLP", "USD", "UF"] },
@@ -28,7 +29,7 @@ const RESPONSE_SCHEMA = {
     "proveedor_rut", "proveedor_razon_social",
     "contacto_nombre", "contacto_apellido", "contacto_telefono", "contacto_celular", "contacto_correo",
     "banco", "tipo_cuenta", "numero_cuenta",
-    "descripcion", "motivo", "titulo",
+    "descripcion", "condiciones", "motivo", "titulo",
     "moneda", "monto_neto", "monto_iva", "monto_total",
   ],
   required: ["moneda", "monto_neto", "monto_total"],
@@ -67,7 +68,7 @@ export default async function handler(req, res) {
         contents: [{
           role: "user",
           parts: [
-            { text: "Esta es una cotización enviada por un proveedor a Patagónica Inmobiliaria. Extrae TODOS los datos solicitados en el esquema, incluyendo el número o folio de la cotización (tal como aparece impreso en el documento, ej. 'N° 39512'), los datos bancarios (banco, tipo de cuenta, número de cuenta) y los datos de contacto (nombre, teléfono, celular, correo) si aparecen en el documento — no los omitas. Cada dato va SOLO en su propio campo: los montos van en monto_neto/monto_iva/monto_total, el banco y la cuenta van en banco/tipo_cuenta/numero_cuenta, nunca los repitas como texto dentro de titulo, descripcion o motivo. El titulo es un encabezado de máximo 8 palabras, sin cifras ni datos bancarios. El motivo debe quedar como cadena vacía si el documento no indica explícitamente para qué se solicita la compra — no escribas frases como 'no se indica motivo', simplemente déjalo vacío." },
+            { text: "Esta es una cotización enviada por un proveedor a Patagónica Inmobiliaria. Extrae TODOS los datos solicitados en el esquema, incluyendo el número o folio de la cotización (tal como aparece impreso en el documento, ej. 'N° 39512'), los datos bancarios (banco, tipo de cuenta, número de cuenta), los datos de contacto (nombre, teléfono, celular, correo) y las condiciones comerciales explícitas (plazos de entrega, condiciones de pago, validez de la oferta, garantía, etc.) si aparecen en el documento — no los omitas. Cada dato va SOLO en su propio campo: los montos van en monto_neto/monto_iva/monto_total, el banco y la cuenta van en banco/tipo_cuenta/numero_cuenta, nunca los repitas como texto dentro de titulo, descripcion o motivo. El titulo es un encabezado de máximo 8 palabras, sin cifras ni datos bancarios. El motivo debe quedar como cadena vacía si el documento no indica explícitamente para qué se solicita la compra — no escribas frases como 'no se indica motivo', simplemente déjalo vacío." },
             { inlineData: { mimeType, data: base64 } },
           ],
         }],

@@ -200,7 +200,7 @@ function formBlank() {
   return {
     proveedor_id: "", fecha: new Date().toISOString().slice(0, 10),
     numero_cotizacion: "", proyecto_id: "",
-    titulo: "", descripcion: "", representante_compra: "",
+    titulo: "", descripcion: "", condiciones: "", representante_compra: "",
     centro_costo_codigo: "", cuenta_contable_codigo: "",
     tipo_orden: "Afecto", tipo_compra: "Servicios", moneda: "CLP",
     monto_neto: "", monto_iva: "", monto_total: "",
@@ -780,6 +780,7 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, proyectos, refres
         numero_cotizacion: datos.numero_cotizacion || f.numero_cotizacion,
         titulo: (datos.titulo || "").slice(0, 150) || f.titulo,
         descripcion: datos.descripcion || f.descripcion,
+        condiciones: datos.condiciones || f.condiciones,
         representante_compra: f.representante_compra || nombreContacto,
         moneda: datos.moneda || f.moneda,
         monto_neto: neto || f.monto_neto,
@@ -971,6 +972,11 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, proyectos, refres
         h(Field, { label: "Representante de Compra *" }, h("input", { value: form.representante_compra, onChange: set("representante_compra") })),
       ),
       h(Field, { label: "Descripción" }, h("textarea", { rows: 2, value: form.descripcion, onChange: set("descripcion") })),
+      h(Field, { label: "Condiciones" },
+        h("textarea", {
+          rows: 2, value: form.condiciones, onChange: set("condiciones"),
+          placeholder: "Plazos de entrega, condiciones de pago, etc. Se completa automáticamente al leer con IA, o ingrésalo a mano",
+        })),
 
       h("div", { className: "grid3" },
         h(Field, { label: "Centro de Costo" },
@@ -1194,6 +1200,7 @@ function EditarOrdenModal({ orden, proveedores, catalogos, proyectos, refreshPro
     proyecto_id: orden.proyecto_id || "",
     titulo: orden.titulo || "",
     descripcion: orden.descripcion || "",
+    condiciones: orden.condiciones || "",
     representante_compra: orden.creado_por || "",
     fecha: orden.fecha || "",
     centro_costo_codigo: orden.centro_costo_codigo || "",
@@ -1273,6 +1280,11 @@ function EditarOrdenModal({ orden, proveedores, catalogos, proyectos, refreshPro
         h(Field, { label: "Representante de Compra" }, h("input", { value: form.representante_compra, onChange: set("representante_compra") })),
       ),
       h(Field, { label: "Descripción" }, h("textarea", { rows: 2, value: form.descripcion, onChange: set("descripcion") })),
+      h(Field, { label: "Condiciones" },
+        h("textarea", {
+          rows: 2, value: form.condiciones, onChange: set("condiciones"),
+          placeholder: "Plazos de entrega, condiciones de pago, etc. Se completa automáticamente al leer con IA, o ingrésalo a mano",
+        })),
       h("div", { className: "grid3" },
         h(Field, { label: "Tipo de Orden" },
           h("select", { value: form.tipo_orden, onChange: set("tipo_orden") },

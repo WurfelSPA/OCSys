@@ -20,7 +20,7 @@ export default async function handler(req, res) {
     // congelados: ya se envio el HES/PDF al proveedor con esos datos, asi que
     // corregirlos ahi generaria una OC inconsistente con lo ya enviado.
     const CAMPOS_SOLO_ANTES_DE_APROBAR = [
-      "proveedor_id", "numero_cotizacion", "proyecto_id", "titulo", "descripcion", "motivo",
+      "proveedor_id", "numero_cotizacion", "proyecto_id", "titulo", "descripcion", "condiciones", "motivo",
       "creado_por", "centro_costo_codigo", "cuenta_contable_codigo", "tipo_orden", "tipo_compra",
       "moneda", "monto_neto", "monto_iva", "monto_total", "fecha", "cuotas",
     ];
@@ -74,6 +74,7 @@ export default async function handler(req, res) {
     if (body.proyecto_id !== undefined) fields.proyecto_id = body.proyecto_id || null;
     if (body.titulo !== undefined) fields.titulo = body.titulo;
     if (body.descripcion !== undefined) fields.descripcion = body.descripcion;
+    if (body.condiciones !== undefined) fields.condiciones = body.condiciones;
     if (body.motivo !== undefined) fields.motivo = body.motivo;
     if (body.proveedor_id !== undefined) fields.proveedor_id = body.proveedor_id;
     if (body.creado_por !== undefined) fields.creado_por = body.creado_por;
@@ -197,6 +198,7 @@ export default async function handler(req, res) {
         fecha: body.fecha || undefined,
         titulo: body.titulo || null,
         descripcion: body.descripcion || null,
+        condiciones: body.condiciones || null,
         motivo: body.motivo || null,
         gerencia: body.gerencia || null,
         centro_costo_codigo: body.centro_costo_codigo || null,
