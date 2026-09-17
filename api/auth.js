@@ -47,14 +47,15 @@ export default async function handler(req, res) {
   if (action === "solicitar-reset") {
     const body = await readJsonBody(req);
     const usuario = (body.usuario || "").trim().toLowerCase();
-    const respuesta = { ok: true, mensaje: "Si el usuario existe y tiene un correo registrado, te enviaremos un enlace para restablecer tu contraseña." };
+    const respuesta = { ok: true, mensaje: "Si el usuario existe, te enviaremos un enlace a tu correo para restablecer tu contraseña." };
     if (!usuario) return res.status(400).json({ error: "Ingresa tu usuario" });
 
     const db = supabase();
     const { data: user } = await db.from("usuarios").select("*").eq("usuario", usuario).eq("activo", true).maybeSingle();
-    // Respuesta siempre genérica (no revela si el usuario existe o tiene
-    // correo) -- el envío real, si corresponde, ocurre "en silencio" antes.
-    if (user && user.correo) {
+    // El "usuario" (login) es el correo corporativo de cada persona -- no
+    // existe un campo de correo separado. Respuesta siempre generica (no
+    // revela si el usuario existe) -- el envio real ocurre "en silencio".
+    if (user) {
       try {
         const tokenPayload = {
           purpose: "reset", id: user.id, pwv: pwVersion(user.password_hash),

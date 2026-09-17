@@ -1560,7 +1560,7 @@ function ReportesList({ ordenes, proveedores, notify }) {
   );
 }
 
-const USUARIO_BLANK = { nombre: "", apellido: "", usuario: "", correo: "", nivel_aprobacion: "0", password: "" };
+const USUARIO_BLANK = { nombre: "", apellido: "", usuario: "", nivel_aprobacion: "0", password: "" };
 
 function UsuarioModal({ onClose, onSaved, notify, editUsuario }) {
   const [form, setForm] = useState(editUsuario
@@ -1599,10 +1599,8 @@ function UsuarioModal({ onClose, onSaved, notify, editUsuario }) {
       ),
       h(Field, { label: "Nombre *" }, h("input", { value: form.nombre, onChange: set("nombre") })),
       h(Field, { label: "Apellido *" }, h("input", { value: form.apellido, onChange: set("apellido") })),
-      h(Field, { label: "Usuario (login) *" }, h("input", { value: form.usuario, onChange: set("usuario") })),
-      h(Field, { label: "Correo" },
-        h("input", { type: "email", value: form.correo, onChange: set("correo"), placeholder: "nombre@patagonica.cl" })),
-      h("div", { className: "hint", style: { marginTop: -8, marginBottom: 10 } }, "Se usa solo para recuperar la contraseña si se olvida."),
+      h(Field, { label: "Usuario (login) *" }, h("input", { value: form.usuario, onChange: set("usuario"), placeholder: "nombre@patagonica.cl" })),
+      h("div", { className: "hint", style: { marginTop: -8, marginBottom: 10 } }, "Es el correo corporativo — también se usa para recibir copia de los correos de OC y para recuperar la contraseña."),
       h(Field, { label: "Nivel de Aprobación de OC" },
         h("select", { value: form.nivel_aprobacion, onChange: set("nivel_aprobacion") },
           h("option", { value: "0" }, "0 — No puede aprobar OC"),
@@ -1886,7 +1884,7 @@ function LoginScreen({ onLoggedIn }) {
       h("h1", { style: { fontSize: 20, fontWeight: 700, marginBottom: 6 } }, "Iniciar sesión"),
       h("p", { style: { color: "var(--txm)", fontSize: 13, marginBottom: 24 } }, "Ingresa con tu usuario de OCSys."),
       h("label", { style: lbl }, "Usuario"),
-      h("input", { value: usuario, onChange: (e) => setUsuario(e.target.value), placeholder: "amelendez", style: { marginBottom: 16 }, autoComplete: "username" }),
+      h("input", { value: usuario, onChange: (e) => setUsuario(e.target.value), placeholder: "amelendez@patagonica.cl", style: { marginBottom: 16 }, autoComplete: "username" }),
       h("label", { style: lbl }, "Contraseña"),
       h("input", {
         type: "password", value: password, onChange: (e) => setPassword(e.target.value), placeholder: "••••••••",
@@ -1923,17 +1921,17 @@ function OlvideClaveForm({ lbl, onVolver }) {
     return h("div", null,
       h("h1", { style: { fontSize: 20, fontWeight: 700, marginBottom: 12 } }, "Revisa tu correo"),
       h("p", { style: { color: "var(--txm)", fontSize: 13.5, marginBottom: 24, lineHeight: 1.5 } },
-        "Si el usuario existe y tiene un correo registrado, te enviamos un enlace para restablecer tu contraseña. Válido por 30 minutos."),
+        "Si el usuario existe, te enviamos un enlace a tu correo para restablecer tu contraseña. Válido por 30 minutos."),
       h("button", { className: "btn-ghost", style: { width: "100%" }, onClick: onVolver }, "Volver a iniciar sesión"),
     );
   }
 
   return h("div", null,
     h("h1", { style: { fontSize: 20, fontWeight: 700, marginBottom: 6 } }, "Recuperar contraseña"),
-    h("p", { style: { color: "var(--txm)", fontSize: 13, marginBottom: 24 } }, "Ingresa tu usuario y te enviaremos un enlace a tu correo registrado."),
+    h("p", { style: { color: "var(--txm)", fontSize: 13, marginBottom: 24 } }, "Ingresa tu usuario (tu correo corporativo) y te enviaremos un enlace a ese correo."),
     h("label", { style: lbl }, "Usuario"),
     h("input", {
-      value: usuario, onChange: (e) => setUsuario(e.target.value), placeholder: "amelendez", style: { marginBottom: 16 },
+      value: usuario, onChange: (e) => setUsuario(e.target.value), placeholder: "amelendez@patagonica.cl", style: { marginBottom: 16 },
       autoComplete: "username", onKeyDown: (e) => { if (e.key === "Enter") enviar(); },
     }),
     msg && h("div", { className: "notif-err", style: { padding: "8px 12px", borderRadius: 8, marginBottom: 12, fontSize: 13 } }, msg),

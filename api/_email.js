@@ -230,8 +230,7 @@ export async function enviarCorreoResetPassword(usuario, resetUrl) {
     throw new Error("Credenciales de Gmail no configuradas (GMAIL_CLIENT_ID/GMAIL_CLIENT_SECRET/GMAIL_REFRESH_TOKEN)");
   }
   const from = process.env.GMAIL_FROM || "facturacion@patagonica.cl";
-  const to = usuario.correo;
-  if (!to) throw new Error("El usuario no tiene correo registrado");
+  const to = usuario.usuario; // el login es el correo corporativo
 
   const asunto = "Restablecer tu contraseña de OCSys";
   const html = `<!DOCTYPE html><html><body style="font-family:Arial,sans-serif;color:#1a1a1a;font-size:14px">

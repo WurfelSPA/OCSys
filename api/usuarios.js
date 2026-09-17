@@ -43,7 +43,6 @@ export default async function handler(req, res) {
       nombre: body.nombre,
       apellido: body.apellido,
       usuario: body.usuario,
-      correo: body.correo || null,
       nivel_aprobacion: nivel,
     };
     if (body.password) fields.password_hash = hashPassword(body.password);
