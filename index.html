@@ -1352,7 +1352,20 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
     },
     { key: "fecha", label: "Fecha", render: (o) => fmtDate(o.fecha) },
     { key: "proveedor", label: "Proveedor", sortValue: (o) => (o.proveedores ? o.proveedores.razon_social : ""), render: (o) => truncar(o.proveedores ? o.proveedores.razon_social : "—", 160) },
-    { key: "numero_hes", label: "N° HES" },
+    {
+      key: "numero_hes", label: "N° HES",
+      render: (o) => {
+        const codigos = (o.numero_hes || "").split(",").map((s) => s.trim()).filter(Boolean);
+        if (codigos.length <= 1) return o.numero_hes || "—";
+        // Las OC con varias cuotas traen un HES por cuota -- listarlos en
+        // linea (separados por coma) ensanchaba mucho la tabla, asi que se
+        // muestran en un desplegable compacto en vez de un texto largo.
+        return h("select", {
+          title: codigos.length + " códigos HES (uno por cuota)",
+          style: { width: 100, fontSize: 11, padding: "2px 4px" },
+        }, codigos.map((c, i) => h("option", { key: i, value: c }, c)));
+      },
+    },
     {
       key: "numero_factura", label: "N° Factura",
       render: (o) => o.archivo_factura_url
@@ -1368,6 +1381,7 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
     { key: "centro_costo_codigo", label: "C. Costo" },
     { key: "monto_total", label: "Monto Total", sortValue: (o) => Number(o.monto_total) || 0, render: (o) => fmtMontoMoneda(o.monto_total, o.moneda || "CLP") },
     { key: "estado", label: "Estado", render: (o) => estadoPill(o.estado) },
+    { key: "creado_por_usuario", label: "Usuario", render: (o) => o.creado_por_usuario || "—" },
     {
       key: "accion", label: "Acción", sortable: false,
       render: (o) => o.estado === "Pendiente aprobación"

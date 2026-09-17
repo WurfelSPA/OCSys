@@ -156,6 +156,11 @@ export default async function handler(req, res) {
     if (!body.proveedor_id) {
       return res.status(400).json({ error: "proveedor_id es obligatorio" });
     }
+    // Se identifica por la sesion (no por lo que mande el cliente) para que
+    // quede registrado quien de verdad elaboro la OC en OCSys -- esto es
+    // independiente del "Representante de Compra", que es solo un dato de
+    // texto libre y puede ser otra persona.
+    const session = verifyToken(parseCookie(req.headers.cookie, "ocsys_token"), process.env.SESSION_SECRET || "");
     const empresaId = Number(body.empresa_id) || 1;
     const estado = ESTADOS_OCSYS.includes(body.estado) ? body.estado : "Borrador";
 
@@ -172,6 +177,7 @@ export default async function handler(req, res) {
         numero_oc,
         numero_cotizacion: body.numero_cotizacion || null,
         proyecto_id: body.proyecto_id || null,
+        creado_por_usuario: session ? session.usuario : null,
         proveedor_id: body.proveedor_id,
         empresa_id: empresaId,
         fecha: body.fecha || undefined,
