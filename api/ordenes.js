@@ -96,7 +96,7 @@ export default async function handler(req, res) {
       .from("ordenes_compra")
       .update({ ...fields, updated_at: new Date().toISOString() })
       .eq("id", id)
-      .select("*, proveedores(razon_social, rut, contacto_correo), empresas(correo_contabilidad), proyectos(nombre)")
+      .select("*, proveedores(razon_social, rut, contacto_correo, banco, tipo_cuenta, numero_cuenta), empresas(correo_contabilidad), proyectos(nombre)")
       .single();
     if (error) return res.status(500).json({ error: error.message });
 

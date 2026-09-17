@@ -144,6 +144,7 @@ export async function enviarCorreoFactura(orden, cc) {
   const numeroOc = orden.numero_oc_acquisys || orden.numero_oc;
   const asunto = `Pago Factura ${orden.numero_factura} / ${numeroOc} / HES ${orden.numero_hes}` + (orden.titulo ? ` - ${orden.titulo}` : "");
 
+  const proveedor = orden.proveedores || {};
   const html = `<!DOCTYPE html><html><body style="font-family:Arial,sans-serif;color:#1a1a1a;font-size:14px">
     <p style="margin:0 0 14px">Buenos días</p>
     <p style="margin:0 0 14px">Favor incluir en proceso de pago</p>
@@ -153,6 +154,13 @@ export async function enviarCorreoFactura(orden, cc) {
       HES: ${orden.numero_hes || "—"}<br>
       Centro costo: ${orden.centro_costo_codigo || "—"}<br>
       Descripción: ${orden.descripcion || ""}
+    </p>
+    <p style="margin:0 0 14px"><b>Datos Bancarios</b><br>
+      Razón Social: ${proveedor.razon_social || "—"}<br>
+      Rut: ${proveedor.rut || "—"}<br>
+      Banco: ${proveedor.banco || "—"}<br>
+      N° Cuenta ${abrevTipoCuenta(proveedor.tipo_cuenta)}: ${proveedor.numero_cuenta || "—"}<br>
+      Correo: ${proveedor.contacto_correo || "—"}
     </p>
     <p style="margin:0 0 14px">Se adjunta como respaldo OC y Factura</p>
     ${FIRMA_HTML}
@@ -217,6 +225,14 @@ export async function enviarCorreoPago(orden, cc) {
 
   const token = await getGmailToken();
   await sendGmail(token, to, from, asunto, html, attachment ? [attachment] : [], cc);
+}
+
+function abrevTipoCuenta(tipo) {
+  if (!tipo) return "";
+  if (/corriente/i.test(tipo)) return "Cte.";
+  if (/vista/i.test(tipo)) return "Vista";
+  if (/ahorro/i.test(tipo)) return "Ahorro";
+  return tipo;
 }
 
 function fmtMontoEmail(v, moneda) {
