@@ -25,12 +25,14 @@ async function getGmailToken() {
   return data.access_token;
 }
 
-function buildRawEmail(to, from, subject, htmlBody, attachments) {
+function buildRawEmail(to, from, subject, htmlBody, attachments, cc) {
   const boundary = "ocsys_" + Date.now().toString(36);
   const fromEncoded = `=?UTF-8?B?${Buffer.from("Patagónica Inmobiliaria").toString("base64")}?= <${from}>`;
   const subjectEncoded = `=?UTF-8?B?${Buffer.from(subject).toString("base64")}?=`;
 
-  const headers = [`From: ${fromEncoded}`, `To: ${to}`, `Subject: ${subjectEncoded}`, "MIME-Version: 1.0"];
+  const headers = [`From: ${fromEncoded}`, `To: ${to}`];
+  if (cc) headers.push(`Cc: ${cc}`);
+  headers.push(`Subject: ${subjectEncoded}`, "MIME-Version: 1.0");
   const lista = (attachments || []).filter(Boolean);
 
   let body;
@@ -65,8 +67,8 @@ function buildRawEmail(to, from, subject, htmlBody, attachments) {
   return Buffer.from(raw).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
-async function sendGmail(token, to, from, subject, htmlBody, attachments) {
-  const raw = buildRawEmail(to, from, subject, htmlBody, attachments);
+async function sendGmail(token, to, from, subject, htmlBody, attachments, cc) {
+  const raw = buildRawEmail(to, from, subject, htmlBody, attachments, cc);
   const res = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
@@ -89,7 +91,7 @@ const FIRMA_HTML = `
     Av. Américo Vespucio 2680, Piso 11, Conchalí.</p>
     <p style="color:#888888;font-size:11px;text-align:center;margin-top:24px">Correo generado automáticamente por OCSys</p>`;
 
-export async function enviarCorreoAprobacion(orden) {
+export async function enviarCorreoAprobacion(orden, cc) {
   if (!process.env.GMAIL_CLIENT_ID || !process.env.GMAIL_CLIENT_SECRET || !process.env.GMAIL_REFRESH_TOKEN) {
     throw new Error("Credenciales de Gmail no configuradas (GMAIL_CLIENT_ID/GMAIL_CLIENT_SECRET/GMAIL_REFRESH_TOKEN)");
   }
@@ -122,7 +124,7 @@ export async function enviarCorreoAprobacion(orden) {
   }
 
   const token = await getGmailToken();
-  await sendGmail(token, to, from, asunto, html, attachment ? [attachment] : []);
+  await sendGmail(token, to, from, asunto, html, attachment ? [attachment] : [], cc);
 }
 
 // Correo interno (no al proveedor) avisando al equipo de pagos que una OC
@@ -131,7 +133,7 @@ export async function enviarCorreoAprobacion(orden) {
 // empresa de la OC (editable sin redeploy) -> variable de entorno
 // PAGO_EMAIL_TO -> wurfel.cl@gmail.com como último respaldo para no arriesgar
 // mandarlo a alguien real si no hay nada configurado.
-export async function enviarCorreoFactura(orden) {
+export async function enviarCorreoFactura(orden, cc) {
   if (!process.env.GMAIL_CLIENT_ID || !process.env.GMAIL_CLIENT_SECRET || !process.env.GMAIL_REFRESH_TOKEN) {
     throw new Error("Credenciales de Gmail no configuradas (GMAIL_CLIENT_ID/GMAIL_CLIENT_SECRET/GMAIL_REFRESH_TOKEN)");
   }
@@ -171,13 +173,13 @@ export async function enviarCorreoFactura(orden) {
   }
 
   const token = await getGmailToken();
-  await sendGmail(token, to, from, asunto, html, attachments);
+  await sendGmail(token, to, from, asunto, html, attachments, cc);
 }
 
 // Correo al proveedor confirmando que se le pago, al subir el comprobante en
 // el paso final "Registrar Pago" (estado -> Completada). Cierra el ciclo que
 // empezo con enviarCorreoAprobacion.
-export async function enviarCorreoPago(orden) {
+export async function enviarCorreoPago(orden, cc) {
   if (!process.env.GMAIL_CLIENT_ID || !process.env.GMAIL_CLIENT_SECRET || !process.env.GMAIL_REFRESH_TOKEN) {
     throw new Error("Credenciales de Gmail no configuradas (GMAIL_CLIENT_ID/GMAIL_CLIENT_SECRET/GMAIL_REFRESH_TOKEN)");
   }
@@ -214,7 +216,7 @@ export async function enviarCorreoPago(orden) {
   }
 
   const token = await getGmailToken();
-  await sendGmail(token, to, from, asunto, html, attachment ? [attachment] : []);
+  await sendGmail(token, to, from, asunto, html, attachment ? [attachment] : [], cc);
 }
 
 function fmtMontoEmail(v, moneda) {

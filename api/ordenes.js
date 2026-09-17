@@ -100,24 +100,36 @@ export default async function handler(req, res) {
       .single();
     if (error) return res.status(500).json({ error: error.message });
 
+    // Copia (CC) al usuario de OCSys que elaboro la OC, para que le quede
+    // registro sin importar quien haya disparado esta accion en particular
+    // (aprobar/facturar/pagar puede ser otra persona). Solo se busca cuando
+    // realmente se va a enviar alguno de los 3 correos, y se omite en
+    // silencio si el usuario no tiene correo cargado en Administracion.
+    let ccUsuario = null;
+    if (["Aprobada", "Facturada", "Completada"].includes(body.estado) && data.creado_por_usuario) {
+      const { data: creador } = await db
+        .from("usuarios").select("correo").eq("usuario", data.creado_por_usuario).maybeSingle();
+      if (creador && creador.correo) ccUsuario = creador.correo;
+    }
+
     let correoError = null;
     if (body.estado === "Aprobada") {
       try {
-        await enviarCorreoAprobacion(data);
+        await enviarCorreoAprobacion(data, ccUsuario);
       } catch (e) {
         correoError = e.message;
       }
     }
     if (body.estado === "Facturada") {
       try {
-        await enviarCorreoFactura(data);
+        await enviarCorreoFactura(data, ccUsuario);
       } catch (e) {
         correoError = e.message;
       }
     }
     if (body.estado === "Completada") {
       try {
-        await enviarCorreoPago(data);
+        await enviarCorreoPago(data, ccUsuario);
       } catch (e) {
         correoError = e.message;
       }
