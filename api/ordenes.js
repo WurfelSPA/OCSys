@@ -1,6 +1,6 @@
 import { supabase, readJsonBody } from "./_supabase.js";
 import { verifyToken, parseCookie } from "./_session.js";
-import { enviarCorreoAprobacion, enviarCorreoFactura } from "./_email.js";
+import { enviarCorreoAprobacion, enviarCorreoFactura, enviarCorreoPago } from "./_email.js";
 
 // Aprobada -> se asigna HES y se envia la OC al proveedor.
 // Facturada -> se subio la factura del proveedor; se avisa al equipo de pagos.
@@ -111,6 +111,13 @@ export default async function handler(req, res) {
     if (body.estado === "Facturada") {
       try {
         await enviarCorreoFactura(data);
+      } catch (e) {
+        correoError = e.message;
+      }
+    }
+    if (body.estado === "Completada") {
+      try {
+        await enviarCorreoPago(data);
       } catch (e) {
         correoError = e.message;
       }
