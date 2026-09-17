@@ -1066,9 +1066,60 @@ function OrdenAccionModal({ orden, tipo, onClose, onDone, notify, proveedores, e
   const [file, setFile] = useState(null);
   const [dragOver, setDragOver] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [verificandoFactura, setVerificandoFactura] = useState(false);
+  const [discrepancia, setDiscrepancia] = useState(null);
+
+  const verificarFactura = async (f) => {
+    setVerificandoFactura(true);
+    try {
+      const base64 = await fileToBase64(f);
+      const { datos } = await api("extraer-factura", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filename: f.name, base64 }),
+        timeoutMs: 55000,
+      });
+      const rutNorm = (r) => (r || "").replace(/[^0-9kK]/g, "").toUpperCase();
+      const rutProveedor = orden.proveedores && orden.proveedores.rut;
+      const problemas = [];
+      if (datos.proveedor_rut && rutProveedor && rutNorm(datos.proveedor_rut) !== rutNorm(rutProveedor)) {
+        problemas.push("el RUT del emisor (" + datos.proveedor_rut + ") no coincide con el proveedor de la OC (" + rutProveedor + ")");
+      }
+      if (datos.moneda && orden.moneda && datos.moneda !== orden.moneda) {
+        problemas.push("la moneda de la factura (" + datos.moneda + ") no coincide con la de la OC (" + orden.moneda + ")");
+      }
+      if (datos.monto_total != null && orden.monto_total != null) {
+        const tolerancia = Math.max(1, Number(orden.monto_total) * 0.01);
+        if (Math.abs(Number(datos.monto_total) - Number(orden.monto_total)) > tolerancia) {
+          problemas.push("el monto de la factura (" + fmtMontoMoneda(datos.monto_total, datos.moneda || orden.moneda) + ") no coincide con el de la OC (" + fmtMontoMoneda(orden.monto_total, orden.moneda) + ")");
+        }
+      }
+      if (problemas.length) {
+        setDiscrepancia("La factura no coincide con la OC: " + problemas.join("; ") + ".");
+        notify("err", "La factura no coincide con la OC");
+      } else {
+        setDiscrepancia(null);
+        notify("ok", "Factura verificada: los datos coinciden con la OC");
+        if (datos.numero_factura) setNumeroFactura((n) => n || datos.numero_factura);
+        if (datos.monto_total != null) setMontoFacturado((m) => m || datos.monto_total);
+      }
+    } catch (e) {
+      // Si la IA falla no se bloquea la facturacion (puede ser un problema
+      // puntual de Gemini) -- solo se avisa que no se pudo verificar solo.
+      notify("warn", "No se pudo verificar la factura automáticamente: " + e.message);
+    } finally {
+      setVerificandoFactura(false);
+    }
+  };
+
+  const handleFacturaFile = (f) => {
+    setFile(f);
+    setDiscrepancia(null);
+    if (f && ALLOWED_IA_EXT.includes(f.name.split(".").pop().toLowerCase())) verificarFactura(f);
+  };
 
   const submit = async () => {
     if (isFacturar && !numeroFactura) return notify("err", "Ingresa el N° de Factura");
+    if (isFacturar && discrepancia) return notify("err", "No puedes continuar: la factura no coincide con la OC. Anula esta OC y genera una nueva, o sube la factura correcta.");
     if (isPagar && !file) return notify("err", "Sube el comprobante de pago");
     setSaving(true);
     try {
@@ -1157,15 +1208,24 @@ function OrdenAccionModal({ orden, tipo, onClose, onDone, notify, proveedores, e
             h("input", {
               type: "file", id: fileFieldId, style: { display: "none" },
               accept: ".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png",
-              onChange: (e) => setFile(e.target.files[0] || null),
+              onChange: (e) => handleFacturaFile(e.target.files[0] || null),
             })),
           h("label", {
             htmlFor: fileFieldId,
             className: "drop-zone" + (file ? " done" : "") + (dragOver ? " dragover" : ""),
             style: { display: "block" },
-            ...fileDropHandlers(setFile, setDragOver),
+            ...fileDropHandlers(handleFacturaFile, setDragOver),
           },
             file ? ("✓ " + file.name) : "Haz clic o arrastra aquí la factura"),
+          verificandoFactura && h("div", { className: "hint", style: { marginTop: 6, display: "flex", alignItems: "center", gap: 8 } },
+            h("span", { className: "spinner" }), "Verificando factura contra la OC con IA..."),
+          discrepancia && h("div", {
+            className: "notif-err",
+            style: { padding: "10px 12px", borderRadius: 8, marginTop: 8, fontSize: 12, lineHeight: 1.5 },
+          },
+            h("b", null, "⚠ " + discrepancia),
+            h("div", { style: { marginTop: 4 } }, "No se puede continuar. Anula esta OC y genera una nueva, o sube la factura correcta."),
+          ),
         ),
       isPagar &&
         h(React.Fragment, null,
@@ -1187,7 +1247,10 @@ function OrdenAccionModal({ orden, tipo, onClose, onDone, notify, proveedores, e
         ),
       h("div", { style: { display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 16 } },
         h("button", { className: "btn-ghost", onClick: onClose }, "Cancelar"),
-        h("button", { className: "btn-primary", onClick: submit, disabled: saving }, saving ? "Guardando..." : "Confirmar"),
+        h("button", {
+          className: "btn-primary", onClick: submit,
+          disabled: saving || verificandoFactura || (isFacturar && !!discrepancia),
+        }, saving ? "Guardando..." : "Confirmar"),
       ),
     )
   );
