@@ -296,7 +296,7 @@ function DataTable({ columns, rows, rowKey, searchPlaceholder, searchFields, onR
   );
 }
 
-function ProveedorModal({ regiones, catalogosListos, onClose, onCreated, notify, editProveedor, prefill, currentUser }) {
+function ProveedorModal({ regiones, catalogosListos, onClose, onCreated, notify, editProveedor, prefill, currentUser, proveedores }) {
   const [form, setForm] = useState(
     editProveedor ? { ...PROVEEDOR_BLANK, ...editProveedor }
       : prefill ? { ...PROVEEDOR_BLANK, ...prefill }
@@ -306,6 +306,8 @@ function ProveedorModal({ regiones, catalogosListos, onClose, onCreated, notify,
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
   const isEdit = !!editProveedor;
 
+  const rutNorm = (r) => (r || "").replace(/[^0-9kK]/g, "").toUpperCase();
+
   const submit = async () => {
     if (!form.razon_social || !form.rut) {
       notify("err", "Razón Social y RUT son obligatorios");
@@ -313,12 +315,28 @@ function ProveedorModal({ regiones, catalogosListos, onClose, onCreated, notify,
     }
     setSaving(true);
     try {
-      const { proveedor } = await api("proveedores" + (isEdit ? "?id=" + editProveedor.id : ""), {
-        method: isEdit ? "PUT" : "POST",
+      // Si estamos creando (no editando) y el RUT ya pertenece a un proveedor
+      // activo, no tiene sentido intentar un POST (el servidor lo va a
+      // rechazar por RUT duplicado) -- se actualiza ese proveedor existente
+      // en su lugar, conservando los datos que ya tenía y sumando lo nuevo
+      // que se haya escrito en este formulario (ej. Región).
+      const existente = !isEdit && (proveedores || []).find((p) => rutNorm(p.rut) === rutNorm(form.rut));
+      const idDestino = isEdit ? editProveedor.id : (existente ? existente.id : null);
+      // Solo pisa los campos del existente con los que el usuario realmente
+      // escribio en este formulario (no vacios) -- el resto de su ficha
+      // (datos bancarios, contacto, etc.) queda intacto.
+      const cuerpo = existente
+        ? Object.keys(form).reduce((acc, k) => (form[k] !== "" && form[k] != null ? { ...acc, [k]: form[k] } : acc), { ...existente })
+        : form;
+
+      const { proveedor } = await api("proveedores" + (idDestino ? "?id=" + idDestino : ""), {
+        method: idDestino ? "PUT" : "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: JSON.stringify(cuerpo),
       });
-      notify("ok", (isEdit ? "Proveedor actualizado: " : "Proveedor creado: ") + proveedor.razon_social);
+      notify("ok", existente
+        ? "Ya existía un proveedor con ese RUT — se actualizó: " + proveedor.razon_social
+        : (isEdit ? "Proveedor actualizado: " : "Proveedor creado: ") + proveedor.razon_social);
       onCreated(proveedor);
     } catch (e) {
       notify("err", e.message);
@@ -873,7 +891,7 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, proyectos, refres
 
   return h("div", { className: "page fade-up" },
     showModal && h(ProveedorModal, {
-      regiones: catalogos.regiones, catalogosListos: catalogos.listos, prefill: provPrefill, editProveedor: provEditing, currentUser,
+      regiones: catalogos.regiones, catalogosListos: catalogos.listos, prefill: provPrefill, editProveedor: provEditing, currentUser, proveedores,
       onClose: () => { setShowModal(false); setProvPrefill(null); setProvEditing(null); },
       onCreated: handleCreated, notify,
     }),
@@ -1455,7 +1473,7 @@ function ProveedoresList({ proveedores, catalogos, refreshProveedores, notify, c
   const closeAny = () => { setShowModal(false); setEditing(null); };
   return h("div", { className: "page fade-up" },
     (showModal || editing) && h(ProveedorModal, {
-      regiones: catalogos.regiones, catalogosListos: catalogos.listos, editProveedor: editing, onClose: closeAny, currentUser,
+      regiones: catalogos.regiones, catalogosListos: catalogos.listos, editProveedor: editing, onClose: closeAny, currentUser, proveedores,
       onCreated: () => { refreshProveedores(); closeAny(); }, notify,
     }),
     h("div", { className: "card" },
