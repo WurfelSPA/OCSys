@@ -27,6 +27,12 @@
 [data-empresa="2"]{
   --acc:#0a7c4e;--acc2:#1fa06a;--accl:#075c39;--accbg:#e6f5ed;
 }
+/* Evox: negro + verde, siguiendo su logo (texto EVOX en negro, "X" y HOUSE
+   en verde) -- distinto del verde de Campo Mar porque aqui el color base es
+   el negro, no el verde. */
+[data-empresa="3"]{
+  --acc:#1a1f26;--acc2:#1ec65a;--accl:#10131a;--accbg:#e8f9ee;
+}
 html,body,#root{height:100%;font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--tx);font-size:13px}
 ::-webkit-scrollbar{width:4px;height:4px}
 ::-webkit-scrollbar-thumb{background:var(--bdr2);border-radius:4px}
@@ -581,6 +587,7 @@ function fmtMontoPdf(n, moneda) {
 const EMPRESA_PDF_INFO = {
   1: { logo: "/logo.jpg", correoDte: "dte@patagonica.cl" },
   2: { logo: "/logo-campomar.jpg", correoDte: "contabilidad@patagonica.cl" },
+  3: { logo: "/logo-evox.png", correoDte: "contabilidad@patagonica.cl" },
 };
 
 async function generarPdfOC(orden, proveedor, cuotas, empresa) {
@@ -2648,7 +2655,7 @@ function App({ currentUser, onLogout }) {
   return h("div", null,
     notif && h("div", { className: "notif notif-" + (notif.type === "ok" ? "ok" : notif.type === "warn" ? "warn" : "err") }, notif.msg),
     h("div", { className: "header" },
-      h("img", { src: empresaId === 2 ? "/logo-campomar.jpg" : "/logo.jpg", alt: empresaActual ? empresaActual.nombre : "Patagónica" }),
+      h("img", { src: (EMPRESA_PDF_INFO[empresaId] || EMPRESA_PDF_INFO[1]).logo, alt: empresaActual ? empresaActual.nombre : "Patagónica" }),
       h("div", { style: { flex: 1, display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" } },
         h("h1", { style: { margin: 0 } }, "OCSys"),
         h("div", { className: "sub" }, "Órdenes de Compra" + (empresaActual ? " — " + empresaActual.nombre + " · RUT " + empresaActual.rut : "")),
