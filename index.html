@@ -387,40 +387,41 @@ function ProveedorModal({ regiones, catalogosListos, onClose, onCreated, notify,
             h("option", { value: "Mediana" }, "Mediana"),
             h("option", { value: "Grande" }, "Grande"),
           )),
-        h(Field, { label: "Giro Comercial" }, h("input", { value: form.giro_comercial, onChange: set("giro_comercial") })),
-        h(Field, { label: "Dirección Comercial" }, h("input", { value: form.direccion_comercial, onChange: set("direccion_comercial") })),
-        h(Field, { label: "Departamento / Oficina" }, h("input", { value: form.departamento_oficina, onChange: set("departamento_oficina") })),
-        h(Field, { label: "Región" },
+        h(Field, { label: "Giro Comercial *" }, h("input", { value: form.giro_comercial, onChange: set("giro_comercial") })),
+        h(Field, { label: "Dirección Comercial *" }, h("input", { value: form.direccion_comercial, onChange: set("direccion_comercial") })),
+        h(Field, { label: "Departamento / Oficina *" }, h("input", { value: form.departamento_oficina, onChange: set("departamento_oficina") })),
+        h(Field, { label: "Región *" },
           h("select", { value: form.region, onChange: set("region"), disabled: !catalogosListos },
             h("option", { value: "" }, catalogosListos ? "Selecciona región" : "Cargando..."),
             (regiones || []).map((r) => h("option", { key: r.id, value: r.nombre }, r.nombre)),
           )),
-        h(Field, { label: "Ciudad" }, h("input", { value: form.ciudad, onChange: set("ciudad"), placeholder: "Ciudad" })),
+        h(Field, { label: "Ciudad *" }, h("input", { value: form.ciudad, onChange: set("ciudad"), placeholder: "Ciudad" })),
         h(Field, { label: "Teléfono" }, h("input", { value: form.telefono, onChange: set("telefono") })),
         h(Field, { label: "Sitio Web" }, h("input", { value: form.sitio_web, onChange: set("sitio_web") })),
       ),
 
       h("div", { className: "section-lbl" }, "Datos de Contacto"),
       h("div", { className: "grid2" },
-        h(Field, { label: "Nombre Contacto" }, h("input", { value: form.contacto_nombre, onChange: set("contacto_nombre") })),
-        h(Field, { label: "Apellido Contacto" }, h("input", { value: form.contacto_apellido, onChange: set("contacto_apellido") })),
+        h(Field, { label: "Nombre Contacto *" }, h("input", { value: form.contacto_nombre, onChange: set("contacto_nombre") })),
+        h(Field, { label: "Apellido Contacto *" }, h("input", { value: form.contacto_apellido, onChange: set("contacto_apellido") })),
         h(Field, { label: "Teléfono Contacto" }, h("input", { value: form.contacto_telefono, onChange: set("contacto_telefono") })),
-        h(Field, { label: "Celular Contacto" }, h("input", { value: form.contacto_celular, onChange: set("contacto_celular") })),
-        h(Field, { label: "Correo Usuario" }, h("input", { value: form.contacto_correo, onChange: set("contacto_correo"), type: "email" })),
+        h(Field, { label: "Celular Contacto *" }, h("input", { value: form.contacto_celular, onChange: set("contacto_celular") })),
+        h(Field, { label: "Correo Usuario *" }, h("input", { value: form.contacto_correo, onChange: set("contacto_correo"), type: "email" })),
       ),
 
       h("div", { className: "section-lbl" }, "Datos Bancarios"),
       h("div", { className: "grid3" },
-        h(Field, { label: "Banco" }, h("input", { value: form.banco, onChange: set("banco") })),
-        h(Field, { label: "Tipo de Cuenta" },
+        h(Field, { label: "Banco *" }, h("input", { value: form.banco, onChange: set("banco") })),
+        h(Field, { label: "Tipo de Cuenta *" },
           h("select", { value: form.tipo_cuenta, onChange: set("tipo_cuenta") },
             h("option", { value: "" }, "Selecciona"),
             h("option", { value: "Cuenta Corriente" }, "Cuenta Corriente"),
             h("option", { value: "Cuenta Vista" }, "Cuenta Vista"),
             h("option", { value: "Cuenta de Ahorro" }, "Cuenta de Ahorro"),
           )),
-        h(Field, { label: "Número de Cuenta" }, h("input", { value: form.numero_cuenta, onChange: set("numero_cuenta") })),
+        h(Field, { label: "Número de Cuenta *" }, h("input", { value: form.numero_cuenta, onChange: set("numero_cuenta") })),
       ),
+      h("div", { className: "hint", style: { marginTop: -6 } }, "* Campos necesarios para poder generar una OC con este proveedor. Se puede guardar la ficha incompleta, pero no se podrá generar la OC hasta completarla."),
 
       h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginTop: 6 } },
         isEdit && puedeEliminar
@@ -829,6 +830,12 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, proyectos, refres
     if (!form.proveedor_id) return notify("err", "Selecciona un proveedor");
     if (estado === "Pendiente aprobación" && !form.representante_compra) {
       return notify("err", "Ingresa el Representante de Compra");
+    }
+    if (estado === "Pendiente aprobación") {
+      const proveedorSel = proveedores.find((p) => p.id === form.proveedor_id);
+      if (proveedorSel && !proveedorSel.datos_completos) {
+        return notify("err", "El proveedor \"" + proveedorSel.razon_social + "\" tiene la ficha incompleta — complétala en Proveedores antes de generar la OC.");
+      }
     }
     setSaving(true);
     try {

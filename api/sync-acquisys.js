@@ -26,12 +26,12 @@ function memoDeUrl(url) {
 }
 
 const CAMPOS_PARA_FICHA_COMPLETA = [
-  "giro_comercial", "direccion_comercial", "region", "ciudad",
-  "contacto_correo", "banco", "tipo_cuenta", "numero_cuenta",
+  "giro_comercial", "direccion_comercial", "departamento_oficina", "region", "ciudad",
+  "contacto_nombre", "contacto_apellido", "contacto_celular", "contacto_correo",
+  "banco", "tipo_cuenta", "numero_cuenta",
 ];
 function calcularDatosCompletos(fields) {
-  const tieneContactoTelefonico = !!(fields.telefono || fields.contacto_telefono || fields.contacto_celular);
-  return tieneContactoTelefonico && CAMPOS_PARA_FICHA_COMPLETA.every((k) => !!fields[k]);
+  return CAMPOS_PARA_FICHA_COMPLETA.every((k) => !!fields[k]);
 }
 
 // Ejecuta fn sobre cada item con un maximo de "concurrencia" en paralelo --

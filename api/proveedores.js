@@ -1,14 +1,18 @@
 import { supabase, readJsonBody } from "./_supabase.js";
 import { verifyToken, parseCookie } from "./_session.js";
 
+// Campos obligatorios para poder generar una OC con este proveedor (no para
+// poder crearlo -- se sigue permitiendo guardar una ficha incompleta, por
+// ejemplo desde la lectura rapida con IA de una cotizacion, y completarla
+// despues).
 const CAMPOS_PARA_FICHA_COMPLETA = [
-  "giro_comercial", "direccion_comercial", "region", "ciudad",
-  "contacto_correo", "banco", "tipo_cuenta", "numero_cuenta",
+  "giro_comercial", "direccion_comercial", "departamento_oficina", "region", "ciudad",
+  "contacto_nombre", "contacto_apellido", "contacto_celular", "contacto_correo",
+  "banco", "tipo_cuenta", "numero_cuenta",
 ];
 
 function calcularDatosCompletos(fields) {
-  const tieneContactoTelefonico = !!(fields.telefono || fields.contacto_telefono || fields.contacto_celular);
-  return tieneContactoTelefonico && CAMPOS_PARA_FICHA_COMPLETA.every((k) => !!fields[k]);
+  return CAMPOS_PARA_FICHA_COMPLETA.every((k) => !!fields[k]);
 }
 
 export default async function handler(req, res) {
