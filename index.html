@@ -1943,7 +1943,13 @@ function AdministracionList({ usuarios, refreshUsuarios, notify, currentUser, re
         h("button", { className: "btn-primary", style: { padding: "8px 18px" }, onClick: () => setShowModal(true) }, "+ Nuevo Usuario"),
       ),
       h(DataTable, {
-        columns: USUARIOS_COLUMNS, rows: usuarios, rowKey: (u) => u.id, onRowClick: setVerificando,
+        columns: USUARIOS_COLUMNS, rows: usuarios, rowKey: (u) => u.id,
+        // Si el usuario todavia no tiene contraseña (recien creado, en blanco
+        // a proposito para que la defina el mismo con "Olvidaste tu
+        // contraseña"), no hay clave contra la cual verificar -- pedirla
+        // dejaria a ese perfil imposible de volver a abrir. Se salta el
+        // paso de verificacion solo en ese caso.
+        onRowClick: (u) => (u.tiene_password ? setVerificando(u) : setEditing(u)),
         searchFields: ["nombre", "apellido", "usuario"],
         searchPlaceholder: "Buscar por nombre, apellido o usuario",
         emptyText: "No hay usuarios cargados todavía",
