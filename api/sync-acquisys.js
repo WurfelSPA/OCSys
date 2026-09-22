@@ -205,6 +205,12 @@ export default async function handler(req, res) {
       // corresponden numericamente -- se guarda el segundo aparte para poder
       // buscar por el numero que el equipo realmente usa a diario.
       if (!existente.numero_oc_acquisys && o.num_order) campos.numero_oc_acquisys = o.num_order;
+      // Si el catalogo de Centro de Costo/Cuenta Contable de la empresa no
+      // estaba cargado en su momento (paso manual aparte), estos quedaron en
+      // null aunque Acquisys si traia el dato -- se completan solos apenas
+      // el codigo sea valido contra el catalogo actual.
+      if (!existente.centro_costo_codigo && ccCodigo) campos.centro_costo_codigo = ccCodigo;
+      if (!existente.cuenta_contable_codigo && cuCodigo) campos.cuenta_contable_codigo = cuCodigo;
       // Titulo/Descripcion/Motivo no vienen en el listado, solo en la ficha
       // de detalle por id de memo -- se completan si aun faltan.
       if (!existente.titulo && o.id_memo) {
