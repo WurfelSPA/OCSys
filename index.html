@@ -1256,7 +1256,7 @@ function OrdenAccionModal({ orden, tipo, onClose, onDone, notify, proveedores, e
   );
 }
 
-function EditarOrdenModal({ orden, proveedores, catalogos, proyectos, refreshProyectos, empresaId, notify, onClose, onSaved }) {
+function EditarOrdenModal({ orden, proveedores, catalogos, proyectos, refreshProyectos, empresaId, empresa, notify, onClose, onSaved }) {
   const [form, setForm] = useState({
     proveedor_id: orden.proveedor_id || "",
     numero_cotizacion: orden.numero_cotizacion || "",
@@ -1318,6 +1318,44 @@ function EditarOrdenModal({ orden, proveedores, catalogos, proyectos, refreshPro
         body: JSON.stringify({ ...form, creado_por: form.representante_compra, cuotas }),
       });
       notify("ok", "OC actualizada");
+      onSaved();
+    } catch (e) {
+      notify("err", e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Guarda los cambios y de una vez pasa la OC de Borrador a Pendiente
+  // aprobación (genera el PDF), para no obligar a guardar como borrador y
+  // despues buscar por otro lado como "generarla" -- antes esa opcion no
+  // existia dentro de Editar y una OC en Borrador quedaba sin forma de
+  // avanzar de estado.
+  const generarOrden = async () => {
+    if (!form.proveedor_id) return notify("err", "Selecciona un proveedor");
+    if (!form.representante_compra) return notify("err", "Ingresa el Representante de Compra");
+    setSaving(true);
+    try {
+      const cuerpo = { ...form, creado_por: form.representante_compra, cuotas, estado: "Pendiente aprobación" };
+      const proveedor = proveedores.find((p) => p.id === form.proveedor_id);
+      if (proveedor) {
+        const datosParaPdf = { ...orden, ...cuerpo };
+        const pdfBlob = await generarPdfOC(datosParaPdf, proveedor, cuotas, empresa);
+        const pdfBase64 = await fileToBase64(new File([pdfBlob], "OC.pdf", { type: "application/pdf" }));
+        const up = await api("upload", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ filename: orden.numero_oc + ".pdf", base64: pdfBase64 }),
+          timeoutMs: 25000,
+        });
+        cuerpo.archivo_oc_url = up.url;
+        cuerpo.archivo_oc_nombre = orden.numero_oc + ".pdf";
+      }
+      await api("ordenes?id=" + orden.id, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(cuerpo),
+      });
+      notify("ok", "OC generada: " + orden.numero_oc);
       onSaved();
     } catch (e) {
       notify("err", e.message);
@@ -1417,7 +1455,9 @@ function EditarOrdenModal({ orden, proveedores, catalogos, proyectos, refreshPro
 
       h("div", { style: { display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 16 } },
         h("button", { className: "btn-ghost", onClick: onClose }, "Cancelar"),
-        h("button", { className: "btn-primary", onClick: guardar, disabled: saving }, saving ? "Guardando..." : "Guardar cambios"),
+        h("button", { className: "btn-ghost", onClick: guardar, disabled: saving }, saving ? "Guardando..." : "Guardar cambios"),
+        orden.estado === "Borrador" &&
+          h("button", { className: "btn-primary", onClick: generarOrden, disabled: saving }, saving ? "Generando..." : "Generar OC"),
       ),
     )
   );
@@ -1528,7 +1568,7 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
       onDone: () => { refreshOrdenes(); setAccion(null); },
     }),
     editando && h(EditarOrdenModal, {
-      orden: editando, proveedores, catalogos, proyectos, refreshProyectos, empresaId, notify,
+      orden: editando, proveedores, catalogos, proyectos, refreshProyectos, empresaId, empresa, notify,
       onClose: () => setEditando(null),
       onSaved: () => { refreshOrdenes(); setEditando(null); },
     }),
