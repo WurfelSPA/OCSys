@@ -13,7 +13,7 @@ export default async function handler(req, res) {
 
   const eventos = [];
   try {
-    const { filename, base64 } = await readJsonBody(req);
+    const { filename, base64, forzarFallback } = await readJsonBody(req);
     const ext = (filename || "").split(".").pop().toLowerCase();
     const mimeType = { pdf: "application/pdf", jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png" }[ext];
 
@@ -23,7 +23,7 @@ export default async function handler(req, res) {
       mimeType,
       base64,
       geminiSchema: { type: "object", properties: { ok: { type: "boolean" } } },
-      geminiModel: "gemini-3.6-flash",
+      geminiModel: forzarFallback ? "modelo-invalido-para-forzar-fallo" : "gemini-3.6-flash",
       onProgress: (m) => eventos.push({ t: Date.now(), motor: m }),
     });
     return res.status(200).json({ eventos, resultado });
