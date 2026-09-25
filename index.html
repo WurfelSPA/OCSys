@@ -247,7 +247,7 @@ function formBlank() {
   return {
     proveedor_id: "", fecha: new Date().toISOString().slice(0, 10),
     numero_cotizacion: "", proyecto_id: "",
-    titulo: "", descripcion: "", condiciones: "", representante_compra: "",
+    titulo: "", descripcion: "", condiciones: "",
     centro_costo_codigo: "", cuenta_contable_codigo: "",
     tipo_orden: "Afecto", tipo_compra: "Servicios", moneda: "CLP",
     monto_neto: "", monto_iva: "", monto_total: "",
@@ -822,7 +822,6 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, proyectos, refres
       }
 
       const neto = datos.monto_neto || 0;
-      const nombreContacto = [datos.contacto_nombre, datos.contacto_apellido].filter(Boolean).join(" ");
       setForm((f) => ({
         ...f,
         proveedor_id: proveedorMatch ? proveedorMatch.id : f.proveedor_id,
@@ -830,7 +829,6 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, proyectos, refres
         titulo: (datos.titulo || "").slice(0, 150) || f.titulo,
         descripcion: datos.descripcion || f.descripcion,
         condiciones: datos.condiciones || f.condiciones,
-        representante_compra: f.representante_compra || nombreContacto,
         moneda: datos.moneda || f.moneda,
         monto_neto: neto || f.monto_neto,
         monto_iva: datos.monto_iva !== undefined ? datos.monto_iva : f.monto_iva,
@@ -889,9 +887,6 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, proyectos, refres
 
   const submit = async (estado) => {
     if (!form.proveedor_id) return notify("err", "Selecciona un proveedor");
-    if (estado === "Pendiente aprobación" && !form.representante_compra) {
-      return notify("err", "Ingresa el Representante de Compra");
-    }
     if (estado === "Pendiente aprobación") {
       const proveedorSel = proveedores.find((p) => p.id === form.proveedor_id);
       if (proveedorSel && !proveedorSel.datos_completos) {
@@ -917,7 +912,7 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, proyectos, refres
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...form, estado, archivo_url, archivo_nombre, cuotas,
-          creado_por: form.representante_compra, empresa_id: empresaId,
+          empresa_id: empresaId,
         }),
         timeoutMs: 25000,
       });
@@ -1016,10 +1011,7 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, proyectos, refres
       h(ProveedorInfoPanel, { proveedor: proveedores.find((p) => p.id === form.proveedor_id) }),
 
       h("div", { className: "section-lbl" }, "Detalle de la Orden"),
-      h("div", { className: "grid2" },
-        h(Field, { label: "Título" }, h("input", { value: form.titulo, onChange: set("titulo") })),
-        h(Field, { label: "Representante de Compra *" }, h("input", { value: form.representante_compra, onChange: set("representante_compra") })),
-      ),
+      h(Field, { label: "Título" }, h("input", { value: form.titulo, onChange: set("titulo") })),
       h(Field, { label: "Descripción" }, h("textarea", { rows: 2, value: form.descripcion, onChange: set("descripcion") })),
       h(Field, { label: "Condiciones" },
         h("textarea", {
@@ -1315,7 +1307,6 @@ function EditarOrdenModal({ orden, proveedores, catalogos, proyectos, refreshPro
     titulo: orden.titulo || "",
     descripcion: orden.descripcion || "",
     condiciones: orden.condiciones || "",
-    representante_compra: orden.creado_por || "",
     fecha: orden.fecha || "",
     centro_costo_codigo: orden.centro_costo_codigo || "",
     cuenta_contable_codigo: orden.cuenta_contable_codigo || "",
@@ -1366,7 +1357,7 @@ function EditarOrdenModal({ orden, proveedores, catalogos, proyectos, refreshPro
       await api("ordenes?id=" + orden.id, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...form, creado_por: form.representante_compra, cuotas }),
+        body: JSON.stringify({ ...form, cuotas }),
       });
       notify("ok", "OC actualizada");
       onSaved();
@@ -1384,10 +1375,9 @@ function EditarOrdenModal({ orden, proveedores, catalogos, proyectos, refreshPro
   // avanzar de estado.
   const generarOrden = async () => {
     if (!form.proveedor_id) return notify("err", "Selecciona un proveedor");
-    if (!form.representante_compra) return notify("err", "Ingresa el Representante de Compra");
     setSaving(true);
     try {
-      const cuerpo = { ...form, creado_por: form.representante_compra, cuotas, estado: "Pendiente aprobación" };
+      const cuerpo = { ...form, cuotas, estado: "Pendiente aprobación" };
       const proveedor = proveedores.find((p) => p.id === form.proveedor_id);
       if (proveedor) {
         const datosParaPdf = { ...orden, ...cuerpo };
@@ -1427,10 +1417,7 @@ function EditarOrdenModal({ orden, proveedores, catalogos, proyectos, refreshPro
         h(Field, { label: "N° Cotización" }, h("input", { value: form.numero_cotizacion, onChange: set("numero_cotizacion") })),
         h(Field, { label: "Fecha" }, h("input", { type: "date", value: form.fecha, onChange: set("fecha") })),
       ),
-      h("div", { className: "grid2" },
-        h(Field, { label: "Título" }, h("input", { value: form.titulo, onChange: set("titulo") })),
-        h(Field, { label: "Representante de Compra" }, h("input", { value: form.representante_compra, onChange: set("representante_compra") })),
-      ),
+      h(Field, { label: "Título" }, h("input", { value: form.titulo, onChange: set("titulo") })),
       h(Field, { label: "Descripción" }, h("textarea", { rows: 2, value: form.descripcion, onChange: set("descripcion") })),
       h(Field, { label: "Condiciones" },
         h("textarea", {
