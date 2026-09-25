@@ -1,5 +1,5 @@
-import { GoogleGenAI } from "@google/genai";
 import { readJsonBody } from "./_supabase.js";
+import { leerDocumentoConFallback } from "./_ia-lectura.js";
 
 const RESPONSE_SCHEMA = {
   type: "object",
@@ -35,6 +35,19 @@ const RESPONSE_SCHEMA = {
   required: ["moneda", "monto_neto", "monto_total"],
 };
 
+const INSTRUCCIONES = "Esta es una cotización enviada por un proveedor a Patagónica Inmobiliaria. Extrae TODOS los datos solicitados, incluyendo el número o folio de la cotización (tal como aparece impreso en el documento, ej. 'N° 39512'), los datos bancarios (banco, tipo de cuenta, número de cuenta), los datos de contacto (nombre, teléfono, celular, correo) y las condiciones comerciales explícitas (plazos de entrega, condiciones de pago, validez de la oferta, garantía, etc.) si aparecen en el documento — no los omitas. Cada dato va SOLO en su propio campo: los montos van en monto_neto/monto_iva/monto_total, el banco y la cuenta van en banco/tipo_cuenta/numero_cuenta, nunca los repitas como texto dentro de titulo, descripcion o motivo. El titulo es un encabezado de máximo 8 palabras, sin cifras ni datos bancarios. El motivo debe quedar como cadena vacía si el documento no indica explícitamente para qué se solicita la compra — no escribas frases como 'no se indica motivo', simplemente déjalo vacío. Si un dato no aparece en el documento, usa cadena vacía \"\" — no lo inventes.";
+
+const PROMPT_GENERICO = `${INSTRUCCIONES}
+
+Responde ÚNICAMENTE con un objeto JSON (sin texto adicional, sin bloques de código markdown) con exactamente estas claves:
+{
+  "numero_cotizacion": string, "proveedor_rut": string, "proveedor_razon_social": string,
+  "contacto_nombre": string, "contacto_apellido": string, "contacto_telefono": string, "contacto_celular": string, "contacto_correo": string,
+  "banco": string, "tipo_cuenta": string, "numero_cuenta": string,
+  "descripcion": string, "condiciones": string, "motivo": string, "titulo": string,
+  "moneda": "CLP" | "USD" | "UF", "monto_neto": number, "monto_iva": number, "monto_total": number
+}`;
+
 const EXT_MIME = {
   pdf: "application/pdf",
   jpg: "image/jpeg",
@@ -57,41 +70,17 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: "La lectura con IA solo funciona con PDF, JPG o PNG. Word/Excel debes completarlos manualmente." });
   }
 
-  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-  const esErrorSaturacion = (e) => /UNAVAILABLE|"code":503|high demand|overloaded/i.test(e.message || "");
-
-  let ultimoError;
-  for (let intento = 1; intento <= 3; intento++) {
-    try {
-      const response = await ai.models.generateContent({
-        model: "gemini-3.6-flash",
-        contents: [{
-          role: "user",
-          parts: [
-            { text: "Esta es una cotización enviada por un proveedor a Patagónica Inmobiliaria. Extrae TODOS los datos solicitados en el esquema, incluyendo el número o folio de la cotización (tal como aparece impreso en el documento, ej. 'N° 39512'), los datos bancarios (banco, tipo de cuenta, número de cuenta), los datos de contacto (nombre, teléfono, celular, correo) y las condiciones comerciales explícitas (plazos de entrega, condiciones de pago, validez de la oferta, garantía, etc.) si aparecen en el documento — no los omitas. Cada dato va SOLO en su propio campo: los montos van en monto_neto/monto_iva/monto_total, el banco y la cuenta van en banco/tipo_cuenta/numero_cuenta, nunca los repitas como texto dentro de titulo, descripcion o motivo. El titulo es un encabezado de máximo 8 palabras, sin cifras ni datos bancarios. El motivo debe quedar como cadena vacía si el documento no indica explícitamente para qué se solicita la compra — no escribas frases como 'no se indica motivo', simplemente déjalo vacío." },
-            { inlineData: { mimeType, data: base64 } },
-          ],
-        }],
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: RESPONSE_SCHEMA,
-        },
-      });
-
-      const datos = JSON.parse(response.text);
-      return res.status(200).json({ datos });
-    } catch (e) {
-      ultimoError = e;
-      if (esErrorSaturacion(e) && intento < 3) {
-        await new Promise((r) => setTimeout(r, 1500 * intento));
-        continue;
-      }
-      break;
-    }
+  try {
+    const { datos, motor } = await leerDocumentoConFallback({
+      promptGemini: INSTRUCCIONES,
+      promptGenerico: PROMPT_GENERICO,
+      mimeType,
+      base64,
+      geminiSchema: RESPONSE_SCHEMA,
+      geminiModel: "gemini-3.6-flash",
+    });
+    return res.status(200).json({ datos, motor });
+  } catch (e) {
+    return res.status(502).json({ error: e.message });
   }
-
-  const mensaje = esErrorSaturacion(ultimoError)
-    ? "La IA está saturada en este momento (alta demanda en Gemini). Intenta de nuevo en unos segundos."
-    : ultimoError.message;
-  return res.status(502).json({ error: mensaje });
 }

@@ -753,11 +753,11 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, proyectos, refres
     setLeyendoIA(true);
     try {
       const base64 = await fileToBase64(f);
-      const { datos } = await api("extraer-cotizacion", {
+      const { datos, motor } = await api("extraer-cotizacion", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ filename: f.name, base64 }),
-        timeoutMs: 55000,
+        timeoutMs: 85000,
       });
 
       const rutNorm = (r) => (r || "").replace(/[^0-9kK]/g, "").toUpperCase();
@@ -821,7 +821,7 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, proyectos, refres
           setShowModal(true);
         }
       } else {
-        notify("ok", "Cotización leída con IA — revisa los datos antes de generar la OC");
+        notify("ok", "Cotización leída con IA" + (motor && motor !== "Gemini" ? " (" + motor + ")" : "") + " — revisa los datos antes de generar la OC");
       }
     } catch (e) {
       notify("err", e.message);
@@ -1073,10 +1073,10 @@ function OrdenAccionModal({ orden, tipo, onClose, onDone, notify, proveedores, e
     setVerificandoFactura(true);
     try {
       const base64 = await fileToBase64(f);
-      const { datos } = await api("extraer-factura", {
+      const { datos, motor } = await api("extraer-factura", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ filename: f.name, base64 }),
-        timeoutMs: 55000,
+        timeoutMs: 85000,
       });
       const rutNorm = (r) => (r || "").replace(/[^0-9kK]/g, "").toUpperCase();
       const rutProveedor = orden.proveedores && orden.proveedores.rut;
@@ -1098,7 +1098,7 @@ function OrdenAccionModal({ orden, tipo, onClose, onDone, notify, proveedores, e
         notify("err", "La factura no coincide con la OC");
       } else {
         setDiscrepancia(null);
-        notify("ok", "Factura verificada: los datos coinciden con la OC");
+        notify("ok", "Factura verificada" + (motor && motor !== "Gemini" ? " (" + motor + ")" : "") + ": los datos coinciden con la OC");
         if (datos.numero_factura) setNumeroFactura((n) => n || datos.numero_factura);
         if (datos.monto_total != null) setMontoFacturado((m) => m || datos.monto_total);
       }

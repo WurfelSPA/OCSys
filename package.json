@@ -4,8 +4,12 @@
   "private": true,
   "description": "OCSys — Órdenes de Compra Patagónica",
   "type": "module",
+  "engines": {
+    "node": ">=22.13.0"
+  },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",
-    "@google/genai": "^2.22.0"
+    "@google/genai": "^2.22.0",
+    "pdf-to-img": "^7.0.0"
   }
 }

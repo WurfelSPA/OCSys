@@ -1,5 +1,5 @@
-import { GoogleGenAI } from "@google/genai";
 import { readJsonBody } from "./_supabase.js";
+import { leerDocumentoConFallback } from "./_ia-lectura.js";
 
 const RESPONSE_SCHEMA = {
   type: "object",
@@ -14,6 +14,16 @@ const RESPONSE_SCHEMA = {
   propertyOrdering: ["numero_factura", "proveedor_rut", "moneda", "monto_neto", "monto_iva", "monto_total"],
   required: ["monto_total"],
 };
+
+const INSTRUCCIONES = "Este es un documento de factura (electrónica o física) emitida por un proveedor. Extrae el número/folio de la factura, el RUT de quien la EMITE (el proveedor, no el receptor), la moneda y los montos neto/IVA/total tal como aparecen impresos. No inventes datos que no esten en el documento — si un dato no aparece, usa cadena vacía \"\".";
+
+const PROMPT_GENERICO = `${INSTRUCCIONES}
+
+Responde ÚNICAMENTE con un objeto JSON (sin texto adicional, sin bloques de código markdown) con exactamente estas claves:
+{
+  "numero_factura": string, "proveedor_rut": string,
+  "moneda": "CLP" | "USD" | "UF", "monto_neto": number, "monto_iva": number, "monto_total": number
+}`;
 
 const EXT_MIME = {
   pdf: "application/pdf",
@@ -37,41 +47,17 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: "La lectura con IA solo funciona con PDF, JPG o PNG." });
   }
 
-  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-  const esErrorSaturacion = (e) => /UNAVAILABLE|"code":503|high demand|overloaded/i.test(e.message || "");
-
-  let ultimoError;
-  for (let intento = 1; intento <= 3; intento++) {
-    try {
-      const response = await ai.models.generateContent({
-        model: "gemini-3.6-flash",
-        contents: [{
-          role: "user",
-          parts: [
-            { text: "Este es un documento de factura (electrónica o física) emitida por un proveedor. Extrae el número/folio de la factura, el RUT de quien la EMITE (el proveedor, no el receptor), la moneda y los montos neto/IVA/total tal como aparecen impresos. No inventes datos que no esten en el documento." },
-            { inlineData: { mimeType, data: base64 } },
-          ],
-        }],
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: RESPONSE_SCHEMA,
-        },
-      });
-
-      const datos = JSON.parse(response.text);
-      return res.status(200).json({ datos });
-    } catch (e) {
-      ultimoError = e;
-      if (esErrorSaturacion(e) && intento < 3) {
-        await new Promise((r) => setTimeout(r, 1500 * intento));
-        continue;
-      }
-      break;
-    }
+  try {
+    const { datos, motor } = await leerDocumentoConFallback({
+      promptGemini: INSTRUCCIONES,
+      promptGenerico: PROMPT_GENERICO,
+      mimeType,
+      base64,
+      geminiSchema: RESPONSE_SCHEMA,
+      geminiModel: "gemini-3.6-flash",
+    });
+    return res.status(200).json({ datos, motor });
+  } catch (e) {
+    return res.status(502).json({ error: e.message });
   }
-
-  const mensaje = esErrorSaturacion(ultimoError)
-    ? "La IA está saturada en este momento (alta demanda en Gemini). Intenta de nuevo en unos segundos."
-    : ultimoError.message;
-  return res.status(502).json({ error: mensaje });
 }
