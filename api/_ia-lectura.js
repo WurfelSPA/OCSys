@@ -1,4 +1,16 @@
 import { GoogleGenAI } from "@google/genai";
+import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
+import { createRequire } from "node:module";
+import { pathToFileURL } from "node:url";
+
+// require.resolve() con string literal es estatico -- el trazador de
+// archivos de Vercel (@vercel/nft) lo detecta e incluye pdf.worker.mjs en la
+// funcion desplegada. Con import() dinamico no lo detecta y pdfjs-dist falla
+// en runtime con "Cannot find module .../pdf.worker.mjs". pathToFileURL es
+// necesario porque pdfjs internamente hace import() del workerSrc, y en
+// Windows una ruta cruda (C:\...) no es un especificador ESM valido.
+const require = createRequire(import.meta.url);
+pdfjsLib.GlobalWorkerOptions.workerSrc = pathToFileURL(require.resolve("pdfjs-dist/legacy/build/pdf.worker.mjs")).href;
 
 // Cadena de respaldo para la lectura de documentos con IA (cotizaciones y
 // facturas): Gemini -> Groq (Llama Vision) -> OpenRouter (Qwen-VL, modelo
@@ -42,7 +54,6 @@ async function leerConGemini({ prompt, mimeType, base64, schema, model }) {
 // Extrae el texto de un PDF (sin renderizar paginas a imagen) -- suficiente
 // para cotizaciones/facturas digitales, que son texto real y no escaneos.
 async function extraerTextoPdf(base64Pdf) {
-  const pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.mjs");
   const data = new Uint8Array(Buffer.from(base64Pdf, "base64"));
   const documento = await pdfjsLib.getDocument({ data, disableFontFace: true, useSystemFonts: false, isEvalSupported: false }).promise;
   let texto = "";
