@@ -1603,6 +1603,7 @@ const PROVEEDORES_COLUMNS = [
       ? h("a", {
           className: "link", target: "_blank", rel: "noreferrer",
           href: /^https?:\/\//i.test(p.sitio_web) ? p.sitio_web : "https://" + p.sitio_web,
+          onClick: (e) => e.stopPropagation(),
         }, truncar(p.sitio_web.replace(/^https?:\/\//i, ""), 160))
       : "—",
   },
