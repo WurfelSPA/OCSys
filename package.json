@@ -2,7 +2,7 @@
   "name": "ocsys",
   "version": "1.0.0",
   "private": true,
-  "description": "OCSys — Órdenes de Compra Patagónica",
+  "description": "OCFast — Órdenes de Compra Patagónica",
   "type": "module",
   "engines": {
     "node": ">=22.13.0"

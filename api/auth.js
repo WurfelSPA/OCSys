@@ -62,7 +62,7 @@ export default async function handler(req, res) {
           exp: Math.floor(Date.now() / 1000) + 30 * 60,
         };
         const token = signToken(tokenPayload, SESSION_SECRET);
-        const base = process.env.APP_URL || "https://ocsys.vercel.app";
+        const base = process.env.APP_URL || "https://ocfast.vercel.app";
         const resetUrl = base + "/?reset=" + token;
         await enviarCorreoResetPassword(user, resetUrl);
       } catch (e) {

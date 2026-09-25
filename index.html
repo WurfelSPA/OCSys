@@ -4,7 +4,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>OCSys — Órdenes de Compra Patagónica</title>
+<title>OCFast — Órdenes de Compra Patagónica</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet"/>
 <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -405,7 +405,7 @@ function ProveedorModal({ regiones, catalogosListos, onClose, onCreated, notify,
   const puedeEliminar = currentUser && currentUser.nivel_aprobacion === 1;
 
   const eliminar = async () => {
-    if (!window.confirm("¿Eliminar el proveedor \"" + editProveedor.razon_social + "\"? Dejará de verse en OCSys y en los informes.")) return;
+    if (!window.confirm("¿Eliminar el proveedor \"" + editProveedor.razon_social + "\"? Dejará de verse en OCFast y en los informes.")) return;
     setSaving(true);
     try {
       await api("proveedores?id=" + editProveedor.id, { method: "DELETE" });
@@ -719,7 +719,7 @@ async function generarPdfOC(orden, proveedor, cuotas, empresa) {
 
   const pageH = doc.internal.pageSize.getHeight();
   doc.setFontSize(8); doc.setTextColor(150);
-  doc.text("OCSys - " + nombreEmpresa + " © Todos los Derechos Reservados", left, pageH - 12);
+  doc.text("OCFast - " + nombreEmpresa + " © Todos los Derechos Reservados", left, pageH - 12);
   doc.text("1/1", right, pageH - 12, { align: "right" });
 
   return doc.output("blob");
@@ -1511,7 +1511,7 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
       notify("err", "Solo un administrador puede eliminar órdenes de compra.");
       return;
     }
-    if (!window.confirm("¿Eliminar la OC " + (o.numero_oc_acquisys || o.numero_oc) + "? Dejará de verse en OCSys y en los informes.")) return;
+    if (!window.confirm("¿Eliminar la OC " + (o.numero_oc_acquisys || o.numero_oc) + "? Dejará de verse en OCFast y en los informes.")) return;
     try {
       await api("ordenes?id=" + o.id, { method: "DELETE" });
       notify("ok", "OC " + o.numero_oc + " eliminada");
@@ -1616,7 +1616,7 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
         columns, rows: ordenesConVisible, rowKey: (o) => o.id,
         searchFields: ["numero_oc_visible", "numero_hes", "numero_egreso", "numero_factura", "moneda"],
         searchPlaceholder: "Buscar por N° OC, N° HES, N° Factura o Moneda (ej. UF)",
-        emptyText: "Aún no hay órdenes de compra creadas en OCSys",
+        emptyText: "Aún no hay órdenes de compra creadas en OCFast",
       }),
     )
   );
@@ -1742,19 +1742,19 @@ function ReportesList({ ordenes, proveedores, notify }) {
   return h("div", { className: "page fade-up" },
     h(ReporteCard, {
       title: "Listado de OC", description: "Todas las Órdenes de Compra", count: ocRows.length,
-      onDownload: () => doDownload(ocRows, "OCSys_Listado_OC.xlsx", "Listado de OC"),
+      onDownload: () => doDownload(ocRows, "OCFast_Listado_OC.xlsx", "Listado de OC"),
     }),
     h(ReporteCard, {
       title: "Listado de HES", description: "Órdenes con N° HES o N° de Egreso asociado", count: hesRows.length,
-      onDownload: () => doDownload(hesRows, "OCSys_Listado_HES.xlsx", "Listado de HES"),
+      onDownload: () => doDownload(hesRows, "OCFast_Listado_HES.xlsx", "Listado de HES"),
     }),
     h(ReporteCard, {
       title: "Listado de Facturas", description: "Órdenes con N° de Factura asociado", count: facturasRows.length,
-      onDownload: () => doDownload(facturasRows, "OCSys_Listado_Facturas.xlsx", "Listado de Facturas"),
+      onDownload: () => doDownload(facturasRows, "OCFast_Listado_Facturas.xlsx", "Listado de Facturas"),
     }),
     h(ReporteCard, {
       title: "Listado de Proveedores", description: "Ficha completa de todos los proveedores cargados", count: provRows.length,
-      onDownload: () => doDownload(provRows, "OCSys_Listado_Proveedores.xlsx", "Listado de Proveedores"),
+      onDownload: () => doDownload(provRows, "OCFast_Listado_Proveedores.xlsx", "Listado de Proveedores"),
     }),
   );
 }
@@ -1853,7 +1853,7 @@ function SincronizarAcquisys({ notify, refreshOrdenes, refreshProveedores, empre
       const ordenesAcquisys = await rAcq.json();
       agregarLog(ordenesAcquisys.length + " registros recibidos de Acquisys");
 
-      agregarLog("Sincronizando con OCSys (esto puede tardar unos minutos)...");
+      agregarLog("Sincronizando con OCFast (esto puede tardar unos minutos)...");
       const resultado = await api("sync-acquisys", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1909,7 +1909,7 @@ function SincronizarAcquisys({ notify, refreshOrdenes, refreshProveedores, empre
   return h("div", { className: "card", style: { marginTop: 20 } },
     h("h2", null, "Sincronizar con Acquisys"),
     h("p", { className: "hint", style: { marginBottom: 12 } },
-      "Trae órdenes nuevas o desactualizadas desde Acquisys (proveedor, montos, HES, factura, cuotas y archivos), sin pisar datos ya cargados en OCSys."),
+      "Trae órdenes nuevas o desactualizadas desde Acquisys (proveedor, montos, HES, factura, cuotas y archivos), sin pisar datos ya cargados en OCFast."),
     h("div", { className: "row-inline" },
       h("input", {
         value: acquisysToken, onChange: (e) => setAcquisysToken(e.target.value),
@@ -2087,7 +2087,7 @@ function LoginScreen({ onLoggedIn }) {
     h("div", { style: card },
       cabecera,
       h("h1", { style: { fontSize: 20, fontWeight: 700, marginBottom: 6 } }, "Iniciar sesión"),
-      h("p", { style: { color: "var(--txm)", fontSize: 13, marginBottom: 24 } }, "Ingresa con tu usuario de OCSys."),
+      h("p", { style: { color: "var(--txm)", fontSize: 13, marginBottom: 24 } }, "Ingresa con tu usuario de OCFast."),
       h("label", { style: lbl }, "Usuario"),
       h("input", { value: usuario, onChange: (e) => setUsuario(e.target.value), placeholder: "amelendez@patagonica.cl", style: { marginBottom: 16 }, autoComplete: "username" }),
       h("label", { style: lbl }, "Contraseña"),
@@ -2183,7 +2183,7 @@ function ResetPasswordScreen({ token, onListo }) {
           )
         : h("div", null,
             h("h1", { style: { fontSize: 20, fontWeight: 700, marginBottom: 6 } }, "Nueva contraseña"),
-            h("p", { style: { color: "var(--txm)", fontSize: 13, marginBottom: 24 } }, "Define tu nueva contraseña de OCSys."),
+            h("p", { style: { color: "var(--txm)", fontSize: 13, marginBottom: 24 } }, "Define tu nueva contraseña de OCFast."),
             h("label", { style: lbl }, "Contraseña nueva"),
             h("input", {
               type: "password", value: password, onChange: (e) => setPassword(e.target.value), placeholder: "••••••••",
@@ -2830,7 +2830,7 @@ function App({ currentUser, onLogout }) {
     h("div", { className: "header" },
       h("img", { src: (EMPRESA_PDF_INFO[empresaId] || EMPRESA_PDF_INFO[1]).logo, alt: empresaActual ? empresaActual.nombre : "Patagónica" }),
       h("div", { style: { flex: 1, display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" } },
-        h("h1", { style: { margin: 0 } }, "OCSys"),
+        h("h1", { style: { margin: 0 } }, "OCFast"),
         h("div", { className: "sub" }, "Órdenes de Compra" + (empresaActual ? " — " + empresaActual.nombre + " · RUT " + empresaActual.rut : "")),
       ),
       h("div", { style: { fontSize: 12, color: "var(--txm)", display: "flex", alignItems: "center", gap: 12 } },
