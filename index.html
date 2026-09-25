@@ -196,6 +196,53 @@ async function api(path, opts) {
   }
 }
 
+async function apiStream(path, opts, onProgress) {
+  const { timeoutMs, ...rest } = opts || {};
+  let timer, signal = rest.signal;
+  if (timeoutMs) {
+    const ctrl = new AbortController();
+    signal = ctrl.signal;
+    timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  }
+  try {
+    const res = await fetch("/api/" + path, { ...rest, signal });
+    if (!res.body || !(res.headers.get("content-type") || "").includes("ndjson")) {
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const err = new Error(data.error || "Error de servidor");
+        err.data = data;
+        throw err;
+      }
+      return data;
+    }
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "", resultado = null;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let idx;
+      while ((idx = buffer.indexOf("\n")) >= 0) {
+        const line = buffer.slice(0, idx).trim();
+        buffer = buffer.slice(idx + 1);
+        if (!line) continue;
+        const evt = JSON.parse(line);
+        if (evt.tipo === "progreso") { if (onProgress) onProgress(evt.motor); }
+        else if (evt.tipo === "resultado") resultado = { datos: evt.datos, motor: evt.motor };
+        else if (evt.tipo === "error") throw new Error(evt.error);
+      }
+    }
+    if (!resultado) throw new Error("La IA no devolvió resultado");
+    return resultado;
+  } catch (e) {
+    if (e.name === "AbortError") throw new Error("La IA está tardando demasiado en responder. Intenta nuevamente o completa los datos manualmente.");
+    throw e;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 function formBlank() {
   return {
     proveedor_id: "", fecha: new Date().toISOString().slice(0, 10),
@@ -705,6 +752,7 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, proyectos, refres
   const [dragOver, setDragOver] = useState(false);
   const [saving, setSaving] = useState(false);
   const [leyendoIA, setLeyendoIA] = useState(false);
+  const [motorIA, setMotorIA] = useState("Gemini");
   const [numCuotas, setNumCuotas] = useState(1);
   const [cuotas, setCuotas] = useState(distribuirCuotas(1, 0));
   const [form, setForm] = useState(formBlank());
@@ -751,14 +799,15 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, proyectos, refres
     const f = fileArg || file;
     if (!f) return;
     setLeyendoIA(true);
+    setMotorIA("Gemini");
     try {
       const base64 = await fileToBase64(f);
-      const { datos, motor } = await api("extraer-cotizacion", {
+      const { datos, motor } = await apiStream("extraer-cotizacion", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ filename: f.name, base64 }),
         timeoutMs: 85000,
-      });
+      }, setMotorIA);
 
       const rutNorm = (r) => (r || "").replace(/[^0-9kK]/g, "").toUpperCase();
       const nombreNorm = (n) => (n || "").toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -945,7 +994,7 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, proyectos, refres
           onClick: () => leerConIA(), style: { display: "flex", alignItems: "center", gap: 8 },
         },
           leyendoIA && h("span", { className: "spinner" }),
-          leyendoIA ? "Leyendo con IA..." : "Volver a leer con IA",
+          leyendoIA ? `Leyendo con IA (${motorIA})...` : "Volver a leer con IA",
         ),
         h("div", { className: "hint" }, "Al subir o arrastrar un PDF/JPG/PNG se lee automáticamente con IA y completa el formulario (incluido el proveedor). Word/Excel se completan a mano."),
       ),
@@ -1067,17 +1116,19 @@ function OrdenAccionModal({ orden, tipo, onClose, onDone, notify, proveedores, e
   const [dragOver, setDragOver] = useState(false);
   const [saving, setSaving] = useState(false);
   const [verificandoFactura, setVerificandoFactura] = useState(false);
+  const [motorFactura, setMotorFactura] = useState("Gemini");
   const [discrepancia, setDiscrepancia] = useState(null);
 
   const verificarFactura = async (f) => {
     setVerificandoFactura(true);
+    setMotorFactura("Gemini");
     try {
       const base64 = await fileToBase64(f);
-      const { datos, motor } = await api("extraer-factura", {
+      const { datos, motor } = await apiStream("extraer-factura", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ filename: f.name, base64 }),
         timeoutMs: 85000,
-      });
+      }, setMotorFactura);
       const rutNorm = (r) => (r || "").replace(/[^0-9kK]/g, "").toUpperCase();
       const rutProveedor = orden.proveedores && orden.proveedores.rut;
       const problemas = [];
@@ -1218,7 +1269,7 @@ function OrdenAccionModal({ orden, tipo, onClose, onDone, notify, proveedores, e
           },
             file ? ("✓ " + file.name) : "Haz clic o arrastra aquí la factura"),
           verificandoFactura && h("div", { className: "hint", style: { marginTop: 6, display: "flex", alignItems: "center", gap: 8 } },
-            h("span", { className: "spinner" }), "Verificando factura contra la OC con IA..."),
+            h("span", { className: "spinner" }), `Verificando factura contra la OC con IA (${motorFactura})...`),
           discrepancia && h("div", {
             className: "notif-err",
             style: { padding: "10px 12px", borderRadius: 8, marginTop: 8, fontSize: 12, lineHeight: 1.5 },

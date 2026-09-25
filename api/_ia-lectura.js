@@ -102,19 +102,23 @@ async function leerConOpenRouter(args) {
 // promptGemini: prompt + responseSchema para el modo de salida estructurada de Gemini.
 // promptGenerico: mismo pedido pero en texto plano (le pide el JSON explicitamente),
 // para los modelos de respaldo que no tienen "structured output" real.
-export async function leerDocumentoConFallback({ promptGemini, promptGenerico, mimeType, base64, geminiSchema, geminiModel }) {
+export async function leerDocumentoConFallback({ promptGemini, promptGenerico, mimeType, base64, geminiSchema, geminiModel, onProgress }) {
   const errores = [];
+  const avisar = (motorCorto) => { if (onProgress) onProgress(motorCorto); };
 
+  avisar("Gemini");
   try {
     const datos = await leerConGemini({ prompt: promptGemini, mimeType, base64, schema: geminiSchema, model: geminiModel });
     return { datos, motor: "Gemini" };
   } catch (e) { errores.push("Gemini: " + e.message); }
 
+  avisar("Groq");
   try {
     const datos = await leerConGroq({ prompt: promptGenerico, mimeType, base64 });
     return { datos, motor: "Groq (Llama Vision, respaldo)" };
   } catch (e) { errores.push("Groq: " + e.message); }
 
+  avisar("OpenRouter");
   try {
     const datos = await leerConOpenRouter({ prompt: promptGenerico, mimeType, base64 });
     return { datos, motor: "OpenRouter (Qwen-VL, respaldo)" };
