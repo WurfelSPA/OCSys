@@ -2828,6 +2828,7 @@ function App({ currentUser, onLogout }) {
   return h("div", null,
     notif && h("div", { className: "notif notif-" + (notif.type === "ok" ? "ok" : notif.type === "warn" ? "warn" : "err") }, notif.msg),
     h("div", { className: "header" },
+      h("img", { src: "/logo-OCFast.png", alt: "OCFast" }),
       h("img", { src: (EMPRESA_PDF_INFO[empresaId] || EMPRESA_PDF_INFO[1]).logo, alt: empresaActual ? empresaActual.nombre : "Patagónica" }),
       h("div", { style: { flex: 1, display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" } },
         h("h1", { style: { margin: 0 } }, "OCFast"),
