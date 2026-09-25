@@ -84,7 +84,7 @@ async function leerConGroq(args) {
   return leerConChatVision({
     baseUrl: "https://api.groq.com/openai/v1",
     apiKey: process.env.GROQ_API_KEY,
-    model: process.env.GROQ_VISION_MODEL || "llama-3.2-90b-vision-preview",
+    model: process.env.GROQ_VISION_MODEL || "qwen/qwen3.8-27b",
     ...args,
   });
 }
