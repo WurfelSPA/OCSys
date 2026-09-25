@@ -15,7 +15,7 @@ const RESPONSE_SCHEMA = {
   required: ["monto_total"],
 };
 
-const INSTRUCCIONES = "Este es un documento de factura (electrónica o física) emitida por un proveedor. Extrae el número/folio de la factura, el RUT de quien la EMITE (el proveedor, no el receptor), la moneda y los montos neto/IVA/total tal como aparecen impresos. No inventes datos que no esten en el documento — si un dato no aparece, usa cadena vacía \"\".";
+const INSTRUCCIONES = "Este es un documento de factura (electrónica o física) emitida por un proveedor a una empresa cliente (Patagónica Inmobiliaria, Campo Mar SPA o Evox/Sánchez Hermanos SpA). El documento muestra DOS RUT distintos: el del EMISOR/proveedor (generalmente en el encabezado o membrete) y el del RECEPTOR/cliente (frecuentemente bajo 'Señor(es):', 'Para:', 'Cliente:' o 'Dirigido a:'). Extrae proveedor_rut SOLO del emisor — NUNCA el RUT que aparece junto a 'Señor(es)'/'Para'/'Cliente', aunque esté etiquetado simplemente como 'RUT:' cerca de esos datos del receptor. Si el emisor no imprime su propio RUT, deja proveedor_rut como cadena vacía \"\" — no uses el RUT del receptor como reemplazo. Extrae también el número/folio de la factura, la moneda y los montos neto/IVA/total tal como aparecen impresos. No inventes datos que no esten en el documento — si un dato no aparece, usa cadena vacía \"\".";
 
 const PROMPT_GENERICO = `${INSTRUCCIONES}
 
