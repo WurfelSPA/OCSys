@@ -1597,6 +1597,15 @@ const PROVEEDORES_COLUMNS = [
   { key: "ciudad", label: "Ciudad" },
   { key: "contacto", label: "Contacto", sortValue: (p) => [p.contacto_nombre, p.contacto_apellido].filter(Boolean).join(" "), render: (p) => [p.contacto_nombre, p.contacto_apellido].filter(Boolean).join(" ") || "—" },
   { key: "contacto_correo", label: "Correo" },
+  {
+    key: "sitio_web", label: "Sitio Web",
+    render: (p) => p.sitio_web
+      ? h("a", {
+          className: "link", target: "_blank", rel: "noreferrer",
+          href: /^https?:\/\//i.test(p.sitio_web) ? p.sitio_web : "https://" + p.sitio_web,
+        }, truncar(p.sitio_web.replace(/^https?:\/\//i, ""), 160))
+      : "—",
+  },
   { key: "datos_completos", label: "Ficha", render: (p) => (p.datos_completos ? h("span", { className: "pill pill-ok" }, "Completa") : h("span", { className: "pill pill-pend" }, "⚠ Completar")) },
 ];
 
