@@ -94,7 +94,7 @@ async function leerConOpenRouter(args) {
   return leerConChatVision({
     baseUrl: "https://openrouter.ai/api/v1",
     apiKey: process.env.OPENROUTER_API_KEY,
-    model: process.env.OPENROUTER_VISION_MODEL || "qwen/qwen2.5-vl-32b-instruct:free",
+    model: process.env.OPENROUTER_VISION_MODEL || "google/gemma-4-31b-it:free",
     ...args,
   });
 }
