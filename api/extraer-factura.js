@@ -47,7 +47,11 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: "La lectura con IA solo funciona con PDF, JPG o PNG." });
   }
 
-  res.writeHead(200, { "Content-Type": "application/x-ndjson; charset=utf-8", "Cache-Control": "no-cache" });
+  res.statusCode = 200;
+  res.setHeader("Content-Type", "application/x-ndjson; charset=utf-8");
+  res.setHeader("Cache-Control", "no-cache");
+  const emitir = (linea) => { try { res.write(JSON.stringify(linea) + "\n"); } catch (_) {} };
+
   try {
     const { datos, motor } = await leerDocumentoConFallback({
       promptGemini: INSTRUCCIONES,
@@ -56,11 +60,11 @@ export default async function handler(req, res) {
       base64,
       geminiSchema: RESPONSE_SCHEMA,
       geminiModel: "gemini-3.6-flash",
-      onProgress: (motorCorto) => res.write(JSON.stringify({ tipo: "progreso", motor: motorCorto }) + "\n"),
+      onProgress: (motorCorto) => emitir({ tipo: "progreso", motor: motorCorto }),
     });
-    res.write(JSON.stringify({ tipo: "resultado", datos, motor }) + "\n");
+    emitir({ tipo: "resultado", datos, motor });
   } catch (e) {
-    res.write(JSON.stringify({ tipo: "error", error: e.message }) + "\n");
+    emitir({ tipo: "error", error: e.message });
   }
   res.end();
 }
