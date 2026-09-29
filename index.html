@@ -729,6 +729,23 @@ async function generarPdfOC(orden, proveedor, cuotas, empresa) {
   return doc.output("blob");
 }
 
+async function generarYAdjuntarPdf(ordenFila, proveedor, empresa) {
+  const pdfBlob = await generarPdfOC(ordenFila, proveedor, ordenFila.cuotas || [], empresa);
+  const pdfBase64 = await fileToBase64(new File([pdfBlob], "OC.pdf", { type: "application/pdf" }));
+  const up = await api("upload", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ filename: ordenFila.numero_oc + ".pdf", base64: pdfBase64 }),
+    timeoutMs: 25000,
+  });
+  await api("ordenes?id=" + ordenFila.id, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ archivo_oc_url: up.url, archivo_oc_nombre: ordenFila.numero_oc + ".pdf" }),
+    timeoutMs: 25000,
+  });
+}
+
 function CuotasEditor({ cuotas, setCuotas, montoNeto, moneda }) {
   const setCuota = (i, k, v) => setCuotas((cs) => cs.map((c, idx) => idx === i ? { ...c, [k]: v, porcentaje: k === "monto" ? (montoNeto ? Math.round((Number(v) / Number(montoNeto)) * 100) : 0) : c.porcentaje } : c));
   const totalCuotas = cuotas.reduce((s, c) => s + (Number(c.monto) || 0), 0);
@@ -925,20 +942,7 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, proyectos, refres
       if (estado === "Pendiente aprobación") {
         const proveedor = proveedores.find((p) => p.id === form.proveedor_id);
         for (const ordenFila of ordenesCreadas) {
-          const pdfBlob = await generarPdfOC(ordenFila, proveedor, ordenFila.cuotas || [], empresa);
-          const pdfBase64 = await fileToBase64(new File([pdfBlob], "OC.pdf", { type: "application/pdf" }));
-          const up = await api("upload", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ filename: ordenFila.numero_oc + ".pdf", base64: pdfBase64 }),
-            timeoutMs: 25000,
-          });
-          await api("ordenes?id=" + ordenFila.id, {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ archivo_oc_url: up.url, archivo_oc_nombre: ordenFila.numero_oc + ".pdf" }),
-            timeoutMs: 25000,
-          });
+          await generarYAdjuntarPdf(ordenFila, proveedor, empresa);
         }
       }
 
@@ -1387,6 +1391,15 @@ function EditarOrdenModal({ orden, proveedores, catalogos, proyectos, refreshPro
   const generarOrden = async () => {
     if (!form.proveedor_id) return notify("err", "Selecciona un proveedor");
     setSaving(true);
+    // Si la division en cuotas (el PUT de mas abajo) ya se ejecuto con exito
+    // pero algo despues falla (ej. subir uno de los PDF), la OC ya quedo
+    // dividida en la base de datos -- un segundo clic en "Generar OC" volveria
+    // a llamar al mismo PUT y el backend (no es idempotente en este paso)
+    // insertaria de nuevo las cuotas 2..N con el mismo numero_oc, duplicando
+    // filas con numeros de OC chocados. Por eso, si la falla ocurre despues de
+    // ese punto, se cierra el modal y se refresca el listado (onSaved) en vez
+    // de dejarlo abierto invitando a reintentar sobre datos ya desactualizados.
+    let sePartioEnCuotas = false;
     try {
       const proveedor = proveedores.find((p) => p.id === form.proveedor_id);
 
@@ -1397,21 +1410,10 @@ function EditarOrdenModal({ orden, proveedores, catalogos, proyectos, refreshPro
           body: JSON.stringify({ ...form, cuotas, estado: "Pendiente aprobación" }),
         });
         const ordenesCreadas = respuesta.ordenes;
+        sePartioEnCuotas = true;
         if (proveedor) {
           for (const fila of ordenesCreadas) {
-            const pdfBlob = await generarPdfOC(fila, proveedor, fila.cuotas || [], empresa);
-            const pdfBase64 = await fileToBase64(new File([pdfBlob], "OC.pdf", { type: "application/pdf" }));
-            const up = await api("upload", {
-              method: "POST", headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ filename: fila.numero_oc + ".pdf", base64: pdfBase64 }),
-              timeoutMs: 25000,
-            });
-            await api("ordenes?id=" + fila.id, {
-              method: "PUT",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ archivo_oc_url: up.url, archivo_oc_nombre: fila.numero_oc + ".pdf" }),
-              timeoutMs: 25000,
-            });
+            await generarYAdjuntarPdf(fila, proveedor, empresa);
           }
         }
         notify("ok", "OC generada en " + ordenesCreadas.length + " cuotas (" + ordenesCreadas.map((o) => o.numero_oc).join(", ") + ")");
@@ -1440,7 +1442,8 @@ function EditarOrdenModal({ orden, proveedores, catalogos, proyectos, refreshPro
       notify("ok", "OC generada: " + orden.numero_oc);
       onSaved();
     } catch (e) {
-      notify("err", e.message);
+      notify("err", e.message + (sePartioEnCuotas ? " — la OC ya quedó dividida en cuotas, revisa el listado antes de reintentar" : ""));
+      if (sePartioEnCuotas) onSaved();
     } finally {
       setSaving(false);
     }
