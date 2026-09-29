@@ -1569,6 +1569,21 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
     }
   };
 
+  const desaprobarOrden = async (o) => {
+    if (!window.confirm("¿Desaprobar la OC " + (o.numero_oc_acquisys || o.numero_oc) + "? Volverá a estado Pendiente aprobación y se podrá editar de nuevo.")) return;
+    try {
+      await api("ordenes?id=" + o.id, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ estado: "Pendiente aprobación" }),
+      });
+      notify("ok", "OC " + o.numero_oc + " devuelta a Pendiente aprobación");
+      refreshOrdenes();
+    } catch (e) {
+      notify("err", e.message);
+    }
+  };
+
   const ordenesConVisible = useMemo(() => ordenes.map((o) => ({ ...o, numero_oc_visible: o.numero_oc_acquisys || o.numero_oc })), [ordenes]);
 
   const columns = useMemo(() => [
@@ -1626,7 +1641,10 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
             ? h("button", { className: "btn-ghost", style: { padding: "4px 10px", fontSize: 11 }, onClick: () => setAccion({ orden: o, tipo: "aprobar" }) }, "Aprobar")
             : h("span", { className: "hint" }, "Requiere aprobador"))
         : o.estado === "Aprobada"
-        ? h("button", { className: "btn-ghost", style: { padding: "4px 10px", fontSize: 11 }, onClick: () => setAccion({ orden: o, tipo: "facturar" }) }, "Facturar")
+        ? h("div", { style: { display: "flex", gap: 6, flexWrap: "wrap" } },
+            h("button", { className: "btn-ghost", style: { padding: "4px 10px", fontSize: 11 }, onClick: () => setAccion({ orden: o, tipo: "facturar" }) }, "Facturar"),
+            puedeAprobar && h("button", { className: "btn-ghost", style: { padding: "4px 10px", fontSize: 11 }, onClick: () => desaprobarOrden(o) }, "Desaprobar"),
+          )
         : o.estado === "Facturada"
         ? h("button", { className: "btn-ghost", style: { padding: "4px 10px", fontSize: 11 }, onClick: () => setAccion({ orden: o, tipo: "pagar" }) }, "Registrar Pago")
         : "—",
