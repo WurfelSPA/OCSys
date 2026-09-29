@@ -1392,13 +1392,17 @@ function EditarOrdenModal({ orden, proveedores, catalogos, proyectos, refreshPro
     if (!form.proveedor_id) return notify("err", "Selecciona un proveedor");
     setSaving(true);
     // Si la division en cuotas (el PUT de mas abajo) ya se ejecuto con exito
-    // pero algo despues falla (ej. subir uno de los PDF), la OC ya quedo
-    // dividida en la base de datos -- un segundo clic en "Generar OC" volveria
-    // a llamar al mismo PUT y el backend (no es idempotente en este paso)
-    // insertaria de nuevo las cuotas 2..N con el mismo numero_oc, duplicando
-    // filas con numeros de OC chocados. Por eso, si la falla ocurre despues de
-    // ese punto, se cierra el modal y se refresca el listado (onSaved) en vez
-    // de dejarlo abierto invitando a reintentar sobre datos ya desactualizados.
+    // pero algo despues falla (ej. subir uno de los PDF), la fila original ya
+    // quedo mutada en la base de datos (su numero_oc ya lleva el sufijo "-1",
+    // su cuotas quedo vacio) -- un segundo clic en "Generar OC" volveria a
+    // llamar al mismo PUT y el backend (no es idempotente en este paso)
+    // volveria a dividir esa fila YA dividida, anidando un nuevo sufijo sobre
+    // el que ya tiene y dejando filas huerfanas cuyos montos no cuadran con
+    // el total original -- no es un simple choque de numero_oc identico, es
+    // peor: pasa silencioso, sin error de duplicado que lo delate. Por eso,
+    // si la falla ocurre despues de ese punto, se cierra el modal y se
+    // refresca el listado (onSaved) en vez de dejarlo abierto invitando a
+    // reintentar sobre datos ya desactualizados.
     let sePartioEnCuotas = false;
     try {
       const proveedor = proveedores.find((p) => p.id === form.proveedor_id);
