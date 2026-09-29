@@ -1192,7 +1192,10 @@ function OrdenAccionModal({ orden, tipo, onClose, onDone, notify, proveedores, e
         if (!orden.numero_oc_acquisys) {
           const proveedor = (proveedores || []).find((p) => p.id === orden.proveedor_id);
           if (proveedor) {
-            const { numero_hes: numeroHes } = await api("ordenes?siguiente_hes=1&empresa_id=" + orden.empresa_id, { timeoutMs: 15000 });
+            // Si la OC ya tenia un HES (se esta re-aprobando despues de un
+            // Desaprobar), se reutiliza el mismo -- solo se pide uno nuevo
+            // la primera vez que se aprueba.
+            const numeroHes = orden.numero_hes || (await api("ordenes?siguiente_hes=1&empresa_id=" + orden.empresa_id, { timeoutMs: 15000 })).numero_hes;
             const pdfBlob = await generarPdfOC({ ...orden, numero_hes: numeroHes }, proveedor, orden.cuotas || [], empresa);
             const pdfBase64 = await fileToBase64(new File([pdfBlob], "OC.pdf", { type: "application/pdf" }));
             const up = await api("upload", {
