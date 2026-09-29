@@ -1184,7 +1184,7 @@ function OrdenAccionModal({ orden, tipo, onClose, onDone, notify, proveedores, e
         if (!orden.numero_oc_acquisys) {
           const proveedor = (proveedores || []).find((p) => p.id === orden.proveedor_id);
           if (proveedor) {
-            const numeroHes = Date.now().toString();
+            const { numero_hes: numeroHes } = await api("ordenes?siguiente_hes=1&empresa_id=" + orden.empresa_id, { timeoutMs: 15000 });
             const pdfBlob = await generarPdfOC({ ...orden, numero_hes: numeroHes }, proveedor, orden.cuotas || [], empresa);
             const pdfBase64 = await fileToBase64(new File([pdfBlob], "OC.pdf", { type: "application/pdf" }));
             const up = await api("upload", {
@@ -1384,8 +1384,38 @@ function EditarOrdenModal({ orden, proveedores, catalogos, proyectos, refreshPro
     if (!form.proveedor_id) return notify("err", "Selecciona un proveedor");
     setSaving(true);
     try {
-      const cuerpo = { ...form, cuotas, estado: "Pendiente aprobación" };
       const proveedor = proveedores.find((p) => p.id === form.proveedor_id);
+
+      if (cuotas.length > 1) {
+        const respuesta = await api("ordenes?id=" + orden.id, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...form, cuotas, estado: "Pendiente aprobación" }),
+        });
+        const ordenesCreadas = respuesta.ordenes;
+        if (proveedor) {
+          for (const fila of ordenesCreadas) {
+            const pdfBlob = await generarPdfOC(fila, proveedor, fila.cuotas || [], empresa);
+            const pdfBase64 = await fileToBase64(new File([pdfBlob], "OC.pdf", { type: "application/pdf" }));
+            const up = await api("upload", {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ filename: fila.numero_oc + ".pdf", base64: pdfBase64 }),
+              timeoutMs: 25000,
+            });
+            await api("ordenes?id=" + fila.id, {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ archivo_oc_url: up.url, archivo_oc_nombre: fila.numero_oc + ".pdf" }),
+              timeoutMs: 25000,
+            });
+          }
+        }
+        notify("ok", "OC generada en " + ordenesCreadas.length + " cuotas (" + ordenesCreadas.map((o) => o.numero_oc).join(", ") + ")");
+        onSaved();
+        return;
+      }
+
+      const cuerpo = { ...form, cuotas, estado: "Pendiente aprobación" };
       if (proveedor) {
         const datosParaPdf = { ...orden, ...cuerpo };
         const pdfBlob = await generarPdfOC(datosParaPdf, proveedor, cuotas, empresa);
