@@ -673,6 +673,10 @@ async function generarPdfOC(orden, proveedor, cuotas, empresa) {
 
   doc.setFontSize(20); doc.setTextColor(140);
   doc.text("Orden de Compra #" + (orden.numero_oc_acquisys || orden.numero_oc), left, 82);
+  if (orden.cuota_total) {
+    doc.setFontSize(11); doc.setTextColor(140);
+    doc.text("Cuota " + orden.cuota_numero + " de " + orden.cuota_total, right, 82, { align: "right" });
+  }
 
   // El N° HES solo se muestra en OC nativas de OCSys (sin numero_oc_acquisys)
   // -- las importadas de Acquisys quedan igual que siempre, sin este dato.
