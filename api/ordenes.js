@@ -1,4 +1,5 @@
 import { supabase, readJsonBody } from "./_supabase.js";
+import { calcularFilasCuotas } from "./_cuotas.js";
 import { verifyToken, parseCookie } from "./_session.js";
 import { enviarCorreoAprobacion, enviarCorreoFactura, enviarCorreoPago } from "./_email.js";
 
@@ -178,47 +179,69 @@ export default async function handler(req, res) {
     const session = verifyToken(parseCookie(req.headers.cookie, "ocsys_token"), process.env.SESSION_SECRET || "");
     const empresaId = Number(body.empresa_id) || 1;
     const estado = ESTADOS_OCSYS.includes(body.estado) ? body.estado : "Borrador";
+    const cuotas = Array.isArray(body.cuotas) ? body.cuotas : [];
 
     const { data: empresa, error: empresaError } = await db.from("empresas").select("codigo").eq("id", empresaId).maybeSingle();
     if (empresaError) return res.status(500).json({ error: empresaError.message });
     const { data: siguiente, error: seqError } = await db.rpc("siguiente_numero_oc", { p_empresa_id: empresaId });
     if (seqError) return res.status(500).json({ error: seqError.message });
     const fechaHoy = new Date().toISOString().slice(0, 10).replace(/-/g, "");
-    const numero_oc = (empresa?.codigo || "OC") + "-OC-" + fechaHoy + "-" + String(siguiente).padStart(5, "0");
+    const numeroBase = (empresa?.codigo || "OC") + "-OC-" + fechaHoy + "-" + String(siguiente).padStart(5, "0");
 
+    const camposBase = {
+      numero_cotizacion: body.numero_cotizacion || null,
+      proyecto_id: body.proyecto_id || null,
+      creado_por_usuario: session ? session.usuario : null,
+      proveedor_id: body.proveedor_id,
+      empresa_id: empresaId,
+      fecha: body.fecha || undefined,
+      titulo: body.titulo || null,
+      descripcion: body.descripcion || null,
+      condiciones: body.condiciones || null,
+      motivo: body.motivo || null,
+      gerencia: body.gerencia || null,
+      centro_costo_codigo: body.centro_costo_codigo || null,
+      cuenta_contable_codigo: body.cuenta_contable_codigo || null,
+      tipo_orden: body.tipo_orden || null,
+      tipo_compra: body.tipo_compra || null,
+      moneda: body.moneda || "CLP",
+      estado,
+      archivo_url: body.archivo_url || null,
+      archivo_nombre: body.archivo_nombre || null,
+      creado_por: body.creado_por || null,
+    };
+
+    // Una OC con mas de 1 cuota se divide en N filas independientes (mismo
+    // numero_oc base + sufijo, cada una con su propio monto/HES/aprobacion) --
+    // ver docs/superpowers/specs/2026-09-29-ordenes-en-cuotas-design.md. Con 1
+    // sola cuota (o en Borrador) se sigue creando una sola fila, como siempre.
+    const dividirEnCuotas = estado === "Pendiente aprobación" && cuotas.length > 1;
+
+    if (!dividirEnCuotas) {
+      const { data, error } = await db
+        .from("ordenes_compra")
+        .insert({
+          ...camposBase,
+          numero_oc: numeroBase,
+          monto_neto: body.monto_neto || null,
+          monto_iva: body.monto_iva || null,
+          monto_total: body.monto_total || null,
+          cuotas,
+        })
+        .select("*, proveedores(razon_social, rut)")
+        .single();
+      if (error) return res.status(500).json({ error: error.message });
+      return res.status(201).json({ orden: data });
+    }
+
+    const filasCuotas = calcularFilasCuotas({ cuotas, montoNeto: body.monto_neto, montoIva: body.monto_iva, numeroBase });
+    const filas = filasCuotas.map((f) => ({ ...camposBase, ...f, cuotas: [] }));
     const { data, error } = await db
       .from("ordenes_compra")
-      .insert({
-        numero_oc,
-        numero_cotizacion: body.numero_cotizacion || null,
-        proyecto_id: body.proyecto_id || null,
-        creado_por_usuario: session ? session.usuario : null,
-        proveedor_id: body.proveedor_id,
-        empresa_id: empresaId,
-        fecha: body.fecha || undefined,
-        titulo: body.titulo || null,
-        descripcion: body.descripcion || null,
-        condiciones: body.condiciones || null,
-        motivo: body.motivo || null,
-        gerencia: body.gerencia || null,
-        centro_costo_codigo: body.centro_costo_codigo || null,
-        cuenta_contable_codigo: body.cuenta_contable_codigo || null,
-        tipo_orden: body.tipo_orden || null,
-        tipo_compra: body.tipo_compra || null,
-        moneda: body.moneda || "CLP",
-        monto_neto: body.monto_neto || null,
-        monto_iva: body.monto_iva || null,
-        monto_total: body.monto_total || null,
-        estado,
-        archivo_url: body.archivo_url || null,
-        archivo_nombre: body.archivo_nombre || null,
-        creado_por: body.creado_por || null,
-        cuotas: Array.isArray(body.cuotas) ? body.cuotas : [],
-      })
-      .select("*, proveedores(razon_social, rut)")
-      .single();
+      .insert(filas)
+      .select("*, proveedores(razon_social, rut)");
     if (error) return res.status(500).json({ error: error.message });
-    return res.status(201).json({ orden: data });
+    return res.status(201).json({ ordenes: data });
   }
 
   res.setHeader("Allow", "GET, POST, PUT, DELETE");
