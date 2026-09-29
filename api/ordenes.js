@@ -133,6 +133,22 @@ export default async function handler(req, res) {
           fields.numero_hes = String(siguienteHes).padStart(8, "0");
         }
       }
+      if (body.estado === "Pendiente aprobación") {
+        // "Desaprobar": revertir una OC ya Aprobada de vuelta a Pendiente
+        // aprobación, para poder corregirla y volver a aprobarla (mismo N°
+        // de OC, mismo HES -- ninguno de los dos se toca aqui, solo cambia
+        // el estado). Requiere el mismo nivel que se usa para aprobar. No se
+        // permite si ya paso a Facturada/Completada (ahi solo cabe Anular).
+        const { data: filaActual } = await db.from("ordenes_compra").select("estado").eq("id", id).maybeSingle();
+        if (filaActual && filaActual.estado === "Aprobada") {
+          session = verifyToken(parseCookie(req.headers.cookie, "ocsys_token"), process.env.SESSION_SECRET || "");
+          if (!session || session.nivel_aprobacion !== 1) {
+            return res.status(403).json({ error: "No tienes nivel de aprobación para desaprobar órdenes de compra" });
+          }
+        } else if (filaActual && !["Borrador", "Pendiente aprobación"].includes(filaActual.estado)) {
+          return res.status(403).json({ error: "Esta OC ya no se puede devolver a Pendiente aprobación" });
+        }
+      }
       if (body.estado === "Facturada" && !body.numero_factura) {
         return res.status(400).json({ error: "numero_factura es obligatorio para facturar la OC" });
       }
