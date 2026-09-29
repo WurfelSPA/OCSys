@@ -8,6 +8,78 @@ import { enviarCorreoAprobacion, enviarCorreoFactura, enviarCorreoPago } from ".
 // Completada -> se subio el comprobante de pago, cierra el ciclo.
 const ESTADOS_OCSYS = ["Borrador", "Pendiente aprobación", "Aprobada", "Facturada", "Completada"];
 
+// Convierte la fila actual (Borrador) en la cuota 1, e inserta las cuotas
+// 2..N como filas nuevas -- todas comparten los mismos datos de "creacion"
+// de la OC (proveedor, titulo, etc.) pero cada una con su propio numero_oc
+// (sufijo), monto y ciclo de aprobacion/factura/pago independiente. Ver
+// docs/superpowers/specs/2026-09-29-ordenes-en-cuotas-design.md
+async function dividirEnCuotasPUT(db, id, body, res) {
+  const { data: actual, error: actualError } = await db.from("ordenes_compra").select("*").eq("id", id).maybeSingle();
+  if (actualError) return res.status(500).json({ error: actualError.message });
+  if (!actual) return res.status(404).json({ error: "OC no encontrada" });
+  if (!["Borrador", "Pendiente aprobación"].includes(actual.estado)) {
+    return res.status(403).json({ error: "La OC ya fue aprobada y no se puede editar" });
+  }
+
+  const filasCuotas = calcularFilasCuotas({
+    cuotas: body.cuotas,
+    montoNeto: body.monto_neto !== undefined ? body.monto_neto : actual.monto_neto,
+    montoIva: body.monto_iva !== undefined ? body.monto_iva : actual.monto_iva,
+    numeroBase: actual.numero_oc,
+  });
+
+  const campo = (clave, transform) => {
+    if (body[clave] === undefined) return actual[clave];
+    return transform ? transform(body[clave]) : body[clave];
+  };
+  const camposComunes = {
+    numero_cotizacion: campo("numero_cotizacion"),
+    proyecto_id: campo("proyecto_id", (v) => v || null),
+    titulo: campo("titulo"),
+    descripcion: campo("descripcion"),
+    condiciones: campo("condiciones"),
+    motivo: campo("motivo"),
+    proveedor_id: campo("proveedor_id"),
+    centro_costo_codigo: campo("centro_costo_codigo", (v) => v || null),
+    cuenta_contable_codigo: campo("cuenta_contable_codigo", (v) => v || null),
+    tipo_orden: campo("tipo_orden"),
+    tipo_compra: campo("tipo_compra"),
+    moneda: campo("moneda"),
+    fecha: campo("fecha"),
+    archivo_url: campo("archivo_url"),
+    archivo_nombre: campo("archivo_nombre"),
+    creado_por: campo("creado_por"),
+    empresa_id: actual.empresa_id,
+    creado_por_usuario: actual.creado_por_usuario,
+    gerencia: actual.gerencia,
+    estado: "Pendiente aprobación",
+    cuotas: [],
+  };
+
+  const selectCompleto = "*, proveedores(razon_social, rut, contacto_correo, banco, tipo_cuenta, numero_cuenta), empresas(correo_contabilidad), proyectos(nombre)";
+  const [primera, ...resto] = filasCuotas;
+
+  const { data: filaActualizada, error: updateError } = await db
+    .from("ordenes_compra")
+    .update({ ...camposComunes, ...primera, updated_at: new Date().toISOString() })
+    .eq("id", id)
+    .select(selectCompleto)
+    .single();
+  if (updateError) return res.status(500).json({ error: updateError.message });
+
+  let filasNuevas = [];
+  if (resto.length) {
+    const { data: insertadas, error: insertError } = await db
+      .from("ordenes_compra")
+      .insert(resto.map((f) => ({ ...camposComunes, ...f })))
+      .select(selectCompleto);
+    if (insertError) return res.status(500).json({ error: insertError.message });
+    filasNuevas = insertadas;
+  }
+
+  return res.status(200).json({ ordenes: [filaActualizada, ...filasNuevas] });
+}
+
 export default async function handler(req, res) {
   const db = supabase();
 
@@ -15,6 +87,10 @@ export default async function handler(req, res) {
     const id = req.query.id;
     if (!id) return res.status(400).json({ error: "id es obligatorio" });
     const body = await readJsonBody(req);
+
+    if (body.estado === "Pendiente aprobación" && Array.isArray(body.cuotas) && body.cuotas.length > 1) {
+      return dividirEnCuotasPUT(db, id, body, res);
+    }
 
     // Estos son los datos "de creacion" de la OC (los mismos que se cargan en
     // Nueva OC) -- una vez que la orden entra a Aprobada (o mas alla), quedan
@@ -46,8 +122,16 @@ export default async function handler(req, res) {
         // El cliente puede generar y enviar su propio numero_hes junto con
         // el PDF ya regenerado con ese mismo HES (para que el correo de
         // aprobacion salga con el PDF correcto desde el primer envio, sin
-        // un segundo paso). Si no lo manda, se genera aqui como antes.
-        fields.numero_hes = body.numero_hes || Date.now().toString();
+        // un segundo paso). Si no lo manda, se pide aqui el siguiente
+        // correlativo real (ver Task 1 / siguiente_numero_hes).
+        if (body.numero_hes) {
+          fields.numero_hes = body.numero_hes;
+        } else {
+          const { data: filaActual } = await db.from("ordenes_compra").select("empresa_id").eq("id", id).maybeSingle();
+          const { data: siguienteHes, error: hesError } = await db.rpc("siguiente_numero_hes", { p_empresa_id: filaActual?.empresa_id || 1 });
+          if (hesError) return res.status(500).json({ error: hesError.message });
+          fields.numero_hes = String(siguienteHes).padStart(8, "0");
+        }
       }
       if (body.estado === "Facturada" && !body.numero_factura) {
         return res.status(400).json({ error: "numero_factura es obligatorio para facturar la OC" });
@@ -136,6 +220,16 @@ export default async function handler(req, res) {
 
   if (req.method === "GET") {
     const empresaId = Number(req.query.empresa_id) || 1;
+
+    // El frontend pide el HES real ANTES de aprobar, para poder generar el
+    // PDF con el numero definitivo y mandarlo ya correcto en el primer correo
+    // (ver Task 3 en index.html / OrdenAccionModal).
+    if (req.query.siguiente_hes) {
+      const { data: siguienteHes, error } = await db.rpc("siguiente_numero_hes", { p_empresa_id: empresaId });
+      if (error) return res.status(500).json({ error: error.message });
+      return res.status(200).json({ numero_hes: String(siguienteHes).padStart(8, "0") });
+    }
+
     const { data, error } = await db
       .from("ordenes_compra")
       .select("*, proveedores(razon_social, rut), proyectos(nombre)")
