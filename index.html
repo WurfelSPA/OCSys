@@ -907,7 +907,7 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, proyectos, refres
         archivo_url = up.url;
         archivo_nombre = file.name;
       }
-      const { orden } = await api("ordenes", {
+      const respuesta = await api("ordenes", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -916,26 +916,33 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, proyectos, refres
         }),
         timeoutMs: 25000,
       });
+      const ordenesCreadas = respuesta.ordenes || [respuesta.orden];
 
       if (estado === "Pendiente aprobación") {
         const proveedor = proveedores.find((p) => p.id === form.proveedor_id);
-        const pdfBlob = await generarPdfOC(orden, proveedor, cuotas, empresa);
-        const pdfBase64 = await fileToBase64(new File([pdfBlob], "OC.pdf", { type: "application/pdf" }));
-        const up = await api("upload", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ filename: orden.numero_oc + ".pdf", base64: pdfBase64 }),
-          timeoutMs: 25000,
-        });
-        await api("ordenes?id=" + orden.id, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ archivo_oc_url: up.url, archivo_oc_nombre: orden.numero_oc + ".pdf" }),
-          timeoutMs: 25000,
-        });
+        for (const ordenFila of ordenesCreadas) {
+          const pdfBlob = await generarPdfOC(ordenFila, proveedor, ordenFila.cuotas || [], empresa);
+          const pdfBase64 = await fileToBase64(new File([pdfBlob], "OC.pdf", { type: "application/pdf" }));
+          const up = await api("upload", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ filename: ordenFila.numero_oc + ".pdf", base64: pdfBase64 }),
+            timeoutMs: 25000,
+          });
+          await api("ordenes?id=" + ordenFila.id, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ archivo_oc_url: up.url, archivo_oc_nombre: ordenFila.numero_oc + ".pdf" }),
+            timeoutMs: 25000,
+          });
+        }
       }
 
-      notify("ok", (estado === "Borrador" ? "Borrador guardado: " : "OC generada: ") + orden.numero_oc);
+      const primera = ordenesCreadas[0];
+      const mensaje = ordenesCreadas.length > 1
+        ? "OC generada en " + ordenesCreadas.length + " cuotas (" + ordenesCreadas.map((o) => o.numero_oc).join(", ") + ")"
+        : (estado === "Borrador" ? "Borrador guardado: " : "OC generada: ") + primera.numero_oc;
+      notify("ok", mensaje);
       onCreated();
       limpiarFormulario();
     } catch (e) {
