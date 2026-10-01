@@ -1626,7 +1626,27 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
     }
   };
 
-  const ordenesConVisible = useMemo(() => ordenes.map((o) => ({ ...o, numero_oc_visible: o.numero_oc_acquisys || o.numero_oc })), [ordenes]);
+  const ordenesConVisible = useMemo(() => {
+    // El numero "base" de una OC dividida en cuotas quita el sufijo -N (ej.
+    // "OC-00236-2" -> "OC-00236") para que las cuotas de una misma OC se
+    // ordenen juntas, en vez de quedar intercaladas con otras OC.
+    const base = (o) => {
+      const visible = o.numero_oc_acquisys || o.numero_oc;
+      return o.cuota_total ? visible.replace(/-\d+$/, "") : visible;
+    };
+    return ordenes
+      .map((o) => ({ ...o, numero_oc_visible: o.numero_oc_acquisys || o.numero_oc }))
+      .sort((a, b) => {
+        // Orden por defecto: mas reciente primero; si comparten fecha, se
+        // agrupan las cuotas de una misma OC una al lado de la otra y en
+        // orden (1, 2, 3...).
+        const fechaCmp = (b.fecha || "").localeCompare(a.fecha || "");
+        if (fechaCmp !== 0) return fechaCmp;
+        const baseCmp = base(a).localeCompare(base(b));
+        if (baseCmp !== 0) return baseCmp;
+        return (a.cuota_numero || 0) - (b.cuota_numero || 0);
+      });
+  }, [ordenes]);
 
   const columns = useMemo(() => [
     {
