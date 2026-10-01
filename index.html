@@ -1142,13 +1142,29 @@ function OrdenAccionModal({ orden, tipo, onClose, onDone, notify, proveedores, e
       if (datos.proveedor_rut && rutProveedor && rutNorm(datos.proveedor_rut) !== rutNorm(rutProveedor)) {
         problemas.push("el RUT del emisor (" + datos.proveedor_rut + ") no coincide con el proveedor de la OC (" + rutProveedor + ")");
       }
-      if (datos.moneda && orden.moneda && datos.moneda !== orden.moneda) {
-        problemas.push("la moneda de la factura (" + datos.moneda + ") no coincide con la de la OC (" + orden.moneda + ")");
+      if (datos.receptor_rut && empresa?.rut && rutNorm(datos.receptor_rut) !== rutNorm(empresa.rut)) {
+        problemas.push("el RUT del receptor en la factura (" + datos.receptor_rut + ") no corresponde a " + (empresa?.nombre || "esta empresa") + " (" + empresa.rut + ")");
       }
-      if (datos.monto_total != null && orden.monto_total != null) {
-        const tolerancia = Math.max(1, Number(orden.monto_total) * 0.01);
-        if (Math.abs(Number(datos.monto_total) - Number(orden.monto_total)) > tolerancia) {
-          problemas.push("el monto de la factura (" + fmtMontoMoneda(datos.monto_total, datos.moneda || orden.moneda) + ") no coincide con el de la OC (" + fmtMontoMoneda(orden.monto_total, orden.moneda) + ")");
+      // Las facturas chilenas (SII) siempre emiten sus totales en pesos, aunque
+      // el contrato/OC este en UF -- el valor en UF solo aparece en el detalle
+      // (cantidad en UF x valor de la UF del dia). Si la IA logro leer ese
+      // monto neto en UF, se compara neto-a-neto en UF (inmune al valor de la
+      // UF del dia de la factura) en vez de comparar el total en pesos contra
+      // el total en UF, que siempre daria un falso "no coincide".
+      if (orden.moneda === "UF" && datos.monto_neto_uf != null) {
+        const tolerancia = Math.max(0.5, Number(orden.monto_neto) * 0.01);
+        if (Math.abs(Number(datos.monto_neto_uf) - Number(orden.monto_neto)) > tolerancia) {
+          problemas.push("el monto neto de la factura (UF " + datos.monto_neto_uf + ") no coincide con el de la OC (UF " + orden.monto_neto + ")");
+        }
+      } else {
+        if (datos.moneda && orden.moneda && datos.moneda !== orden.moneda) {
+          problemas.push("la moneda de la factura (" + datos.moneda + ") no coincide con la de la OC (" + orden.moneda + ")");
+        }
+        if (datos.monto_total != null && orden.monto_total != null) {
+          const tolerancia = Math.max(1, Number(orden.monto_total) * 0.01);
+          if (Math.abs(Number(datos.monto_total) - Number(orden.monto_total)) > tolerancia) {
+            problemas.push("el monto de la factura (" + fmtMontoMoneda(datos.monto_total, datos.moneda || orden.moneda) + ") no coincide con el de la OC (" + fmtMontoMoneda(orden.monto_total, orden.moneda) + ")");
+          }
         }
       }
       if (problemas.length) {
@@ -1263,7 +1279,7 @@ function OrdenAccionModal({ orden, tipo, onClose, onDone, notify, proveedores, e
           "Se asignará automáticamente el N° HES y se enviará un correo al proveedor (" + ((orden.proveedores && orden.proveedores.razon_social) || "") + ") con la Orden de Compra adjunta."),
       isFacturar &&
         h(React.Fragment, null,
-          h(Field, { label: "N° Factura *" }, h("input", { value: numeroFactura, onChange: (e) => setNumeroFactura(e.target.value), autoFocus: true })),
+          h(Field, { label: "N° Factura *" }, h("input", { value: numeroFactura, onChange: (e) => setNumeroFactura(e.target.value), autoFocus: true, placeholder: "Se completa automáticamente al leer la factura, o ingrésalo a mano" })),
           h(Field, { label: "Monto Facturado" }, h("input", { type: "number", value: montoFacturado, onChange: (e) => setMontoFacturado(e.target.value), placeholder: orden.monto_total })),
           h(Field, { label: "Factura (PDF/imagen)" },
             h("input", {
