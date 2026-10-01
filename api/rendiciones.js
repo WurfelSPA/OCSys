@@ -25,6 +25,8 @@ export default async function handler(req, res) {
     if (!body.fecha_gasto || !body.nombre_apellido || !body.monto) {
       return res.status(400).json({ error: "fecha_gasto, nombre_apellido y monto son obligatorios" });
     }
+    const session = verifyToken(parseCookie(req.headers.cookie, "ocsys_token"), process.env.SESSION_SECRET || "");
+    const empresaId = (session && session.empresa_id) ? session.empresa_id : (Number(body.empresa_id) || 1);
     const { data, error } = await db
       .from("rendiciones_gastos")
       .insert({
@@ -33,7 +35,7 @@ export default async function handler(req, res) {
         descripcion: body.descripcion || null,
         monto: body.monto,
         cuenta_contable_codigo: body.cuenta_contable_codigo || null,
-        empresa_id: Number(body.empresa_id) || 1,
+        empresa_id: empresaId,
         estado: "Proceso de Pago",
         archivo_boleta_url: body.archivo_boleta_url || null,
         archivo_boleta_nombre: body.archivo_boleta_nombre || null,
