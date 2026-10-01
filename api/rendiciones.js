@@ -5,7 +5,11 @@ export default async function handler(req, res) {
   const db = supabase();
 
   if (req.method === "GET") {
-    const empresaId = Number(req.query.empresa_id) || 1;
+    const session = verifyToken(parseCookie(req.headers.cookie, "ocsys_token"), process.env.SESSION_SECRET || "");
+    // Rendiciones no tiene columna "proyecto" -- un usuario atado a un
+    // proyecto puntual ve aqui igual toda su empresa (ver limitacion
+    // documentada en el spec de diseno).
+    const empresaId = (session && session.empresa_id) ? session.empresa_id : (Number(req.query.empresa_id) || 1);
     const { data, error } = await db
       .from("rendiciones_gastos")
       .select("*")

@@ -237,7 +237,11 @@ export default async function handler(req, res) {
   }
 
   if (req.method === "GET") {
-    const empresaId = Number(req.query.empresa_id) || 1;
+    const session = verifyToken(parseCookie(req.headers.cookie, "ocsys_token"), process.env.SESSION_SECRET || "");
+    // Si la sesion trae una empresa/proyecto fijo, se ignora el empresa_id
+    // que mande el query string y se usa siempre el de la sesion -- asi no
+    // se puede eludir el filtro manipulando la URL/el fetch desde el navegador.
+    const empresaId = (session && session.empresa_id) ? session.empresa_id : (Number(req.query.empresa_id) || 1);
 
     // El frontend pide el HES real ANTES de aprobar, para poder generar el
     // PDF con el numero definitivo y mandarlo ya correcto en el primer correo
@@ -248,12 +252,16 @@ export default async function handler(req, res) {
       return res.status(200).json({ numero_hes: String(siguienteHes).padStart(8, "0") });
     }
 
-    const { data, error } = await db
+    let query = db
       .from("ordenes_compra")
       .select("*, proveedores(razon_social, rut), proyectos(nombre)")
       .eq("activo", true)
       .eq("empresa_id", empresaId)
       .order("created_at", { ascending: false });
+    if (session && session.proyecto_id) {
+      query = query.eq("proyecto_id", session.proyecto_id);
+    }
+    const { data, error } = await query;
     if (error) return res.status(500).json({ error: error.message });
     return res.status(200).json({ ordenes: data });
   }
@@ -289,7 +297,7 @@ export default async function handler(req, res) {
     // independiente del "Representante de Compra", que es solo un dato de
     // texto libre y puede ser otra persona.
     const session = verifyToken(parseCookie(req.headers.cookie, "ocsys_token"), process.env.SESSION_SECRET || "");
-    const empresaId = Number(body.empresa_id) || 1;
+    const empresaId = (session && session.empresa_id) ? session.empresa_id : (Number(body.empresa_id) || 1);
     const estado = ESTADOS_OCSYS.includes(body.estado) ? body.estado : "Borrador";
     const cuotas = Array.isArray(body.cuotas) ? body.cuotas : [];
 
@@ -302,7 +310,10 @@ export default async function handler(req, res) {
 
     const camposBase = {
       numero_cotizacion: body.numero_cotizacion || null,
-      proyecto_id: body.proyecto_id || null,
+      // Si la sesion tiene un proyecto fijo asignado, se ignora cualquier
+      // proyecto_id que mande el body -- refuerza del lado del servidor el
+      // bloqueo visual del campo "Proyecto" en Nueva OC (ver index.html).
+      proyecto_id: (session && session.proyecto_id) ? session.proyecto_id : (body.proyecto_id || null),
       creado_por_usuario: session ? session.usuario : null,
       proveedor_id: body.proveedor_id,
       empresa_id: empresaId,
