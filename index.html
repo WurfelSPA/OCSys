@@ -1119,6 +1119,8 @@ function OrdenAccionModal({ orden, tipo, onClose, onDone, notify, proveedores, e
   const isPagar = tipo === "pagar";
   const [numeroFactura, setNumeroFactura] = useState("");
   const [montoFacturado, setMontoFacturado] = useState("");
+  const [montoNetoFactura, setMontoNetoFactura] = useState("");
+  const [montoUfFactura, setMontoUfFactura] = useState("");
   const [file, setFile] = useState(null);
   const [dragOver, setDragOver] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -1181,6 +1183,8 @@ function OrdenAccionModal({ orden, tipo, onClose, onDone, notify, proveedores, e
         notify("ok", "Factura verificada" + (motor && motor !== "Gemini" ? " (" + motor + ")" : "") + ": los datos coinciden con la OC");
         if (datos.numero_factura) setNumeroFactura((n) => n || datos.numero_factura);
         if (datos.monto_total != null) setMontoFacturado((m) => m || datos.monto_total);
+        if (datos.monto_neto != null) setMontoNetoFactura((m) => m || datos.monto_neto);
+        if (datos.monto_neto_uf != null) setMontoUfFactura((m) => m || datos.monto_neto_uf);
       }
     } catch (e) {
       // Si la IA falla no se bloquea la facturacion (puede ser un problema
@@ -1230,7 +1234,12 @@ function OrdenAccionModal({ orden, tipo, onClose, onDone, notify, proveedores, e
           }
         }
       } else if (isFacturar) {
-        payload = { estado: "Facturada", numero_factura: numeroFactura, monto_facturado: montoFacturado || null };
+        payload = {
+          estado: "Facturada", numero_factura: numeroFactura,
+          monto_facturado: montoFacturado || null,
+          monto_facturado_neto: montoNetoFactura || null,
+          monto_facturado_uf: orden.moneda === "UF" ? (montoUfFactura || null) : null,
+        };
         if (file) {
           const base64 = await fileToBase64(file);
           const up = await api("upload", {
@@ -1285,8 +1294,6 @@ function OrdenAccionModal({ orden, tipo, onClose, onDone, notify, proveedores, e
           "Se asignará automáticamente el N° HES y se enviará un correo al proveedor (" + ((orden.proveedores && orden.proveedores.razon_social) || "") + ") con la Orden de Compra adjunta."),
       isFacturar &&
         h(React.Fragment, null,
-          h(Field, { label: "N° Factura *" }, h("input", { value: numeroFactura, onChange: (e) => setNumeroFactura(e.target.value), autoFocus: true, placeholder: "Se completa automáticamente al leer la factura, o ingrésalo a mano" })),
-          h(Field, { label: "Monto Facturado" }, h("input", { type: "number", value: montoFacturado, onChange: (e) => setMontoFacturado(e.target.value), placeholder: orden.monto_total })),
           h(Field, { label: "Factura (PDF/imagen)" },
             h("input", {
               type: "file", id: fileFieldId, style: { display: "none" },
@@ -1302,6 +1309,16 @@ function OrdenAccionModal({ orden, tipo, onClose, onDone, notify, proveedores, e
             file ? ("✓ " + file.name) : "Haz clic o arrastra aquí la factura"),
           verificandoFactura && h("div", { className: "hint", style: { marginTop: 6, display: "flex", alignItems: "center", gap: 8 } },
             h("span", { className: "spinner" }), `Verificando factura contra la OC con IA (${motorFactura})...`),
+          h(Field, { label: "N° Factura *" }, h("input", { value: numeroFactura, onChange: (e) => setNumeroFactura(e.target.value), autoFocus: true, placeholder: "Se completa automáticamente al leer la factura, o ingrésalo a mano" })),
+          orden.moneda === "UF" && h(Field, { label: "Monto UF" },
+            h("input", { type: "number", value: montoUfFactura, onChange: (e) => setMontoUfFactura(e.target.value), placeholder: orden.monto_neto }),
+            montoUfFactura !== "" && h("div", { className: "hint", style: { marginTop: 4 } }, fmtMontoMoneda(montoUfFactura, "UF"))),
+          h(Field, { label: "Monto Neto ($)" },
+            h("input", { type: "number", value: montoNetoFactura, onChange: (e) => setMontoNetoFactura(e.target.value) }),
+            montoNetoFactura !== "" && h("div", { className: "hint", style: { marginTop: 4 } }, fmtMoney(montoNetoFactura))),
+          h(Field, { label: "Monto Total Facturado ($)" },
+            h("input", { type: "number", value: montoFacturado, onChange: (e) => setMontoFacturado(e.target.value), placeholder: orden.monto_total }),
+            montoFacturado !== "" && h("div", { className: "hint", style: { marginTop: 4 } }, fmtMoney(montoFacturado))),
           discrepancia && h("div", {
             className: "notif-err",
             style: { padding: "10px 12px", borderRadius: 8, marginTop: 8, fontSize: 12, lineHeight: 1.5 },
