@@ -765,7 +765,7 @@ function CuotasEditor({ cuotas, setCuotas, montoNeto, moneda }) {
   );
 }
 
-function NuevaOC({ proveedores, catalogos, refreshProveedores, proyectos, refreshProyectos, notify, onCreated, currentUser, empresaId, empresa }) {
+function NuevaOC({ proveedores, catalogos, refreshProveedores, proyectos, refreshProyectos, refreshProyectosTodos, notify, onCreated, currentUser, empresaId, empresa }) {
   const [showModal, setShowModal] = useState(false);
   const [provPrefill, setProvPrefill] = useState(null);
   const [provEditing, setProvEditing] = useState(null);
@@ -788,6 +788,7 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, proyectos, refres
         body: JSON.stringify({ nombre: nombre.trim(), empresa_id: empresaId }),
       });
       refreshProyectos();
+      if (refreshProyectosTodos) refreshProyectosTodos();
       setForm((f) => ({ ...f, proyecto_id: proyecto.id }));
     } catch (e) {
       notify("err", e.message);
@@ -1357,7 +1358,7 @@ function OrdenAccionModal({ orden, tipo, onClose, onDone, notify, proveedores, e
   );
 }
 
-function EditarOrdenModal({ orden, proveedores, catalogos, proyectos, refreshProyectos, empresaId, empresa, notify, onClose, onSaved }) {
+function EditarOrdenModal({ orden, proveedores, catalogos, proyectos, refreshProyectos, refreshProyectosTodos, empresaId, empresa, notify, onClose, onSaved }) {
   const [form, setForm] = useState({
     proveedor_id: orden.proveedor_id || "",
     numero_cotizacion: orden.numero_cotizacion || "",
@@ -1402,6 +1403,7 @@ function EditarOrdenModal({ orden, proveedores, catalogos, proyectos, refreshPro
         body: JSON.stringify({ nombre: nombre.trim(), empresa_id: empresaId }),
       });
       refreshProyectos();
+      if (refreshProyectosTodos) refreshProyectosTodos();
       setForm((f) => ({ ...f, proyecto_id: proyecto.id }));
     } catch (e) {
       notify("err", e.message);
@@ -1592,7 +1594,7 @@ function EditarOrdenModal({ orden, proveedores, catalogos, proyectos, refreshPro
   );
 }
 
-function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores, catalogos, proyectos, refreshProyectos, empresaId, empresa }) {
+function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores, catalogos, proyectos, refreshProyectos, refreshProyectosTodos, empresaId, empresa }) {
   const [accion, setAccion] = useState(null);
   const [editando, setEditando] = useState(null);
   const puedeAprobar = currentUser && currentUser.nivel_aprobacion === 1;
@@ -1782,7 +1784,7 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
       onDone: () => { refreshOrdenes(); setAccion(null); },
     }),
     editando && h(EditarOrdenModal, {
-      orden: editando, proveedores, catalogos, proyectos, refreshProyectos, empresaId, empresa, notify,
+      orden: editando, proveedores, catalogos, proyectos, refreshProyectos, refreshProyectosTodos, empresaId, empresa, notify,
       onClose: () => setEditando(null),
       onSaved: () => { refreshOrdenes(); setEditando(null); },
     }),
@@ -3216,7 +3218,9 @@ function App({ currentUser, onLogout }) {
   useEffect(() => {
     loadEmpresas();
     loadProveedores();
-    loadUsuarios();
+    // Solo un aprobador puede listar usuarios (la API ahora lo exige) -- se
+    // evita pedirla para el resto y que les aparezca un error al entrar.
+    if (currentUser.nivel_aprobacion === 1) loadUsuarios();
     loadProyectosTodos();
   }, []);
 
@@ -3259,12 +3263,12 @@ function App({ currentUser, onLogout }) {
       h("button", { className: "nav-btn" + (tab === "rendiciones" ? " active" : ""), onClick: () => setTab("rendiciones") }, "Rendición de Gastos"),
       h("button", { className: "nav-btn" + (tab === "proveedores" ? " active" : ""), onClick: () => setTab("proveedores") }, "Proveedores"),
       h("button", { className: "nav-btn" + (tab === "reportes" ? " active" : ""), onClick: () => setTab("reportes") }, "Reportes"),
-      !currentUser.empresa_id && h("button", { className: "nav-btn" + (tab === "administracion" ? " active" : ""), onClick: () => setTab("administracion") }, "Administración"),
+      !currentUser.empresa_id && currentUser.nivel_aprobacion === 1 && h("button", { className: "nav-btn" + (tab === "administracion" ? " active" : ""), onClick: () => setTab("administracion") }, "Administración"),
       h("button", { className: "nav-btn" + (tab === "proyectos-seguimiento" ? " active" : ""), onClick: () => setTab("proyectos-seguimiento") }, "Proyectos"),
     ),
     tab === "dashboard" && h(Dashboard, { ordenes, setTab }),
-    tab === "nueva" && h(NuevaOC, { proveedores, catalogos, refreshProveedores: loadProveedores, proyectos, refreshProyectos: loadProyectos, notify, onCreated: loadOrdenes, currentUser, empresaId, empresa: empresaActual }),
-    tab === "ordenes" && h(OrdenesList, { ordenes, refreshOrdenes: loadOrdenes, notify, currentUser, proveedores, catalogos, proyectos, refreshProyectos: loadProyectos, empresaId, empresa: empresaActual }),
+    tab === "nueva" && h(NuevaOC, { proveedores, catalogos, refreshProveedores: loadProveedores, proyectos, refreshProyectos: loadProyectos, refreshProyectosTodos: loadProyectosTodos, notify, onCreated: loadOrdenes, currentUser, empresaId, empresa: empresaActual }),
+    tab === "ordenes" && h(OrdenesList, { ordenes, refreshOrdenes: loadOrdenes, notify, currentUser, proveedores, catalogos, proyectos, refreshProyectos: loadProyectos, refreshProyectosTodos: loadProyectosTodos, empresaId, empresa: empresaActual }),
     tab === "rendiciones" && h(RendicionGastosPage, { rendiciones, refreshRendiciones: loadRendiciones, catalogos, notify, currentUser, empresaId }),
     tab === "proveedores" && h(ProveedoresList, { proveedores, catalogos, refreshProveedores: loadProveedores, notify, currentUser }),
     tab === "reportes" && h(ReportesList, { ordenes, proveedores, notify }),

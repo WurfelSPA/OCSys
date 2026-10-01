@@ -22,6 +22,14 @@ export default async function handler(req, res) {
   }
 
   if (req.method === "GET") {
+    // La lista completa trae el login (correo) y nivel/alcance de cada
+    // usuario de todas las empresas -- solo un aprobador debe poder verla
+    // (si no, un usuario restringido a un proyecto podria leerla igual
+    // llamando la API directo, evadiendo la restriccion por otro lado).
+    const session = verifyToken(parseCookie(req.headers.cookie, "ocsys_token"), process.env.SESSION_SECRET || "");
+    if (!session || session.nivel_aprobacion !== 1) {
+      return res.status(403).json({ error: "No tienes nivel de aprobación para ver la lista de usuarios" });
+    }
     const { data, error } = await db
       .from("usuarios")
       .select("*")
