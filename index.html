@@ -776,7 +776,7 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, proyectos, refres
   const [motorIA, setMotorIA] = useState("Gemini");
   const [numCuotas, setNumCuotas] = useState(1);
   const [cuotas, setCuotas] = useState(distribuirCuotas(1, 0));
-  const [form, setForm] = useState(formBlank());
+  const [form, setForm] = useState(() => ({ ...formBlank(), proyecto_id: currentUser.proyecto_id || "" }));
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
   const agregarProyecto = async () => {
@@ -1058,12 +1058,13 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, proyectos, refres
         h(Field, { label: "Proyectos" },
           h("div", { className: "row-inline" },
             h("select", {
-              value: form.proyecto_id, onChange: (e) => setForm((f) => ({ ...f, proyecto_id: e.target.value })),
+              value: form.proyecto_id, disabled: !!currentUser.proyecto_id,
+              onChange: (e) => setForm((f) => ({ ...f, proyecto_id: e.target.value })),
             },
               h("option", { value: "" }, "Selecciona"),
               proyectos.map((p) => h("option", { key: p.id, value: p.id }, p.nombre)),
             ),
-            h("button", { className: "btn-add", title: "Agregar proyecto", type: "button", onClick: agregarProyecto }, "+"),
+            !currentUser.proyecto_id && h("button", { className: "btn-add", title: "Agregar proyecto", type: "button", onClick: agregarProyecto }, "+"),
           )),
       ),
 
@@ -1934,9 +1935,9 @@ function ReportesList({ ordenes, proveedores, notify }) {
   );
 }
 
-const USUARIO_BLANK = { nombre: "", apellido: "", usuario: "", nivel_aprobacion: "0", password: "" };
+const USUARIO_BLANK = { nombre: "", apellido: "", usuario: "", nivel_aprobacion: "0", password: "", empresa_id: null, proyecto_id: null };
 
-function UsuarioModal({ onClose, onSaved, notify, editUsuario }) {
+function UsuarioModal({ onClose, onSaved, notify, editUsuario, empresas, proyectosTodos }) {
   const [form, setForm] = useState(editUsuario
     ? { ...USUARIO_BLANK, ...editUsuario, nivel_aprobacion: String(editUsuario.nivel_aprobacion), password: "" }
     : USUARIO_BLANK);
@@ -1946,6 +1947,21 @@ function UsuarioModal({ onClose, onSaved, notify, editUsuario }) {
   // Sin cerrar al hacer clic afuera -- el campo de contraseña puede recibir
   // un clic de un gestor de contraseñas del navegador que cae sobre el fondo
   // y cerraba el formulario a medio llenar. Solo se cierra con Cancelar/×.
+
+  // El select combina "sin restriccion" + cada empresa ("toda la empresa" +
+  // sus proyectos activos) en una sola lista, codificando el valor como
+  // "empresa:<id>" o "proyecto:<id>" para despues separarlo en empresa_id/
+  // proyecto_id reales -- asi el admin elige una sola cosa sin tener que
+  // entender el modelo de 2 columnas por detras.
+  const accesoValue = form.proyecto_id ? "proyecto:" + form.proyecto_id : (form.empresa_id ? "empresa:" + form.empresa_id : "");
+  const onAccesoChange = (e) => {
+    const v = e.target.value;
+    if (!v) return setForm((f) => ({ ...f, empresa_id: null, proyecto_id: null }));
+    const [tipo, id] = v.split(":");
+    if (tipo === "empresa") return setForm((f) => ({ ...f, empresa_id: Number(id), proyecto_id: null }));
+    const proyecto = (proyectosTodos || []).find((p) => p.id === id);
+    setForm((f) => ({ ...f, empresa_id: proyecto ? proyecto.empresa_id : f.empresa_id, proyecto_id: id }));
+  };
 
   const submit = async () => {
     if (!form.nombre || !form.apellido || !form.usuario) {
@@ -1983,6 +1999,16 @@ function UsuarioModal({ onClose, onSaved, notify, editUsuario }) {
           h("option", { value: "0" }, "0 — No puede aprobar OC"),
           h("option", { value: "1" }, "1 — Puede aprobar OC"),
         )),
+      h(Field, { label: "Proyecto" },
+        h("select", { value: accesoValue, onChange: onAccesoChange },
+          h("option", { value: "" }, "Sin restricción (ve todo)"),
+          (empresas || []).map((emp) => h(React.Fragment, { key: emp.id },
+            h("option", { value: "empresa:" + emp.id }, emp.nombre + " — Toda la empresa"),
+            (proyectosTodos || []).filter((p) => p.empresa_id === emp.id).map((p) =>
+              h("option", { key: p.id, value: "proyecto:" + p.id }, emp.nombre + " — " + p.nombre)),
+          )),
+        )),
+      h("div", { className: "hint", style: { marginTop: -8, marginBottom: 10 } }, "Si se deja 'Sin restricción', el usuario ve todas las OC de todas las empresas, como hoy."),
       h(Field, { label: "Contraseña" },
         h("input", { type: "password", value: form.password, onChange: set("password"),
           placeholder: isEdit ? "Dejar en blanco para no cambiarla" : "Dejar en blanco por ahora" })),
@@ -2002,6 +2028,10 @@ const USUARIOS_COLUMNS = [
   { key: "nivel_aprobacion", label: "Nivel Aprobación", render: (u) => (u.nivel_aprobacion === 1
     ? h("span", { className: "pill pill-ok" }, "1 — Aprueba OC")
     : h("span", { className: "pill pill-pend" }, "0 — No aprueba")) },
+  {
+    key: "acceso", label: "Proyecto", sortable: false,
+    render: (u) => u.proyecto_id || u.empresa_id ? h("span", { className: "pill pill-pend" }, "Restringido") : h("span", { className: "pill pill-ok" }, "Ve todo"),
+  },
   { key: "tiene_password", label: "Contraseña", render: (u) => (u.tiene_password
     ? h("span", { className: "pill pill-ok" }, "Configurada")
     : h("span", { className: "pill pill-pend" }, "Sin definir")) },
@@ -2375,7 +2405,7 @@ function SeguimientoProyectosList({ proyectosSeguimiento, refreshProyectosSeguim
   );
 }
 
-function AdministracionList({ usuarios, refreshUsuarios, notify, currentUser, refreshOrdenes, refreshProveedores, refreshEmpresas, empresaId, empresa }) {
+function AdministracionList({ usuarios, refreshUsuarios, notify, currentUser, refreshOrdenes, refreshProveedores, refreshEmpresas, empresaId, empresa, empresas, proyectosTodos }) {
   const [showModal, setShowModal] = useState(false);
   const [verificando, setVerificando] = useState(null);
   const [editing, setEditing] = useState(null);
@@ -2384,6 +2414,7 @@ function AdministracionList({ usuarios, refreshUsuarios, notify, currentUser, re
     (showModal || editing) && h(UsuarioModal, {
       editUsuario: editing, onClose: closeAny,
       onSaved: () => { refreshUsuarios(); closeAny(); }, notify,
+      empresas, proyectosTodos,
     }),
     verificando && h(VerificarClaveModal, {
       usuario: verificando, notify,
@@ -3122,14 +3153,17 @@ function App({ currentUser, onLogout }) {
   const [rendiciones, setRendiciones] = useState([]);
   const [usuarios, setUsuarios] = useState([]);
   const [proyectos, setProyectos] = useState([]);
+  const [proyectosTodos, setProyectosTodos] = useState([]);
   const [proyectosSeguimiento, setProyectosSeguimiento] = useState([]);
   const [catalogos, setCatalogos] = useState({ centrosCosto: [], cuentasContables: [], regiones: [], ciudades: [], listos: false });
   const [notif, notify] = useNotif();
   const [empresas, setEmpresas] = useState([]);
   const [empresaId, setEmpresaIdState] = useState(() => {
+    if (currentUser.empresa_id) return currentUser.empresa_id;
     try { return Number(localStorage.getItem("ocsys_empresa_id")) || 1; } catch (e) { return 1; }
   });
   const setEmpresaId = (id) => {
+    if (currentUser.empresa_id) return; // usuario atado a una empresa fija: no puede cambiarla
     setEmpresaIdState(id);
     try { localStorage.setItem("ocsys_empresa_id", String(id)); } catch (e) { /* modo privado u otro bloqueo: no persiste, no es critico */ }
   };
@@ -3171,6 +3205,10 @@ function App({ currentUser, onLogout }) {
     api("proyectos?empresa_id=" + empresaId).then((d) => setProyectos(d.proyectos)).catch((e) => notify("err", e.message));
   }, [notify, empresaId]);
 
+  const loadProyectosTodos = useCallback(() => {
+    api("proyectos?all=1").then((d) => setProyectosTodos(d.proyectos)).catch((e) => notify("err", e.message));
+  }, [notify]);
+
   const loadProyectosSeguimiento = useCallback(() => {
     api("proyectos-seguimiento?empresa_id=" + empresaId).then((d) => setProyectosSeguimiento(d.proyectos)).catch((e) => notify("err", e.message));
   }, [notify, empresaId]);
@@ -3179,6 +3217,7 @@ function App({ currentUser, onLogout }) {
     loadEmpresas();
     loadProveedores();
     loadUsuarios();
+    loadProyectosTodos();
   }, []);
 
   useEffect(() => {
@@ -3205,7 +3244,7 @@ function App({ currentUser, onLogout }) {
         h("div", { className: "sub" }, "Órdenes de Compra" + (empresaActual ? " — " + empresaActual.nombre + " · RUT " + empresaActual.rut : "")),
       ),
       h("div", { style: { fontSize: 12, color: "var(--txm)", display: "flex", alignItems: "center", gap: 12 } },
-        empresas.length > 0 && h("select", {
+        !currentUser.empresa_id && empresas.length > 0 && h("select", {
           value: empresaId, onChange: (e) => setEmpresaId(Number(e.target.value)),
           style: { fontSize: 12, padding: "5px 8px", width: "auto" },
         }, empresas.map((emp) => h("option", { key: emp.id, value: emp.id }, emp.nombre))),
@@ -3220,7 +3259,7 @@ function App({ currentUser, onLogout }) {
       h("button", { className: "nav-btn" + (tab === "rendiciones" ? " active" : ""), onClick: () => setTab("rendiciones") }, "Rendición de Gastos"),
       h("button", { className: "nav-btn" + (tab === "proveedores" ? " active" : ""), onClick: () => setTab("proveedores") }, "Proveedores"),
       h("button", { className: "nav-btn" + (tab === "reportes" ? " active" : ""), onClick: () => setTab("reportes") }, "Reportes"),
-      h("button", { className: "nav-btn" + (tab === "administracion" ? " active" : ""), onClick: () => setTab("administracion") }, "Administración"),
+      !currentUser.empresa_id && h("button", { className: "nav-btn" + (tab === "administracion" ? " active" : ""), onClick: () => setTab("administracion") }, "Administración"),
       h("button", { className: "nav-btn" + (tab === "proyectos-seguimiento" ? " active" : ""), onClick: () => setTab("proyectos-seguimiento") }, "Proyectos"),
     ),
     tab === "dashboard" && h(Dashboard, { ordenes, setTab }),
@@ -3229,7 +3268,7 @@ function App({ currentUser, onLogout }) {
     tab === "rendiciones" && h(RendicionGastosPage, { rendiciones, refreshRendiciones: loadRendiciones, catalogos, notify, currentUser, empresaId }),
     tab === "proveedores" && h(ProveedoresList, { proveedores, catalogos, refreshProveedores: loadProveedores, notify, currentUser }),
     tab === "reportes" && h(ReportesList, { ordenes, proveedores, notify }),
-    tab === "administracion" && h(AdministracionList, { usuarios, refreshUsuarios: loadUsuarios, notify, currentUser, refreshOrdenes: loadOrdenes, refreshProveedores: loadProveedores, refreshEmpresas: loadEmpresas, empresaId, empresa: empresaActual }),
+    tab === "administracion" && h(AdministracionList, { usuarios, refreshUsuarios: loadUsuarios, notify, currentUser, refreshOrdenes: loadOrdenes, refreshProveedores: loadProveedores, refreshEmpresas: loadEmpresas, empresaId, empresa: empresaActual, empresas, proyectosTodos }),
     tab === "proyectos-seguimiento" && h(SeguimientoProyectosList, { proyectosSeguimiento, refreshProyectosSeguimiento: loadProyectosSeguimiento, notify, empresaId }),
   );
 }
