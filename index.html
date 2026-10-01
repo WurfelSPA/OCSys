@@ -1634,18 +1634,53 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
       const visible = o.numero_oc_acquisys || o.numero_oc;
       return o.cuota_total ? visible.replace(/-\d+$/, "") : visible;
     };
-    return ordenes
-      .map((o) => ({ ...o, numero_oc_visible: o.numero_oc_acquisys || o.numero_oc }))
-      .sort((a, b) => {
-        // Orden por defecto: mas reciente primero; si comparten fecha, se
-        // agrupan las cuotas de una misma OC una al lado de la otra y en
-        // orden (1, 2, 3...).
-        const fechaCmp = (b.fecha || "").localeCompare(a.fecha || "");
-        if (fechaCmp !== 0) return fechaCmp;
-        const baseCmp = base(a).localeCompare(base(b));
-        if (baseCmp !== 0) return baseCmp;
-        return (a.cuota_numero || 0) - (b.cuota_numero || 0);
-      });
+
+    // Monto Neto total del grupo (suma del neto de todas las cuotas de una
+    // misma OC) -- se muestra igual en cada cuota para dar contexto del
+    // total original.
+    const netoGrupo = {};
+    ordenes.forEach((o) => {
+      if (!o.cuota_total) return;
+      const b = base(o);
+      netoGrupo[b] = (netoGrupo[b] || 0) + (Number(o.monto_neto) || 0);
+    });
+
+    const conDerivados = ordenes.map((o) => {
+      if (!o.cuota_total) {
+        return {
+          ...o,
+          numero_oc_visible: o.numero_oc_acquisys || o.numero_oc,
+          monto_neto_grupo: Number(o.monto_neto) || 0,
+          // Sin cuotas: pendiente es el neto completo hasta que se registra
+          // el pago (estado Completada).
+          pendiente_calc: o.estado === "Completada" ? 0 : (Number(o.monto_neto) || 0),
+        };
+      }
+      const b = base(o);
+      const totalGrupo = netoGrupo[b] || 0;
+      // Saldo pendiente tras esta cuota: total del grupo menos lo acumulado
+      // en las cuotas 1..n (en secuencia, sin importar si ya se facturaron).
+      const acumuladoHastaEsta = ordenes
+        .filter((x) => x.cuota_total && base(x) === b && (x.cuota_numero || 0) <= (o.cuota_numero || 0))
+        .reduce((sum, x) => sum + (Number(x.monto_neto) || 0), 0);
+      return {
+        ...o,
+        numero_oc_visible: o.numero_oc_acquisys || o.numero_oc,
+        monto_neto_grupo: totalGrupo,
+        pendiente_calc: totalGrupo - acumuladoHastaEsta,
+      };
+    });
+
+    return conDerivados.sort((a, b) => {
+      // Orden por defecto: mas reciente primero; si comparten fecha, se
+      // agrupan las cuotas de una misma OC una al lado de la otra y en
+      // orden (1, 2, 3...).
+      const fechaCmp = (b.fecha || "").localeCompare(a.fecha || "");
+      if (fechaCmp !== 0) return fechaCmp;
+      const baseCmp = base(a).localeCompare(base(b));
+      if (baseCmp !== 0) return baseCmp;
+      return (a.cuota_numero || 0) - (b.cuota_numero || 0);
+    });
   }, [ordenes]);
 
   const columns = useMemo(() => [
@@ -1681,6 +1716,15 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
       },
     },
     {
+      key: "monto_neto_grupo", label: "Monto Neto",
+      sortValue: (o) => o.monto_neto_grupo,
+      render: (o) => fmtMontoMoneda(o.monto_neto_grupo, o.moneda || "CLP"),
+    },
+    {
+      key: "monto_cuota", label: "Monto Cuota", sortable: false,
+      render: (o) => o.cuota_total ? fmtMontoMoneda(o.monto_neto, o.moneda || "CLP") : "—",
+    },
+    {
       key: "numero_factura", label: "N° Factura",
       render: (o) => o.archivo_factura_url
         ? h("a", { className: "link", href: o.archivo_factura_url, target: "_blank", rel: "noreferrer", title: "Ver factura" }, o.numero_factura)
@@ -1692,8 +1736,11 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
         ? h("a", { className: "link", href: o.archivo_comprobante_url, target: "_blank", rel: "noreferrer", title: o.archivo_comprobante_nombre || "Ver comprobante de pago" }, "Ver")
         : "—",
     },
-    { key: "centro_costo_codigo", label: "C. Costo" },
-    { key: "monto_total", label: "Monto Total", sortValue: (o) => Number(o.monto_total) || 0, render: (o) => fmtMontoMoneda(o.monto_total, o.moneda || "CLP") },
+    {
+      key: "pendiente", label: "Pendiente",
+      sortValue: (o) => o.pendiente_calc,
+      render: (o) => fmtMontoMoneda(o.pendiente_calc, o.moneda || "CLP"),
+    },
     { key: "estado", label: "Estado", render: (o) => estadoPill(o.estado) },
     { key: "creado_por_usuario", label: "Usuario", render: (o) => o.creado_por_usuario || "—" },
     {
@@ -1712,13 +1759,13 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
         : "—",
     },
     {
-      key: "editar", label: "", sortable: false,
+      key: "editar", label: "Editar", sortable: false,
       render: (o) => ["Borrador", "Pendiente aprobación"].includes(o.estado)
         ? h("button", { className: "btn-ghost", title: "Editar OC", style: { padding: "4px 8px", fontSize: 12 }, onClick: () => setEditando(o) }, "✏️")
         : null,
     },
     {
-      key: "eliminar", label: "", sortable: false,
+      key: "eliminar", label: "Borrar", sortable: false,
       render: (o) => h("button", {
         className: "btn-ghost", title: puedeAprobar ? "Eliminar OC" : "Solo un administrador puede eliminar órdenes",
         style: { padding: "4px 8px", fontSize: 12, color: puedeAprobar ? "var(--red)" : "var(--txd)" },
