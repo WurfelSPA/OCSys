@@ -159,6 +159,8 @@ export default async function handler(req, res) {
     }
     if (body.numero_factura !== undefined) fields.numero_factura = body.numero_factura;
     if (body.monto_facturado !== undefined) fields.monto_facturado = body.monto_facturado;
+    if (body.monto_facturado_neto !== undefined) fields.monto_facturado_neto = body.monto_facturado_neto;
+    if (body.monto_facturado_uf !== undefined) fields.monto_facturado_uf = body.monto_facturado_uf;
     if (body.archivo_factura_url !== undefined) fields.archivo_factura_url = body.archivo_factura_url;
     if (body.archivo_factura_nombre !== undefined) fields.archivo_factura_nombre = body.archivo_factura_nombre;
     if (body.archivo_oc_url !== undefined) fields.archivo_oc_url = body.archivo_oc_url;
