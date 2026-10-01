@@ -46,13 +46,15 @@ export default async function handler(req, res) {
     const body = await readJsonBody(req);
     const descripcion = (body.descripcion || "").trim();
     if (!descripcion) return res.status(400).json({ error: "descripcion es obligatoria" });
-    const empresaId = Number(body.empresa_id) || 1;
+    if (!body.fecha_inicio) return res.status(400).json({ error: "fecha_inicio es obligatoria" });
+    const empresaId = Number(body.empresa_id);
+    if (!empresaId) return res.status(400).json({ error: "empresa_id es obligatorio" });
     const { data, error } = await db
       .from("seguimiento_proyectos")
       .insert({
         empresa_id: empresaId,
         descripcion,
-        fecha_inicio: body.fecha_inicio || new Date().toISOString().slice(0, 10),
+        fecha_inicio: body.fecha_inicio,
         creado_por_usuario: session.usuario,
       })
       .select("*, seguimiento_proyectos_comentarios(*)")
