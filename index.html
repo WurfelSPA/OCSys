@@ -961,7 +961,7 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, proyectos, refres
   };
 
   const limpiarFormulario = () => {
-    setForm(formBlank());
+    setForm({ ...formBlank(), proyecto_id: currentUser.proyecto_id || "" });
     setFile(null);
     setNumCuotas(1);
     setCuotas(distribuirCuotas(1, 0));
