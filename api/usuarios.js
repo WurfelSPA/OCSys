@@ -1,5 +1,6 @@
 import { supabase, readJsonBody } from "./_supabase.js";
 import { hashPassword, verifyPassword } from "./_auth.js";
+import { verifyToken, parseCookie } from "./_session.js";
 
 function toPublic(u) {
   const { password_hash, ...rest } = u;
@@ -30,6 +31,15 @@ export default async function handler(req, res) {
   }
 
   if (req.method === "POST" || req.method === "PUT") {
+    // Crear/editar usuarios (incluye asignar nivel de aprobacion y el
+    // acceso por empresa/proyecto) requiere nivel de aprobador -- sin este
+    // chequeo, cualquiera podia llamar la API directamente para crearse un
+    // usuario admin o quitarse su propia restriccion de acceso.
+    const session = verifyToken(parseCookie(req.headers.cookie, "ocsys_token"), process.env.SESSION_SECRET || "");
+    if (!session || session.nivel_aprobacion !== 1) {
+      return res.status(403).json({ error: "No tienes nivel de aprobación para gestionar usuarios" });
+    }
+
     const body = await readJsonBody(req);
     if (!body.nombre || !body.apellido || !body.usuario) {
       return res.status(400).json({ error: "nombre, apellido y usuario son obligatorios" });
@@ -39,13 +49,27 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "nivel_aprobacion debe ser 0 o 1" });
     }
 
+    // Si viene un proyecto puntual, la empresa se deriva siempre de ese
+    // proyecto (nunca se confia en un empresa_id suelto que mande el
+    // cliente) -- evita guardar una combinacion inconsistente (proyecto de
+    // una empresa con el empresa_id de otra).
+    let empresaIdFinal = body.empresa_id ? Number(body.empresa_id) : null;
+    let proyectoIdFinal = body.proyecto_id || null;
+    if (proyectoIdFinal) {
+      const { data: proyecto, error: proyectoError } = await db
+        .from("proyectos").select("empresa_id").eq("id", proyectoIdFinal).maybeSingle();
+      if (proyectoError) return res.status(500).json({ error: proyectoError.message });
+      if (!proyecto) return res.status(400).json({ error: "El proyecto seleccionado no existe" });
+      empresaIdFinal = proyecto.empresa_id;
+    }
+
     const fields = {
       nombre: body.nombre,
       apellido: body.apellido,
       usuario: body.usuario,
       nivel_aprobacion: nivel,
-      empresa_id: body.empresa_id ? Number(body.empresa_id) : null,
-      proyecto_id: body.proyecto_id || null,
+      empresa_id: empresaIdFinal,
+      proyecto_id: proyectoIdFinal,
     };
     if (body.password) fields.password_hash = hashPassword(body.password);
 
