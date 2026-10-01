@@ -2138,6 +2138,185 @@ function ConfiguracionCorreos({ empresa, notify, refreshEmpresas }) {
   );
 }
 
+function ProyectoModal({ editProyecto, empresaId, notify, onClose, onSaved }) {
+  const isEdit = !!editProyecto;
+  const [descripcion, setDescripcion] = useState(editProyecto ? editProyecto.descripcion || "" : "");
+  const [fechaInicio, setFechaInicio] = useState(editProyecto ? editProyecto.fecha_inicio || "" : new Date().toISOString().slice(0, 10));
+  const [finalizado, setFinalizado] = useState(editProyecto ? !!editProyecto.finalizado : false);
+  const [fechaCulminacion, setFechaCulminacion] = useState(editProyecto ? editProyecto.fecha_culminacion || "" : "");
+  const [saving, setSaving] = useState(false);
+  const [comentarioNuevo, setComentarioNuevo] = useState("");
+  const [comentarios, setComentarios] = useState(editProyecto ? editProyecto.seguimiento_proyectos_comentarios || [] : []);
+  const [enviandoComentario, setEnviandoComentario] = useState(false);
+
+  const guardar = async () => {
+    if (!descripcion.trim()) return notify("err", "Ingresa una descripción");
+    if (!fechaInicio) return notify("err", "Ingresa la fecha de inicio");
+    setSaving(true);
+    try {
+      if (isEdit) {
+        await api("proyectos-seguimiento?id=" + editProyecto.id, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ descripcion, fecha_inicio: fechaInicio, finalizado, fecha_culminacion: fechaCulminacion || null }),
+        });
+        notify("ok", "Proyecto actualizado");
+      } else {
+        await api("proyectos-seguimiento", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ descripcion, fecha_inicio: fechaInicio, empresa_id: empresaId }),
+        });
+        notify("ok", "Proyecto creado");
+      }
+      onSaved();
+    } catch (e) {
+      notify("err", e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const agregarComentario = async () => {
+    if (!comentarioNuevo.trim()) return;
+    setEnviandoComentario(true);
+    try {
+      const { comentario } = await api("proyectos-seguimiento?comentario=1", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ proyecto_id: editProyecto.id, texto: comentarioNuevo }),
+      });
+      setComentarios((c) => [...c, comentario]);
+      setComentarioNuevo("");
+    } catch (e) {
+      notify("err", e.message);
+    } finally {
+      setEnviandoComentario(false);
+    }
+  };
+
+  return h("div", { className: "overlay", onClick: (e) => e.target === e.currentTarget && onClose() },
+    h("div", { className: "modal", style: { width: 460, maxHeight: "90vh", overflowY: "auto" } },
+      h("div", { className: "modal-hdr" },
+        h("h3", null, isEdit ? "Editar Proyecto" : "Nuevo Proyecto"),
+        h("button", { className: "modal-close", onClick: onClose }, "×")
+      ),
+      h(Field, { label: "Descripción *" }, h("textarea", { rows: 2, value: descripcion, onChange: (e) => setDescripcion(e.target.value) })),
+      h("div", { className: "grid2" },
+        h(Field, { label: "Fecha Inicio *" }, h("input", { type: "date", value: fechaInicio, onChange: (e) => setFechaInicio(e.target.value) })),
+        isEdit && h(Field, { label: "Fecha Culminación" }, h("input", { type: "date", value: fechaCulminacion, onChange: (e) => setFechaCulminacion(e.target.value) })),
+      ),
+      isEdit && h(Field, { label: "Estado" },
+        h("label", { style: { display: "flex", alignItems: "center", gap: 8 } },
+          h("input", {
+            type: "checkbox", checked: finalizado,
+            onChange: (e) => {
+              setFinalizado(e.target.checked);
+              if (e.target.checked && !fechaCulminacion) setFechaCulminacion(new Date().toISOString().slice(0, 10));
+            },
+          }),
+          finalizado ? "Finalizado" : "En Ejecución",
+        )),
+      h("div", { style: { display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 16 } },
+        h("button", { className: "btn-ghost", onClick: onClose }, "Cancelar"),
+        h("button", { className: "btn-primary", onClick: guardar, disabled: saving }, saving ? "Guardando..." : "Guardar"),
+      ),
+      isEdit && h(React.Fragment, null,
+        h("div", { className: "section-lbl" }, "Comentarios"),
+        h("div", { style: { maxHeight: 220, overflowY: "auto", border: "1px solid var(--bdr)", borderRadius: 8, padding: "8px 10px", marginBottom: 10 } },
+          comentarios.length === 0
+            ? h("div", { className: "hint" }, "Todavía no hay comentarios.")
+            : comentarios.map((c) => h("div", { key: c.id, style: { marginBottom: 8, fontSize: 13 } },
+                h("div", { style: { color: "var(--txm)", fontSize: 11 } }, (c.usuario || "—") + " · " + new Date(c.created_at).toLocaleString("es-CL")),
+                h("div", null, c.texto),
+              )),
+        ),
+        h("div", { style: { display: "flex", gap: 8 } },
+          h("input", { value: comentarioNuevo, onChange: (e) => setComentarioNuevo(e.target.value), placeholder: "Agregar un comentario...", style: { flex: 1 } }),
+          h("button", { className: "btn-ghost", onClick: agregarComentario, disabled: enviandoComentario || !comentarioNuevo.trim() }, "Agregar"),
+        ),
+      ),
+    )
+  );
+}
+
+function SeguimientoProyectosList({ proyectosSeguimiento, refreshProyectosSeguimiento, notify, empresaId }) {
+  const [showModal, setShowModal] = useState(false);
+  const [editando, setEditando] = useState(null);
+  const closeAny = () => { setShowModal(false); setEditando(null); };
+
+  const toggleFinalizado = async (p, checked) => {
+    try {
+      await api("proyectos-seguimiento?id=" + p.id, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ finalizado: checked }),
+      });
+      refreshProyectosSeguimiento();
+    } catch (e) {
+      notify("err", e.message);
+    }
+  };
+
+  const eliminarProyecto = async (p) => {
+    if (!window.confirm("¿Eliminar este proyecto? Dejará de verse en la lista.")) return;
+    try {
+      await api("proyectos-seguimiento?id=" + p.id, { method: "DELETE" });
+      notify("ok", "Proyecto eliminado");
+      refreshProyectosSeguimiento();
+    } catch (e) {
+      notify("err", e.message);
+    }
+  };
+
+  const columns = useMemo(() => [
+    { key: "fecha_inicio", label: "Fecha Inicio", render: (p) => fmtDate(p.fecha_inicio) },
+    { key: "descripcion", label: "Descripción", render: (p) => truncar(p.descripcion || "", 200) },
+    {
+      key: "finalizado", label: "Estado", sortable: false,
+      render: (p) => h("label", {
+        style: { display: "flex", alignItems: "center", gap: 6, cursor: "pointer" },
+        onClick: (e) => e.stopPropagation(),
+      },
+        h("input", { type: "checkbox", checked: !!p.finalizado, onChange: (e) => toggleFinalizado(p, e.target.checked) }),
+        p.finalizado ? "Finalizado" : "Ejecución"),
+    },
+    { key: "fecha_culminacion", label: "Fecha Culminación", render: (p) => p.fecha_culminacion ? fmtDate(p.fecha_culminacion) : "—" },
+    {
+      key: "comentarios", label: "Comentarios", sortable: false,
+      render: (p) => "💬 " + ((p.seguimiento_proyectos_comentarios || []).length),
+    },
+    {
+      key: "eliminar", label: "", sortable: false,
+      render: (p) => h("button", {
+        className: "btn-ghost", title: "Eliminar", style: { padding: "4px 8px", fontSize: 12 },
+        onClick: (e) => { e.stopPropagation(); eliminarProyecto(p); },
+      }, "🗑️"),
+    },
+  ], []);
+
+  return h("div", { className: "page fade-up" },
+    (showModal || editando) && h(ProyectoModal, {
+      editProyecto: editando, empresaId, notify,
+      onClose: closeAny,
+      onSaved: () => { refreshProyectosSeguimiento(); closeAny(); },
+    }),
+    h("div", { className: "card" },
+      h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 } },
+        h("h2", { style: { marginBottom: 0 } }, "Proyectos"),
+        h("button", { className: "btn-primary", style: { padding: "8px 18px" }, onClick: () => setShowModal(true) }, "+ Nuevo Proyecto"),
+      ),
+      h(DataTable, {
+        columns, rows: proyectosSeguimiento, rowKey: (p) => p.id,
+        onRowClick: (p) => setEditando(p),
+        searchFields: ["descripcion"],
+        searchPlaceholder: "Buscar por descripción",
+        emptyText: "Aún no hay proyectos registrados",
+      }),
+    ),
+  );
+}
+
 function AdministracionList({ usuarios, refreshUsuarios, notify, currentUser, refreshOrdenes, refreshProveedores, refreshEmpresas, empresaId, empresa }) {
   const [showModal, setShowModal] = useState(false);
   const [verificando, setVerificando] = useState(null);
@@ -2885,6 +3064,7 @@ function App({ currentUser, onLogout }) {
   const [rendiciones, setRendiciones] = useState([]);
   const [usuarios, setUsuarios] = useState([]);
   const [proyectos, setProyectos] = useState([]);
+  const [proyectosSeguimiento, setProyectosSeguimiento] = useState([]);
   const [catalogos, setCatalogos] = useState({ centrosCosto: [], cuentasContables: [], regiones: [], ciudades: [], listos: false });
   const [notif, notify] = useNotif();
   const [empresas, setEmpresas] = useState([]);
@@ -2933,6 +3113,10 @@ function App({ currentUser, onLogout }) {
     api("proyectos?empresa_id=" + empresaId).then((d) => setProyectos(d.proyectos)).catch((e) => notify("err", e.message));
   }, [notify, empresaId]);
 
+  const loadProyectosSeguimiento = useCallback(() => {
+    api("proyectos-seguimiento?empresa_id=" + empresaId).then((d) => setProyectosSeguimiento(d.proyectos)).catch((e) => notify("err", e.message));
+  }, [notify, empresaId]);
+
   useEffect(() => {
     loadEmpresas();
     loadProveedores();
@@ -2945,6 +3129,7 @@ function App({ currentUser, onLogout }) {
     loadRendiciones();
     loadCatalogos();
     loadProyectos();
+    loadProyectosSeguimiento();
   }, [empresaId]);
 
   useEffect(() => {
@@ -2978,6 +3163,7 @@ function App({ currentUser, onLogout }) {
       h("button", { className: "nav-btn" + (tab === "proveedores" ? " active" : ""), onClick: () => setTab("proveedores") }, "Proveedores"),
       h("button", { className: "nav-btn" + (tab === "reportes" ? " active" : ""), onClick: () => setTab("reportes") }, "Reportes"),
       h("button", { className: "nav-btn" + (tab === "administracion" ? " active" : ""), onClick: () => setTab("administracion") }, "Administración"),
+      h("button", { className: "nav-btn" + (tab === "proyectos-seguimiento" ? " active" : ""), onClick: () => setTab("proyectos-seguimiento") }, "Proyectos"),
     ),
     tab === "dashboard" && h(Dashboard, { ordenes, setTab }),
     tab === "nueva" && h(NuevaOC, { proveedores, catalogos, refreshProveedores: loadProveedores, proyectos, refreshProyectos: loadProyectos, notify, onCreated: loadOrdenes, currentUser, empresaId, empresa: empresaActual }),
@@ -2986,6 +3172,7 @@ function App({ currentUser, onLogout }) {
     tab === "proveedores" && h(ProveedoresList, { proveedores, catalogos, refreshProveedores: loadProveedores, notify, currentUser }),
     tab === "reportes" && h(ReportesList, { ordenes, proveedores, notify }),
     tab === "administracion" && h(AdministracionList, { usuarios, refreshUsuarios: loadUsuarios, notify, currentUser, refreshOrdenes: loadOrdenes, refreshProveedores: loadProveedores, refreshEmpresas: loadEmpresas, empresaId, empresa: empresaActual }),
+    tab === "proyectos-seguimiento" && h(SeguimientoProyectosList, { proyectosSeguimiento, refreshProyectosSeguimiento: loadProyectosSeguimiento, notify, empresaId }),
   );
 }
 
