@@ -11,6 +11,10 @@ export default async function handler(req, res) {
   const db = supabase();
   const session = verifyToken(parseCookie(req.headers.cookie, "ocsys_token"), process.env.SESSION_SECRET || "");
 
+  if (req.method !== "GET" && !session) {
+    return res.status(401).json({ error: "No autenticado" });
+  }
+
   if (req.method === "GET") {
     const empresaId = Number(req.query.empresa_id) || 1;
     const { data, error } = await db
@@ -25,14 +29,14 @@ export default async function handler(req, res) {
   }
 
   if (req.method === "POST") {
-    if (req.query.comentario) {
+    if (req.query.comentario === "1") {
       const body = await readJsonBody(req);
       const texto = (body.texto || "").trim();
       if (!texto) return res.status(400).json({ error: "texto es obligatorio" });
       if (!body.proyecto_id) return res.status(400).json({ error: "proyecto_id es obligatorio" });
       const { data, error } = await db
         .from("seguimiento_proyectos_comentarios")
-        .insert({ proyecto_id: body.proyecto_id, texto, usuario: session ? session.usuario : null })
+        .insert({ proyecto_id: body.proyecto_id, texto, usuario: session.usuario })
         .select()
         .single();
       if (error) return res.status(500).json({ error: error.message });
@@ -49,7 +53,7 @@ export default async function handler(req, res) {
         empresa_id: empresaId,
         descripcion,
         fecha_inicio: body.fecha_inicio || new Date().toISOString().slice(0, 10),
-        creado_por_usuario: session ? session.usuario : null,
+        creado_por_usuario: session.usuario,
       })
       .select("*, seguimiento_proyectos_comentarios(*)")
       .single();
@@ -96,7 +100,7 @@ export default async function handler(req, res) {
       .from("seguimiento_proyectos")
       .update({
         activo: false,
-        eliminado_por: session ? session.usuario : null,
+        eliminado_por: session.usuario,
         eliminado_en: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       })
