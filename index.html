@@ -2150,15 +2150,17 @@ function ProyectoModal({ editProyecto, empresaId, notify, onClose, onSaved, onCo
   const [enviandoComentario, setEnviandoComentario] = useState(false);
 
   const guardar = async () => {
-    if (!descripcion.trim()) return notify("err", "Ingresa una descripción");
-    if (!fechaInicio) return notify("err", "Ingresa la fecha de inicio");
+    if (!isEdit) {
+      if (!descripcion.trim()) return notify("err", "Ingresa una descripción");
+      if (!fechaInicio) return notify("err", "Ingresa la fecha de inicio");
+    }
     setSaving(true);
     try {
       if (isEdit) {
         await api("proyectos-seguimiento?id=" + editProyecto.id, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ descripcion, fecha_inicio: fechaInicio, finalizado, fecha_culminacion: fechaCulminacion || null }),
+          body: JSON.stringify({ finalizado, fecha_culminacion: fechaCulminacion || null }),
         });
         notify("ok", "Proyecto actualizado");
       } else {
@@ -2202,9 +2204,13 @@ function ProyectoModal({ editProyecto, empresaId, notify, onClose, onSaved, onCo
         h("h3", null, isEdit ? "Editar Proyecto" : "Nuevo Proyecto"),
         h("button", { className: "modal-close", onClick: onClose }, "×")
       ),
-      h(Field, { label: "Descripción *" }, h("textarea", { rows: 2, value: descripcion, onChange: (e) => setDescripcion(e.target.value) })),
+      isEdit
+        ? h(Field, { label: "Descripción" }, h("div", null, descripcion))
+        : h(Field, { label: "Descripción *" }, h("textarea", { rows: 2, value: descripcion, onChange: (e) => setDescripcion(e.target.value) })),
       h("div", { className: "grid2" },
-        h(Field, { label: "Fecha Inicio *" }, h("input", { type: "date", value: fechaInicio, onChange: (e) => setFechaInicio(e.target.value) })),
+        isEdit
+          ? h(Field, { label: "Fecha Inicio" }, h("div", null, fmtDate(fechaInicio)))
+          : h(Field, { label: "Fecha Inicio *" }, h("input", { type: "date", value: fechaInicio, onChange: (e) => setFechaInicio(e.target.value) })),
         isEdit && h(Field, { label: "Fecha Culminación" }, h("input", { type: "date", value: fechaCulminacion, onChange: (e) => setFechaCulminacion(e.target.value) })),
       ),
       isEdit && h(Field, { label: "Estado" },
