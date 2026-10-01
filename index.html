@@ -2138,7 +2138,7 @@ function ConfiguracionCorreos({ empresa, notify, refreshEmpresas }) {
   );
 }
 
-function ProyectoModal({ editProyecto, empresaId, notify, onClose, onSaved }) {
+function ProyectoModal({ editProyecto, empresaId, notify, onClose, onSaved, onComentario }) {
   const isEdit = !!editProyecto;
   const [descripcion, setDescripcion] = useState(editProyecto ? editProyecto.descripcion || "" : "");
   const [fechaInicio, setFechaInicio] = useState(editProyecto ? editProyecto.fecha_inicio || "" : new Date().toISOString().slice(0, 10));
@@ -2188,6 +2188,7 @@ function ProyectoModal({ editProyecto, empresaId, notify, onClose, onSaved }) {
       });
       setComentarios((c) => [...c, comentario]);
       setComentarioNuevo("");
+      onComentario();
     } catch (e) {
       notify("err", e.message);
     } finally {
@@ -2300,6 +2301,7 @@ function SeguimientoProyectosList({ proyectosSeguimiento, refreshProyectosSeguim
       editProyecto: editando, empresaId, notify,
       onClose: closeAny,
       onSaved: () => { refreshProyectosSeguimiento(); closeAny(); },
+      onComentario: refreshProyectosSeguimiento,
     }),
     h("div", { className: "card" },
       h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 } },
