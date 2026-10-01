@@ -1943,6 +1943,9 @@ function UsuarioModal({ onClose, onSaved, notify, editUsuario }) {
   const [saving, setSaving] = useState(false);
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
   const isEdit = !!editUsuario;
+  // Sin cerrar al hacer clic afuera -- el campo de contraseña puede recibir
+  // un clic de un gestor de contraseñas del navegador que cae sobre el fondo
+  // y cerraba el formulario a medio llenar. Solo se cierra con Cancelar/×.
 
   const submit = async () => {
     if (!form.nombre || !form.apellido || !form.usuario) {
@@ -1965,7 +1968,7 @@ function UsuarioModal({ onClose, onSaved, notify, editUsuario }) {
     }
   };
 
-  return h("div", { className: "overlay", onClick: (e) => e.target === e.currentTarget && onClose() },
+  return h("div", { className: "overlay" },
     h("div", { className: "modal", style: { width: 420 } },
       h("div", { className: "modal-hdr" },
         h("h3", null, isEdit ? "Editar Usuario" : "Nuevo Usuario"),
