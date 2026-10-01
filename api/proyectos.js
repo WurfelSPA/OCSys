@@ -8,13 +8,12 @@ export default async function handler(req, res) {
   const db = supabase();
 
   if (req.method === "GET") {
-    const empresaId = Number(req.query.empresa_id) || 1;
-    const { data, error } = await db
-      .from("proyectos")
-      .select("*")
-      .eq("empresa_id", empresaId)
-      .eq("activo", true)
-      .order("created_at", { ascending: true });
+    let query = db.from("proyectos").select("*").eq("activo", true).order("created_at", { ascending: true });
+    if (!req.query.all) {
+      const empresaId = Number(req.query.empresa_id) || 1;
+      query = query.eq("empresa_id", empresaId);
+    }
+    const { data, error } = await query;
     if (error) return res.status(500).json({ error: error.message });
     return res.status(200).json({ proyectos: data });
   }

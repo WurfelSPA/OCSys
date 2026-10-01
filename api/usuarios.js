@@ -44,6 +44,8 @@ export default async function handler(req, res) {
       apellido: body.apellido,
       usuario: body.usuario,
       nivel_aprobacion: nivel,
+      empresa_id: body.empresa_id ? Number(body.empresa_id) : null,
+      proyecto_id: body.proyecto_id || null,
     };
     if (body.password) fields.password_hash = hashPassword(body.password);
 

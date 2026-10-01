@@ -37,7 +37,10 @@ export default async function handler(req, res) {
     const payload = {
       id: user.id, usuario: user.usuario,
       nombre: user.nombre, apellido: user.apellido,
-      nivel_aprobacion: user.nivel_aprobacion, exp,
+      nivel_aprobacion: user.nivel_aprobacion,
+      empresa_id: user.empresa_id || null,
+      proyecto_id: user.proyecto_id || null,
+      exp,
     };
     const token = signToken(payload, SESSION_SECRET);
     res.setHeader("Set-Cookie", makeCookie(token, exp - Math.floor(Date.now() / 1000)));
