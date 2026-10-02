@@ -107,15 +107,18 @@ export default async function handler(req, res) {
       }
     }
 
-    // Proveedor fijo (ej. Gestion Obras autogestionando sus propias OC):
-    // solo se valida que exista -- proveedores es un catalogo compartido,
-    // no esta ligado a una empresa en particular.
-    let proveedorIdFinal = body.proveedor_id || null;
-    if (proveedorIdFinal) {
-      const { data: prov, error: provError } = await db
-        .from("proveedores").select("id").eq("id", proveedorIdFinal).maybeSingle();
+    // Proveedores permitidos (ej. Gestion Obras autogestionando sus propias
+    // OC, que puede facturar bajo mas de una razon social): se valida que
+    // cada uno exista -- proveedores es un catalogo compartido, no esta
+    // ligado a una empresa en particular.
+    const proveedorIdsFinal = Array.isArray(body.proveedor_ids) ? body.proveedor_ids.filter(Boolean) : [];
+    if (proveedorIdsFinal.length) {
+      const { data: provs, error: provError } = await db
+        .from("proveedores").select("id").in("id", proveedorIdsFinal);
       if (provError) return res.status(500).json({ error: provError.message });
-      if (!prov) return res.status(400).json({ error: "El proveedor seleccionado no existe" });
+      if (!provs || provs.length !== proveedorIdsFinal.length) {
+        return res.status(400).json({ error: "Alguno de los proveedores seleccionados no existe" });
+      }
     }
 
     const fields = {
@@ -127,7 +130,7 @@ export default async function handler(req, res) {
       proyecto_id: proyectoIdFinal,
       centro_costo_codigo: centroCostoFinal,
       cuenta_contable_codigo: cuentaContableFinal,
-      proveedor_id: proveedorIdFinal,
+      proveedor_ids: proveedorIdsFinal.length ? proveedorIdsFinal : null,
     };
     if (body.password) fields.password_hash = hashPassword(body.password);
 

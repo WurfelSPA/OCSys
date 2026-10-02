@@ -261,8 +261,8 @@ export default async function handler(req, res) {
     if (session && session.proyecto_id) {
       query = query.eq("proyecto_id", session.proyecto_id);
     }
-    if (session && session.proveedor_id) {
-      query = query.eq("proveedor_id", session.proveedor_id);
+    if (session && Array.isArray(session.proveedor_ids) && session.proveedor_ids.length) {
+      query = query.in("proveedor_id", session.proveedor_ids);
     }
     const { data, error } = await query;
     if (error) return res.status(500).json({ error: error.message });
@@ -297,12 +297,19 @@ export default async function handler(req, res) {
     // independiente del "Representante de Compra", que es solo un dato de
     // texto libre y puede ser otra persona.
     const session = verifyToken(parseCookie(req.headers.cookie, "ocsys_token"), process.env.SESSION_SECRET || "");
-    // Si la sesion tiene un proveedor fijo asignado (ej. Gestion Obras
-    // autogestionando sus propias OC), se ignora cualquier proveedor_id que
-    // mande el body -- mismo refuerzo que empresa/proyecto/centro de costo.
-    const proveedorId = (session && session.proveedor_id) ? session.proveedor_id : body.proveedor_id;
+    const proveedorId = body.proveedor_id;
     if (!proveedorId) {
       return res.status(400).json({ error: "proveedor_id es obligatorio" });
+    }
+    // Si la sesion tiene proveedores permitidos (ej. Gestion Obras
+    // autogestionando sus propias OC, que puede facturar bajo mas de una
+    // razon social), el proveedor elegido debe ser uno de esos -- no hay un
+    // unico valor para forzar como con empresa/proyecto/centro de costo, asi
+    // que aqui se valida en vez de sobrescribir.
+    if (session && Array.isArray(session.proveedor_ids) && session.proveedor_ids.length) {
+      if (!session.proveedor_ids.includes(proveedorId)) {
+        return res.status(403).json({ error: "No tienes permiso para crear una OC con ese proveedor" });
+      }
     }
     const empresaId = (session && session.empresa_id) ? session.empresa_id : (Number(body.empresa_id) || 1);
     const estado = ESTADOS_OCSYS.includes(body.estado) ? body.estado : "Borrador";

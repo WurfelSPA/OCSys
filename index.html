@@ -532,6 +532,53 @@ function ProveedorPicker({ proveedores, value, onChange, disabled }) {
   );
 }
 
+function ProveedorMultiPicker({ proveedores, value, onChange }) {
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const selectedIds = value || [];
+  const seleccionados = proveedores.filter((p) => selectedIds.includes(p.id));
+  const label = (p) => p.razon_social + " — " + p.rut;
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const base = proveedores.filter((p) => !selectedIds.includes(p.id));
+    return (q ? base.filter((p) => (p.razon_social + " " + p.rut).toLowerCase().includes(q)) : base).slice(0, 40);
+  }, [proveedores, query, selectedIds]);
+
+  const agregar = (id) => { onChange([...selectedIds, id]); setQuery(""); setOpen(false); };
+  const quitar = (id) => onChange(selectedIds.filter((x) => x !== id));
+
+  return h("div", null,
+    seleccionados.length > 0 && h("div", { style: { display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 } },
+      seleccionados.map((p) => h("span", {
+        key: p.id, className: "pill pill-info", style: { display: "inline-flex", alignItems: "center", gap: 6 },
+      },
+        label(p),
+        h("button", {
+          type: "button", onClick: () => quitar(p.id), title: "Quitar",
+          style: { border: "none", background: "transparent", cursor: "pointer", color: "inherit", fontWeight: 700, padding: 0, lineHeight: 1 },
+        }, "×"),
+      )),
+    ),
+    h("div", { className: "ac-wrap" },
+      h("input", {
+        value: query,
+        placeholder: "Escribe para buscar y agregar un proveedor...",
+        onFocus: () => setOpen(true),
+        onBlur: () => setTimeout(() => setOpen(false), 150),
+        onChange: (e) => setQuery(e.target.value),
+      }),
+      open && h("div", { className: "ac-list" },
+        filtered.length === 0
+          ? h("div", { className: "ac-empty" }, "Sin resultados")
+          : filtered.map((p) => h("div", {
+              key: p.id, className: "ac-item", onMouseDown: () => agregar(p.id),
+            }, label(p))),
+      )
+    )
+  );
+}
+
 function SearchSelect({ options, value, onChange, placeholder, disabled }) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
@@ -787,9 +834,16 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, proyectos, refres
   const [motorIA, setMotorIA] = useState("Gemini");
   const [numCuotas, setNumCuotas] = useState(1);
   const [cuotas, setCuotas] = useState(distribuirCuotas(1, 0));
+  // Si el usuario tiene proveedores permitidos, solo puede elegir entre
+  // esos (no el catalogo completo) -- y si es uno solo, queda fijo.
+  const proveedoresPermitidos = (currentUser.proveedor_ids && currentUser.proveedor_ids.length)
+    ? proveedores.filter((p) => currentUser.proveedor_ids.includes(p.id))
+    : proveedores;
+  const proveedorFijo = currentUser.proveedor_ids && currentUser.proveedor_ids.length === 1 ? currentUser.proveedor_ids[0] : "";
+
   const [form, setForm] = useState(() => ({
     ...formBlank(),
-    proveedor_id: currentUser.proveedor_id || "",
+    proveedor_id: proveedorFijo,
     proyecto_id: currentUser.proyecto_id || "",
     centro_costo_codigo: currentUser.centro_costo_codigo || "",
     cuenta_contable_codigo: currentUser.cuenta_contable_codigo || "",
@@ -981,7 +1035,7 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, proyectos, refres
   const limpiarFormulario = () => {
     setForm({
       ...formBlank(),
-      proveedor_id: currentUser.proveedor_id || "",
+      proveedor_id: proveedorFijo,
       proyecto_id: currentUser.proyecto_id || "",
       centro_costo_codigo: currentUser.centro_costo_codigo || "",
       cuenta_contable_codigo: currentUser.cuenta_contable_codigo || "",
@@ -1041,11 +1095,11 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, proyectos, refres
       h(Field, { label: "Proveedor *" },
         h("div", { className: "row-inline" },
           h(ProveedorPicker, {
-            proveedores, value: form.proveedor_id,
+            proveedores: proveedoresPermitidos, value: form.proveedor_id,
             onChange: (id) => setForm((f) => ({ ...f, proveedor_id: id })),
-            disabled: !!currentUser.proveedor_id,
+            disabled: !!proveedorFijo,
           }),
-          !currentUser.proveedor_id && h("button", { className: "btn-add", title: "Agregar proveedor", onClick: () => setShowModal(true) }, "+"),
+          !(currentUser.proveedor_ids && currentUser.proveedor_ids.length) && h("button", { className: "btn-add", title: "Agregar proveedor", onClick: () => setShowModal(true) }, "+"),
         )
       ),
       h(ProveedorInfoPanel, { proveedor: proveedores.find((p) => p.id === form.proveedor_id) }),
@@ -1962,7 +2016,7 @@ function ReportesList({ ordenes, proveedores, notify }) {
   );
 }
 
-const USUARIO_BLANK = { nombre: "", apellido: "", usuario: "", nivel_aprobacion: "0", password: "", empresa_id: null, proyecto_id: null, centro_costo_codigo: null, cuenta_contable_codigo: null, proveedor_id: null };
+const USUARIO_BLANK = { nombre: "", apellido: "", usuario: "", nivel_aprobacion: "0", password: "", empresa_id: null, proyecto_id: null, centro_costo_codigo: null, cuenta_contable_codigo: null, proveedor_ids: [] };
 
 // Unico usuario con acceso completo a Administracion -- debe coincidir con
 // SUPERADMIN en api/usuarios.js. El resto solo ve/edita su propia cuenta.
@@ -2102,12 +2156,12 @@ function UsuarioModal({ onClose, onSaved, notify, editUsuario, empresas, proyect
           )),
       ),
       form.empresa_id && h("div", { className: "hint", style: { marginTop: -8, marginBottom: 10 } }, "Si se fijan, en Nueva OC esos campos aparecen bloqueados con este valor (ej. proveedores en autogestión)."),
-      h(Field, { label: "Proveedor fijo (autogestión)" },
-        h(ProveedorPicker, {
-          proveedores: proveedores || [], value: form.proveedor_id,
-          onChange: (id) => setForm((f) => ({ ...f, proveedor_id: id || null })),
+      h(Field, { label: "Proveedores permitidos (autogestión)" },
+        h(ProveedorMultiPicker, {
+          proveedores: proveedores || [], value: form.proveedor_ids,
+          onChange: (ids) => setForm((f) => ({ ...f, proveedor_ids: ids })),
         })),
-      h("div", { className: "hint", style: { marginTop: -8, marginBottom: 10 } }, "Si se fija, este usuario entra como ese proveedor: en Nueva OC el campo Proveedor queda bloqueado con este valor, y solo ve las OC de ese proveedor."),
+      h("div", { className: "hint", style: { marginTop: -8, marginBottom: 10 } }, "Si se agrega al menos uno, este usuario entra como proveedor: en Nueva OC solo puede elegir entre estos (si es solo uno, queda fijo), y en Órdenes solo ve las OC de estos proveedores."),
       h(Field, { label: "Contraseña" },
         h("input", { type: "password", value: form.password, onChange: set("password"),
           placeholder: isEdit ? "Dejar en blanco para no cambiarla" : "Dejar en blanco por ahora" })),
@@ -2129,7 +2183,7 @@ const USUARIOS_COLUMNS = [
     : h("span", { className: "pill pill-pend" }, "0 — No aprueba")) },
   {
     key: "acceso", label: "Proyecto", sortable: false,
-    render: (u) => u.proyecto_id || u.empresa_id ? h("span", { className: "pill pill-pend" }, "Restringido") : h("span", { className: "pill pill-ok" }, "Ve todo"),
+    render: (u) => (u.proyecto_id || u.empresa_id || (u.proveedor_ids && u.proveedor_ids.length)) ? h("span", { className: "pill pill-pend" }, "Restringido") : h("span", { className: "pill pill-ok" }, "Ve todo"),
   },
   { key: "tiene_password", label: "Contraseña", render: (u) => (u.tiene_password
     ? h("span", { className: "pill pill-ok" }, "Configurada")

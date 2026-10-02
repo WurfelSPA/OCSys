@@ -20,7 +20,7 @@ function buildPayload(user, exp) {
     proyecto_id: user.proyecto_id || null,
     centro_costo_codigo: user.centro_costo_codigo || null,
     cuenta_contable_codigo: user.cuenta_contable_codigo || null,
-    proveedor_id: user.proveedor_id || null,
+    proveedor_ids: user.proveedor_ids || null,
     exp,
   };
 }
