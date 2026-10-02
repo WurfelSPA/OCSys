@@ -1,5 +1,5 @@
 import { supabase, readJsonBody } from "./_supabase.js";
-import { hashPassword, verifyPassword } from "./_auth.js";
+import { hashPassword } from "./_auth.js";
 import { verifyToken, parseCookie } from "./_session.js";
 
 function toPublic(u) {
@@ -15,17 +15,6 @@ const SUPERADMIN = "amelendez@patagonica.cl";
 
 export default async function handler(req, res) {
   const db = supabase();
-
-  if (req.method === "POST" && req.query.action === "verificar") {
-    const { id, password } = await readJsonBody(req);
-    if (!id || !password) return res.status(400).json({ error: "id y password son obligatorios" });
-    const { data: usuario, error } = await db.from("usuarios").select("password_hash").eq("id", id).maybeSingle();
-    if (error) return res.status(500).json({ error: error.message });
-    if (!usuario || !verifyPassword(password, usuario.password_hash)) {
-      return res.status(401).json({ error: "Contraseña incorrecta" });
-    }
-    return res.status(200).json({ ok: true });
-  }
 
   if (req.method === "GET") {
     // La lista completa trae el login (correo) y nivel/alcance de cada
