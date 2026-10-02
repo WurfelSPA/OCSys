@@ -710,7 +710,17 @@ async function generarPdfOC(orden, proveedor, cuotas, empresa) {
   doc.setFont(undefined, "bold"); doc.text("Descripción", left, 119);
   doc.setFont(undefined, "normal"); doc.text(orden.descripcion || "—", left, 123.5, { maxWidth: 110 });
 
-  const rows = (cuotas || []).map((c) => [String(c.dias || 0), c.observacion || "", (c.porcentaje || 0) + " %", moneda + " " + fmtMontoPdf(c.monto, moneda)]);
+  // Una OC dividida en cuotas (filas independientes, cada una con su propio
+  // monto/HES/factura) no trae el detalle de TODAS las cuotas en "cuotas"
+  // (eso quedaria vacio, ver _cuotas.js) -- se arma una sola fila mostrando
+  // nada mas la posicion de ESTA fila (ej. "1/6"), nunca el resto.
+  const rows = orden.cuota_total
+    ? [[
+        "0", orden.cuota_numero + "/" + orden.cuota_total,
+        Math.round(100 / orden.cuota_total) + " %",
+        moneda + " " + fmtMontoPdf(orden.monto_neto, moneda),
+      ]]
+    : (cuotas || []).map((c) => [String(c.dias || 0), c.observacion || "", (c.porcentaje || 0) + " %", moneda + " " + fmtMontoPdf(c.monto, moneda)]);
   doc.autoTable({
     startY: 140, margin: { left, right: 210 - right },
     head: [["Días de Pago", "Observación", "Porcentaje", "Monto"]],
