@@ -1939,6 +1939,51 @@ function ReportesList({ ordenes, proveedores, notify }) {
 
 const USUARIO_BLANK = { nombre: "", apellido: "", usuario: "", nivel_aprobacion: "0", password: "", empresa_id: null, proyecto_id: null };
 
+// Unico usuario con acceso completo a Administracion -- debe coincidir con
+// SUPERADMIN en api/usuarios.js. El resto solo ve/edita su propia cuenta.
+const SUPERADMIN = "amelendez@patagonica.cl";
+
+function MiCuentaPanel({ currentUser, usuarios, notify }) {
+  const miUsuario = usuarios.find((u) => u.id === currentUser.id);
+  const [password, setPassword] = useState("");
+  const [password2, setPassword2] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const guardar = async () => {
+    if (!password || password.length < 6) return notify("err", "La contraseña debe tener al menos 6 caracteres");
+    if (password !== password2) return notify("err", "Las contraseñas no coinciden");
+    setSaving(true);
+    try {
+      await api("usuarios?id=" + currentUser.id, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password }),
+      });
+      notify("ok", "Contraseña actualizada");
+      setPassword("");
+      setPassword2("");
+    } catch (e) {
+      notify("err", e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return h("div", { className: "page fade-up" },
+    h("div", { className: "card", style: { maxWidth: 420 } },
+      h("h2", null, "Mi Cuenta"),
+      h(Field, { label: "Nombre" }, h("div", null, miUsuario ? (miUsuario.nombre + " " + miUsuario.apellido) : "—")),
+      h(Field, { label: "Usuario" }, h("div", null, miUsuario ? miUsuario.usuario : "—")),
+      h("div", { className: "section-lbl" }, "Cambiar contraseña"),
+      h(Field, { label: "Nueva contraseña" }, h("input", { type: "password", value: password, onChange: (e) => setPassword(e.target.value) })),
+      h(Field, { label: "Confirmar contraseña" }, h("input", { type: "password", value: password2, onChange: (e) => setPassword2(e.target.value) })),
+      h("div", { style: { display: "flex", justifyContent: "flex-end", marginTop: 12 } },
+        h("button", { className: "btn-primary", onClick: guardar, disabled: saving }, saving ? "Guardando..." : "Guardar"),
+      ),
+    ),
+  );
+}
+
 function UsuarioModal({ onClose, onSaved, notify, editUsuario, empresas, proyectosTodos }) {
   const [form, setForm] = useState(editUsuario
     ? { ...USUARIO_BLANK, ...editUsuario, nivel_aprobacion: String(editUsuario.nivel_aprobacion), password: "" }
@@ -2412,6 +2457,11 @@ function AdministracionList({ usuarios, refreshUsuarios, notify, currentUser, re
   const [verificando, setVerificando] = useState(null);
   const [editing, setEditing] = useState(null);
   const closeAny = () => { setShowModal(false); setEditing(null); setVerificando(null); };
+
+  if (currentUser.usuario !== SUPERADMIN) {
+    return h(MiCuentaPanel, { currentUser, usuarios, notify });
+  }
+
   return h("div", { className: "page fade-up" },
     (showModal || editing) && h(UsuarioModal, {
       editUsuario: editing, onClose: closeAny,
@@ -3218,9 +3268,9 @@ function App({ currentUser, onLogout }) {
   useEffect(() => {
     loadEmpresas();
     loadProveedores();
-    // Solo un aprobador puede listar usuarios (la API ahora lo exige) -- se
-    // evita pedirla para el resto y que les aparezca un error al entrar.
-    if (currentUser.nivel_aprobacion === 1) loadUsuarios();
+    // Cualquier usuario puede pedir esto -- la API le devuelve su propia
+    // fila nada mas (o la lista completa si es el superadmin).
+    loadUsuarios();
     loadProyectosTodos();
   }, []);
 
@@ -3263,7 +3313,7 @@ function App({ currentUser, onLogout }) {
       h("button", { className: "nav-btn" + (tab === "rendiciones" ? " active" : ""), onClick: () => setTab("rendiciones") }, "Rendición de Gastos"),
       h("button", { className: "nav-btn" + (tab === "proveedores" ? " active" : ""), onClick: () => setTab("proveedores") }, "Proveedores"),
       h("button", { className: "nav-btn" + (tab === "reportes" ? " active" : ""), onClick: () => setTab("reportes") }, "Reportes"),
-      !currentUser.empresa_id && currentUser.nivel_aprobacion === 1 && h("button", { className: "nav-btn" + (tab === "administracion" ? " active" : ""), onClick: () => setTab("administracion") }, "Administración"),
+      h("button", { className: "nav-btn" + (tab === "administracion" ? " active" : ""), onClick: () => setTab("administracion") }, "Administración"),
       h("button", { className: "nav-btn" + (tab === "proyectos-seguimiento" ? " active" : ""), onClick: () => setTab("proyectos-seguimiento") }, "Proyectos"),
     ),
     tab === "dashboard" && h(Dashboard, { ordenes, setTab }),

@@ -7,6 +7,12 @@ function toPublic(u) {
   return { ...rest, tiene_password: !!password_hash };
 }
 
+// Unico usuario con acceso completo a Administracion (ver/crear/editar a
+// cualquiera). El resto solo puede ver y editar su propia cuenta (para
+// cambiar su contraseña), sin importar su nivel_aprobacion -- ese nivel es
+// para aprobar OC, un permiso distinto al de administrar usuarios.
+const SUPERADMIN = "amelendez@patagonica.cl";
+
 export default async function handler(req, res) {
   const db = supabase();
 
@@ -23,29 +29,50 @@ export default async function handler(req, res) {
 
   if (req.method === "GET") {
     // La lista completa trae el login (correo) y nivel/alcance de cada
-    // usuario de todas las empresas -- solo un aprobador debe poder verla
-    // (si no, un usuario restringido a un proyecto podria leerla igual
-    // llamando la API directo, evadiendo la restriccion por otro lado).
+    // usuario de todas las empresas -- solo el superadmin la ve entera;
+    // cualquier otro usuario autenticado solo ve su propia fila (para poder
+    // cambiar su propia contraseña desde Administración).
     const session = verifyToken(parseCookie(req.headers.cookie, "ocsys_token"), process.env.SESSION_SECRET || "");
-    if (!session || session.nivel_aprobacion !== 1) {
-      return res.status(403).json({ error: "No tienes nivel de aprobación para ver la lista de usuarios" });
-    }
-    const { data, error } = await db
-      .from("usuarios")
-      .select("*")
-      .order("nombre", { ascending: true });
+    if (!session) return res.status(401).json({ error: "No autenticado" });
+    let query = db.from("usuarios").select("*").order("nombre", { ascending: true });
+    if (session.usuario !== SUPERADMIN) query = query.eq("id", session.id);
+    const { data, error } = await query;
     if (error) return res.status(500).json({ error: error.message });
     return res.status(200).json({ usuarios: data.map(toPublic) });
   }
 
-  if (req.method === "POST" || req.method === "PUT") {
-    // Crear/editar usuarios (incluye asignar nivel de aprobacion y el
-    // acceso por empresa/proyecto) requiere nivel de aprobador -- sin este
-    // chequeo, cualquiera podia llamar la API directamente para crearse un
-    // usuario admin o quitarse su propia restriccion de acceso.
+  if (req.method === "PUT") {
     const session = verifyToken(parseCookie(req.headers.cookie, "ocsys_token"), process.env.SESSION_SECRET || "");
-    if (!session || session.nivel_aprobacion !== 1) {
-      return res.status(403).json({ error: "No tienes nivel de aprobación para gestionar usuarios" });
+    if (!session) return res.status(401).json({ error: "No autenticado" });
+
+    if (session.usuario !== SUPERADMIN) {
+      // Autoservicio: cualquier usuario puede cambiar su propia contraseña,
+      // pero nada mas (ni su nombre, ni su nivel de aprobacion, ni su
+      // acceso por empresa/proyecto) -- eso solo lo toca el superadmin.
+      const id = req.query.id;
+      if (!id || id !== session.id) {
+        return res.status(403).json({ error: "Solo puedes editar tu propia cuenta" });
+      }
+      const body = await readJsonBody(req);
+      if (!body.password) return res.status(400).json({ error: "Ingresa la nueva contraseña" });
+      const { data, error } = await db
+        .from("usuarios")
+        .update({ password_hash: hashPassword(body.password), updated_at: new Date().toISOString() })
+        .eq("id", id)
+        .select()
+        .single();
+      if (error) return res.status(500).json({ error: error.message });
+      return res.status(200).json({ usuario: toPublic(data) });
+    }
+  }
+
+  if (req.method === "POST" || req.method === "PUT") {
+    // Crear usuarios nuevos, o editar a CUALQUIER usuario (nombre, nivel de
+    // aprobacion, acceso por empresa/proyecto) -- exclusivo del superadmin;
+    // el autoservicio (editar la propia contraseña) ya se resolvio arriba.
+    const session = verifyToken(parseCookie(req.headers.cookie, "ocsys_token"), process.env.SESSION_SECRET || "");
+    if (!session || session.usuario !== SUPERADMIN) {
+      return res.status(403).json({ error: "No tienes permiso para gestionar usuarios" });
     }
 
     const body = await readJsonBody(req);
