@@ -8,10 +8,18 @@ export default async function handler(req, res) {
 
   const db = supabase();
   const empresaId = Number(req.query.empresa_id) || 1;
+  const todas = !!req.query.all;
+
+  let centrosCostoQuery = db.from("centros_costo").select("codigo, descripcion, empresa_id").eq("activo", true).order("codigo");
+  let cuentasContablesQuery = db.from("cuentas_contables").select("codigo, descripcion, centro_costo_codigo, empresa_id").eq("activo", true).order("descripcion");
+  if (!todas) {
+    centrosCostoQuery = centrosCostoQuery.eq("empresa_id", empresaId);
+    cuentasContablesQuery = cuentasContablesQuery.eq("empresa_id", empresaId);
+  }
 
   const [centrosCosto, cuentasContables, regiones, ciudades] = await Promise.all([
-    db.from("centros_costo").select("codigo, descripcion").eq("activo", true).eq("empresa_id", empresaId).order("codigo"),
-    db.from("cuentas_contables").select("codigo, descripcion, centro_costo_codigo").eq("activo", true).eq("empresa_id", empresaId).order("descripcion"),
+    centrosCostoQuery,
+    cuentasContablesQuery,
     db.from("regiones").select("id, nombre").order("nombre"),
     db.from("ciudades").select("id, region_id, nombre").order("nombre"),
   ]);

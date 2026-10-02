@@ -776,7 +776,12 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, proyectos, refres
   const [motorIA, setMotorIA] = useState("Gemini");
   const [numCuotas, setNumCuotas] = useState(1);
   const [cuotas, setCuotas] = useState(distribuirCuotas(1, 0));
-  const [form, setForm] = useState(() => ({ ...formBlank(), proyecto_id: currentUser.proyecto_id || "" }));
+  const [form, setForm] = useState(() => ({
+    ...formBlank(),
+    proyecto_id: currentUser.proyecto_id || "",
+    centro_costo_codigo: currentUser.centro_costo_codigo || "",
+    cuenta_contable_codigo: currentUser.cuenta_contable_codigo || "",
+  }));
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
   const agregarProyecto = async () => {
@@ -962,7 +967,12 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, proyectos, refres
   };
 
   const limpiarFormulario = () => {
-    setForm({ ...formBlank(), proyecto_id: currentUser.proyecto_id || "" });
+    setForm({
+      ...formBlank(),
+      proyecto_id: currentUser.proyecto_id || "",
+      centro_costo_codigo: currentUser.centro_costo_codigo || "",
+      cuenta_contable_codigo: currentUser.cuenta_contable_codigo || "",
+    });
     setFile(null);
     setNumCuotas(1);
     setCuotas(distribuirCuotas(1, 0));
@@ -1038,7 +1048,7 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, proyectos, refres
       h("div", { className: "grid3" },
         h(Field, { label: "Centro de Costo" },
           h("select", {
-            value: form.centro_costo_codigo, disabled: !catalogos.listos,
+            value: form.centro_costo_codigo, disabled: !catalogos.listos || !!currentUser.centro_costo_codigo,
             onChange: (e) => setForm((f) => ({ ...f, centro_costo_codigo: e.target.value, cuenta_contable_codigo: "" })),
           },
             h("option", { value: "" }, catalogos.listos ? "Selecciona" : "Cargando..."),
@@ -1054,6 +1064,7 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, proyectos, refres
                 value: form.cuenta_contable_codigo,
                 onChange: (v) => setForm((f) => ({ ...f, cuenta_contable_codigo: v })),
                 placeholder: "Escribe para buscar cuenta contable...",
+                disabled: !!currentUser.cuenta_contable_codigo,
               })
         ),
         h(Field, { label: "Proyectos" },
@@ -1937,7 +1948,7 @@ function ReportesList({ ordenes, proveedores, notify }) {
   );
 }
 
-const USUARIO_BLANK = { nombre: "", apellido: "", usuario: "", nivel_aprobacion: "0", password: "", empresa_id: null, proyecto_id: null };
+const USUARIO_BLANK = { nombre: "", apellido: "", usuario: "", nivel_aprobacion: "0", password: "", empresa_id: null, proyecto_id: null, centro_costo_codigo: null, cuenta_contable_codigo: null };
 
 // Unico usuario con acceso completo a Administracion -- debe coincidir con
 // SUPERADMIN en api/usuarios.js. El resto solo ve/edita su propia cuenta.
@@ -1984,7 +1995,7 @@ function MiCuentaPanel({ currentUser, usuarios, notify }) {
   );
 }
 
-function UsuarioModal({ onClose, onSaved, notify, editUsuario, empresas, proyectosTodos }) {
+function UsuarioModal({ onClose, onSaved, notify, editUsuario, empresas, proyectosTodos, catalogosTodos }) {
   const [form, setForm] = useState(editUsuario
     ? { ...USUARIO_BLANK, ...editUsuario, nivel_aprobacion: String(editUsuario.nivel_aprobacion), password: "" }
     : USUARIO_BLANK);
@@ -2056,6 +2067,27 @@ function UsuarioModal({ onClose, onSaved, notify, editUsuario, empresas, proyect
           )),
         )),
       h("div", { className: "hint", style: { marginTop: -8, marginBottom: 10 } }, "Si se deja 'Sin restricción', el usuario ve todas las OC de todas las empresas, como hoy."),
+      form.empresa_id && h("div", { className: "grid2" },
+        h(Field, { label: "Centro de Costo fijo" },
+          h("select", {
+            value: form.centro_costo_codigo || "",
+            onChange: (e) => setForm((f) => ({ ...f, centro_costo_codigo: e.target.value || null, cuenta_contable_codigo: null })),
+          },
+            h("option", { value: "" }, "Sin fijar"),
+            (catalogosTodos?.centrosCosto || []).filter((c) => c.empresa_id === form.empresa_id).map((c) =>
+              h("option", { key: c.codigo, value: c.codigo }, c.codigo + " — " + c.descripcion)),
+          )),
+        h(Field, { label: "Cuenta Contable fija" },
+          h("select", {
+            value: form.cuenta_contable_codigo || "", disabled: !form.centro_costo_codigo,
+            onChange: (e) => setForm((f) => ({ ...f, cuenta_contable_codigo: e.target.value || null })),
+          },
+            h("option", { value: "" }, form.centro_costo_codigo ? "Sin fijar" : "Primero elige un Centro de Costo"),
+            (catalogosTodos?.cuentasContables || []).filter((c) => c.centro_costo_codigo === form.centro_costo_codigo).map((c) =>
+              h("option", { key: c.codigo, value: c.codigo }, c.codigo + " — " + c.descripcion)),
+          )),
+      ),
+      form.empresa_id && h("div", { className: "hint", style: { marginTop: -8, marginBottom: 10 } }, "Si se fijan, en Nueva OC esos campos aparecen bloqueados con este valor (ej. proveedores en autogestión)."),
       h(Field, { label: "Contraseña" },
         h("input", { type: "password", value: form.password, onChange: set("password"),
           placeholder: isEdit ? "Dejar en blanco para no cambiarla" : "Dejar en blanco por ahora" })),
@@ -2408,7 +2440,7 @@ function SeguimientoProyectosList({ proyectosSeguimiento, refreshProyectosSeguim
   );
 }
 
-function AdministracionList({ usuarios, refreshUsuarios, notify, currentUser, refreshOrdenes, refreshProveedores, refreshEmpresas, empresaId, empresa, empresas, proyectosTodos }) {
+function AdministracionList({ usuarios, refreshUsuarios, notify, currentUser, refreshOrdenes, refreshProveedores, refreshEmpresas, empresaId, empresa, empresas, proyectosTodos, catalogosTodos }) {
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState(null);
   const closeAny = () => { setShowModal(false); setEditing(null); };
@@ -2421,7 +2453,7 @@ function AdministracionList({ usuarios, refreshUsuarios, notify, currentUser, re
     (showModal || editing) && h(UsuarioModal, {
       editUsuario: editing, onClose: closeAny,
       onSaved: () => { refreshUsuarios(); closeAny(); }, notify,
-      empresas, proyectosTodos,
+      empresas, proyectosTodos, catalogosTodos,
     }),
     h("div", { className: "card" },
       h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 } },
@@ -3156,6 +3188,7 @@ function App({ currentUser, onLogout }) {
   const [proyectosTodos, setProyectosTodos] = useState([]);
   const [proyectosSeguimiento, setProyectosSeguimiento] = useState([]);
   const [catalogos, setCatalogos] = useState({ centrosCosto: [], cuentasContables: [], regiones: [], ciudades: [], listos: false });
+  const [catalogosTodos, setCatalogosTodos] = useState({ centrosCosto: [], cuentasContables: [] });
   const [notif, notify] = useNotif();
   const [empresas, setEmpresas] = useState([]);
   const [empresaId, setEmpresaIdState] = useState(() => {
@@ -3209,6 +3242,12 @@ function App({ currentUser, onLogout }) {
     api("proyectos?all=1").then((d) => setProyectosTodos(d.proyectos)).catch((e) => notify("err", e.message));
   }, [notify]);
 
+  const loadCatalogosTodos = useCallback(() => {
+    api("catalogos?all=1", { timeoutMs: 15000 })
+      .then((d) => setCatalogosTodos({ centrosCosto: d.centrosCosto, cuentasContables: d.cuentasContables }))
+      .catch((e) => notify("err", e.message));
+  }, [notify]);
+
   const loadProyectosSeguimiento = useCallback(() => {
     api("proyectos-seguimiento?empresa_id=" + empresaId).then((d) => setProyectosSeguimiento(d.proyectos)).catch((e) => notify("err", e.message));
   }, [notify, empresaId]);
@@ -3220,6 +3259,7 @@ function App({ currentUser, onLogout }) {
     // fila nada mas (o la lista completa si es el superadmin).
     loadUsuarios();
     loadProyectosTodos();
+    loadCatalogosTodos();
   }, []);
 
   useEffect(() => {
@@ -3274,7 +3314,7 @@ function App({ currentUser, onLogout }) {
     tab === "rendiciones" && esPatagonica && h(RendicionGastosPage, { rendiciones, refreshRendiciones: loadRendiciones, catalogos, notify, currentUser, empresaId }),
     tab === "proveedores" && esPatagonica && h(ProveedoresList, { proveedores, catalogos, refreshProveedores: loadProveedores, notify, currentUser }),
     tab === "reportes" && esPatagonica && h(ReportesList, { ordenes, proveedores, notify }),
-    tab === "administracion" && h(AdministracionList, { usuarios, refreshUsuarios: loadUsuarios, notify, currentUser, refreshOrdenes: loadOrdenes, refreshProveedores: loadProveedores, refreshEmpresas: loadEmpresas, empresaId, empresa: empresaActual, empresas, proyectosTodos }),
+    tab === "administracion" && h(AdministracionList, { usuarios, refreshUsuarios: loadUsuarios, notify, currentUser, refreshOrdenes: loadOrdenes, refreshProveedores: loadProveedores, refreshEmpresas: loadEmpresas, empresaId, empresa: empresaActual, empresas, proyectosTodos, catalogosTodos }),
     tab === "proyectos-seguimiento" && esPatagonica && h(SeguimientoProyectosList, { proyectosSeguimiento, refreshProyectosSeguimiento: loadProyectosSeguimiento, notify, empresaId }),
   );
 }

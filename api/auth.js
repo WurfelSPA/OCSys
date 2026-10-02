@@ -40,6 +40,8 @@ export default async function handler(req, res) {
       nivel_aprobacion: user.nivel_aprobacion,
       empresa_id: user.empresa_id || null,
       proyecto_id: user.proyecto_id || null,
+      centro_costo_codigo: user.centro_costo_codigo || null,
+      cuenta_contable_codigo: user.cuenta_contable_codigo || null,
       exp,
     };
     const token = signToken(payload, SESSION_SECRET);

@@ -87,6 +87,26 @@ export default async function handler(req, res) {
       empresaIdFinal = proyecto.empresa_id;
     }
 
+    // Centro de Costo / Cuenta Contable fijos (ej. proveedores en autogestion
+    // como Gestion Obras): se validan contra la empresa ya resuelta arriba,
+    // nunca se confia en el codigo suelto que mande el cliente.
+    const centroCostoFinal = body.centro_costo_codigo || null;
+    let cuentaContableFinal = body.cuenta_contable_codigo || null;
+    if (centroCostoFinal) {
+      const { data: cc, error: ccError } = await db
+        .from("centros_costo").select("codigo").eq("codigo", centroCostoFinal).eq("empresa_id", empresaIdFinal).maybeSingle();
+      if (ccError) return res.status(500).json({ error: ccError.message });
+      if (!cc) return res.status(400).json({ error: "El Centro de Costo no corresponde a la empresa seleccionada" });
+    }
+    if (cuentaContableFinal) {
+      const { data: cta, error: ctaError } = await db
+        .from("cuentas_contables").select("codigo, centro_costo_codigo").eq("codigo", cuentaContableFinal).eq("empresa_id", empresaIdFinal).maybeSingle();
+      if (ctaError) return res.status(500).json({ error: ctaError.message });
+      if (!cta || (centroCostoFinal && cta.centro_costo_codigo !== centroCostoFinal)) {
+        return res.status(400).json({ error: "La Cuenta Contable no corresponde al Centro de Costo/empresa seleccionados" });
+      }
+    }
+
     const fields = {
       nombre: body.nombre,
       apellido: body.apellido,
@@ -94,6 +114,8 @@ export default async function handler(req, res) {
       nivel_aprobacion: nivel,
       empresa_id: empresaIdFinal,
       proyecto_id: proyectoIdFinal,
+      centro_costo_codigo: centroCostoFinal,
+      cuenta_contable_codigo: cuentaContableFinal,
     };
     if (body.password) fields.password_hash = hashPassword(body.password);
 

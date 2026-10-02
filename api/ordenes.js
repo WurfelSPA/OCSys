@@ -323,8 +323,11 @@ export default async function handler(req, res) {
       condiciones: body.condiciones || null,
       motivo: body.motivo || null,
       gerencia: body.gerencia || null,
-      centro_costo_codigo: body.centro_costo_codigo || null,
-      cuenta_contable_codigo: body.cuenta_contable_codigo || null,
+      // Mismo refuerzo que proyecto_id -- si la sesion trae Centro de
+      // Costo/Cuenta Contable fijos (ej. proveedores en autogestion), se
+      // ignora lo que mande el body.
+      centro_costo_codigo: (session && session.centro_costo_codigo) ? session.centro_costo_codigo : (body.centro_costo_codigo || null),
+      cuenta_contable_codigo: (session && session.cuenta_contable_codigo) ? session.cuenta_contable_codigo : (body.cuenta_contable_codigo || null),
       tipo_orden: body.tipo_orden || null,
       tipo_compra: body.tipo_compra || null,
       moneda: body.moneda || "CLP",
