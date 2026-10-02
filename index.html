@@ -3280,6 +3280,7 @@ function App({ currentUser, onLogout }) {
   // herramientas internas -- solo personal con correo @patagonica.cl, sin
   // importar su nivel de aprobación o si está atado a una empresa/proyecto.
   const esPatagonica = (currentUser.usuario || "").toLowerCase().endsWith("@patagonica.cl");
+  const esGestionObras = (currentUser.usuario || "").toLowerCase().endsWith("@gestionobras.cl");
 
   return h("div", null,
     notif && h("div", { className: "notif notif-" + (notif.type === "ok" ? "ok" : notif.type === "warn" ? "warn" : "err") }, notif.msg),
@@ -3290,10 +3291,11 @@ function App({ currentUser, onLogout }) {
         h("div", { className: "sub" }, "Órdenes de Compra" + (empresaActual ? " — " + empresaActual.nombre + " · RUT " + empresaActual.rut : "")),
       ),
       h("div", { style: { fontSize: 12, color: "var(--txm)", display: "flex", alignItems: "center", gap: 12 } },
-        !currentUser.empresa_id && empresas.length > 0 && h("select", {
+        esPatagonica && !currentUser.empresa_id && empresas.length > 0 && h("select", {
           value: empresaId, onChange: (e) => setEmpresaId(Number(e.target.value)),
           style: { fontSize: 12, padding: "5px 8px", width: "auto" },
         }, empresas.map((emp) => h("option", { key: emp.id, value: emp.id }, emp.nombre))),
+        esGestionObras && h("img", { src: "/logo-gestionaobras.png", alt: "Gestión Obras", style: { height: 24, width: "auto", display: "block" } }),
         (currentUser.nombre || currentUser.usuario),
         h("button", { className: "btn-ghost", style: { padding: "5px 12px", fontSize: 11 }, onClick: onLogout }, "Cerrar sesión"),
       ),
