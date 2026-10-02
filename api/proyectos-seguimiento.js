@@ -6,13 +6,14 @@ import { verifyToken, parseCookie } from "./_session.js";
 // WhatsApp donde se informaban avances, para dejar un historial ordenado
 // con fecha y autor de cada nota, pensando en poder sacar un informe de
 // gestion mas adelante. Crear/editar/comentar/marcar estado/eliminar es
-// libre para cualquier usuario con sesion, sin restriccion de nivel.
+// libre para cualquier usuario con sesion, sin restriccion de nivel -- pero
+// es una herramienta interna, solo personal con correo @patagonica.cl.
 export default async function handler(req, res) {
   const db = supabase();
   const session = verifyToken(parseCookie(req.headers.cookie, "ocsys_token"), process.env.SESSION_SECRET || "");
 
-  if (req.method !== "GET" && !session) {
-    return res.status(401).json({ error: "No autenticado" });
+  if (!session || !(session.usuario || "").toLowerCase().endsWith("@patagonica.cl")) {
+    return res.status(403).json({ error: "Esta función es solo para personal de Patagónica" });
   }
 
   if (req.method === "GET") {

@@ -3236,6 +3236,10 @@ function App({ currentUser, onLogout }) {
   }, [empresaId]);
 
   const empresaActual = empresas.find((e) => e.id === empresaId);
+  // Rendición de Gastos, Proveedores, Reportes y Proyectos (bitácora) son
+  // herramientas internas -- solo personal con correo @patagonica.cl, sin
+  // importar su nivel de aprobación o si está atado a una empresa/proyecto.
+  const esPatagonica = (currentUser.usuario || "").toLowerCase().endsWith("@patagonica.cl");
 
   return h("div", null,
     notif && h("div", { className: "notif notif-" + (notif.type === "ok" ? "ok" : notif.type === "warn" ? "warn" : "err") }, notif.msg),
@@ -3258,20 +3262,20 @@ function App({ currentUser, onLogout }) {
       h("button", { className: "nav-btn" + (tab === "dashboard" ? " active" : ""), onClick: () => setTab("dashboard") }, "Dashboard"),
       h("button", { className: "nav-btn" + (tab === "nueva" ? " active" : ""), onClick: () => setTab("nueva") }, "Nueva OC"),
       h("button", { className: "nav-btn" + (tab === "ordenes" ? " active" : ""), onClick: () => setTab("ordenes") }, "Órdenes"),
-      h("button", { className: "nav-btn" + (tab === "rendiciones" ? " active" : ""), onClick: () => setTab("rendiciones") }, "Rendición de Gastos"),
-      h("button", { className: "nav-btn" + (tab === "proveedores" ? " active" : ""), onClick: () => setTab("proveedores") }, "Proveedores"),
-      h("button", { className: "nav-btn" + (tab === "reportes" ? " active" : ""), onClick: () => setTab("reportes") }, "Reportes"),
+      esPatagonica && h("button", { className: "nav-btn" + (tab === "rendiciones" ? " active" : ""), onClick: () => setTab("rendiciones") }, "Rendición de Gastos"),
+      esPatagonica && h("button", { className: "nav-btn" + (tab === "proveedores" ? " active" : ""), onClick: () => setTab("proveedores") }, "Proveedores"),
+      esPatagonica && h("button", { className: "nav-btn" + (tab === "reportes" ? " active" : ""), onClick: () => setTab("reportes") }, "Reportes"),
       h("button", { className: "nav-btn" + (tab === "administracion" ? " active" : ""), onClick: () => setTab("administracion") }, "Administración"),
-      h("button", { className: "nav-btn" + (tab === "proyectos-seguimiento" ? " active" : ""), onClick: () => setTab("proyectos-seguimiento") }, "Proyectos"),
+      esPatagonica && h("button", { className: "nav-btn" + (tab === "proyectos-seguimiento" ? " active" : ""), onClick: () => setTab("proyectos-seguimiento") }, "Proyectos"),
     ),
     tab === "dashboard" && h(Dashboard, { ordenes, setTab }),
     tab === "nueva" && h(NuevaOC, { proveedores, catalogos, refreshProveedores: loadProveedores, proyectos, refreshProyectos: loadProyectos, refreshProyectosTodos: loadProyectosTodos, notify, onCreated: loadOrdenes, currentUser, empresaId, empresa: empresaActual }),
     tab === "ordenes" && h(OrdenesList, { ordenes, refreshOrdenes: loadOrdenes, notify, currentUser, proveedores, catalogos, proyectos, refreshProyectos: loadProyectos, refreshProyectosTodos: loadProyectosTodos, empresaId, empresa: empresaActual }),
-    tab === "rendiciones" && h(RendicionGastosPage, { rendiciones, refreshRendiciones: loadRendiciones, catalogos, notify, currentUser, empresaId }),
-    tab === "proveedores" && h(ProveedoresList, { proveedores, catalogos, refreshProveedores: loadProveedores, notify, currentUser }),
-    tab === "reportes" && h(ReportesList, { ordenes, proveedores, notify }),
+    tab === "rendiciones" && esPatagonica && h(RendicionGastosPage, { rendiciones, refreshRendiciones: loadRendiciones, catalogos, notify, currentUser, empresaId }),
+    tab === "proveedores" && esPatagonica && h(ProveedoresList, { proveedores, catalogos, refreshProveedores: loadProveedores, notify, currentUser }),
+    tab === "reportes" && esPatagonica && h(ReportesList, { ordenes, proveedores, notify }),
     tab === "administracion" && h(AdministracionList, { usuarios, refreshUsuarios: loadUsuarios, notify, currentUser, refreshOrdenes: loadOrdenes, refreshProveedores: loadProveedores, refreshEmpresas: loadEmpresas, empresaId, empresa: empresaActual, empresas, proyectosTodos }),
-    tab === "proyectos-seguimiento" && h(SeguimientoProyectosList, { proyectosSeguimiento, refreshProyectosSeguimiento: loadProyectosSeguimiento, notify, empresaId }),
+    tab === "proyectos-seguimiento" && esPatagonica && h(SeguimientoProyectosList, { proyectosSeguimiento, refreshProyectosSeguimiento: loadProyectosSeguimiento, notify, empresaId }),
   );
 }
 

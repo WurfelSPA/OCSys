@@ -4,12 +4,19 @@ import { verifyToken, parseCookie } from "./_session.js";
 export default async function handler(req, res) {
   const db = supabase();
 
+  // Rendicion de Gastos es una herramienta interna -- solo personal con
+  // correo @patagonica.cl, sin importar nivel de aprobacion o restriccion
+  // por empresa/proyecto.
+  const session = verifyToken(parseCookie(req.headers.cookie, "ocsys_token"), process.env.SESSION_SECRET || "");
+  if (!session || !(session.usuario || "").toLowerCase().endsWith("@patagonica.cl")) {
+    return res.status(403).json({ error: "Esta función es solo para personal de Patagónica" });
+  }
+
   if (req.method === "GET") {
-    const session = verifyToken(parseCookie(req.headers.cookie, "ocsys_token"), process.env.SESSION_SECRET || "");
     // Rendiciones no tiene columna "proyecto" -- un usuario atado a un
     // proyecto puntual ve aqui igual toda su empresa (ver limitacion
     // documentada en el spec de diseno).
-    const empresaId = (session && session.empresa_id) ? session.empresa_id : (Number(req.query.empresa_id) || 1);
+    const empresaId = session.empresa_id ? session.empresa_id : (Number(req.query.empresa_id) || 1);
     const { data, error } = await db
       .from("rendiciones_gastos")
       .select("*")
@@ -25,8 +32,7 @@ export default async function handler(req, res) {
     if (!body.fecha_gasto || !body.nombre_apellido || !body.monto) {
       return res.status(400).json({ error: "fecha_gasto, nombre_apellido y monto son obligatorios" });
     }
-    const session = verifyToken(parseCookie(req.headers.cookie, "ocsys_token"), process.env.SESSION_SECRET || "");
-    const empresaId = (session && session.empresa_id) ? session.empresa_id : (Number(body.empresa_id) || 1);
+    const empresaId = session.empresa_id ? session.empresa_id : (Number(body.empresa_id) || 1);
     const { data, error } = await db
       .from("rendiciones_gastos")
       .insert({
@@ -76,8 +82,6 @@ export default async function handler(req, res) {
   if (req.method === "DELETE") {
     const id = req.query.id;
     if (!id) return res.status(400).json({ error: "id es obligatorio" });
-    const session = verifyToken(parseCookie(req.headers.cookie, "ocsys_token"), process.env.SESSION_SECRET || "");
-    if (!session) return res.status(401).json({ error: "No autenticado" });
     if (session.nivel_aprobacion !== 1) {
       return res.status(403).json({ error: "No tienes nivel de aprobación para eliminar rendiciones" });
     }
