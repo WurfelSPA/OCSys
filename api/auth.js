@@ -11,6 +11,20 @@ function pwVersion(passwordHash) {
   return createHash("sha256").update(passwordHash || "").digest("hex").slice(0, 16);
 }
 
+function buildPayload(user, exp) {
+  return {
+    id: user.id, usuario: user.usuario,
+    nombre: user.nombre, apellido: user.apellido,
+    nivel_aprobacion: user.nivel_aprobacion,
+    empresa_id: user.empresa_id || null,
+    proyecto_id: user.proyecto_id || null,
+    centro_costo_codigo: user.centro_costo_codigo || null,
+    cuenta_contable_codigo: user.cuenta_contable_codigo || null,
+    proveedor_id: user.proveedor_id || null,
+    exp,
+  };
+}
+
 export default async function handler(req, res) {
   const action = req.query.action || "";
   const SESSION_SECRET = process.env.SESSION_SECRET || "";
@@ -34,16 +48,7 @@ export default async function handler(req, res) {
     }
 
     const exp = computeExpiry();
-    const payload = {
-      id: user.id, usuario: user.usuario,
-      nombre: user.nombre, apellido: user.apellido,
-      nivel_aprobacion: user.nivel_aprobacion,
-      empresa_id: user.empresa_id || null,
-      proyecto_id: user.proyecto_id || null,
-      centro_costo_codigo: user.centro_costo_codigo || null,
-      cuenta_contable_codigo: user.cuenta_contable_codigo || null,
-      exp,
-    };
+    const payload = buildPayload(user, exp);
     const token = signToken(payload, SESSION_SECRET);
     res.setHeader("Set-Cookie", makeCookie(token, exp - Math.floor(Date.now() / 1000)));
     return res.status(200).json({ ok: true, ...payload });
@@ -113,9 +118,18 @@ export default async function handler(req, res) {
     const payload = verifyToken(token, SESSION_SECRET);
     if (!payload) return res.status(401).json({ error: "No autenticado" });
 
+    // Se vuelve a leer el usuario real de la base (no solo re-firmar lo que
+    // ya traia el token) para que un cambio del admin (nivel, empresa,
+    // proyecto, centro de costo, proveedor) aplique solo, sin esperar a que
+    // ese usuario cierre e inicie sesion de nuevo.
+    const db = supabase();
+    const { data: user, error } = await db.from("usuarios").select("*").eq("id", payload.id).eq("activo", true).maybeSingle();
+    if (error) return res.status(500).json({ error: error.message });
+    if (!user) return res.status(401).json({ error: "No autenticado" });
+
     // Ventana deslizante: cada chequeo de actividad renueva la sesión (tope: medianoche)
     const exp = computeExpiry();
-    const refreshed = { ...payload, exp };
+    const refreshed = buildPayload(user, exp);
     const newToken = signToken(refreshed, SESSION_SECRET);
     res.setHeader("Set-Cookie", makeCookie(newToken, exp - Math.floor(Date.now() / 1000)));
     return res.status(200).json(refreshed);

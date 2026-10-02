@@ -261,6 +261,9 @@ export default async function handler(req, res) {
     if (session && session.proyecto_id) {
       query = query.eq("proyecto_id", session.proyecto_id);
     }
+    if (session && session.proveedor_id) {
+      query = query.eq("proveedor_id", session.proveedor_id);
+    }
     const { data, error } = await query;
     if (error) return res.status(500).json({ error: error.message });
     return res.status(200).json({ ordenes: data });
@@ -289,14 +292,18 @@ export default async function handler(req, res) {
 
   if (req.method === "POST") {
     const body = await readJsonBody(req);
-    if (!body.proveedor_id) {
-      return res.status(400).json({ error: "proveedor_id es obligatorio" });
-    }
     // Se identifica por la sesion (no por lo que mande el cliente) para que
     // quede registrado quien de verdad elaboro la OC en OCSys -- esto es
     // independiente del "Representante de Compra", que es solo un dato de
     // texto libre y puede ser otra persona.
     const session = verifyToken(parseCookie(req.headers.cookie, "ocsys_token"), process.env.SESSION_SECRET || "");
+    // Si la sesion tiene un proveedor fijo asignado (ej. Gestion Obras
+    // autogestionando sus propias OC), se ignora cualquier proveedor_id que
+    // mande el body -- mismo refuerzo que empresa/proyecto/centro de costo.
+    const proveedorId = (session && session.proveedor_id) ? session.proveedor_id : body.proveedor_id;
+    if (!proveedorId) {
+      return res.status(400).json({ error: "proveedor_id es obligatorio" });
+    }
     const empresaId = (session && session.empresa_id) ? session.empresa_id : (Number(body.empresa_id) || 1);
     const estado = ESTADOS_OCSYS.includes(body.estado) ? body.estado : "Borrador";
     const cuotas = Array.isArray(body.cuotas) ? body.cuotas : [];
@@ -315,7 +322,7 @@ export default async function handler(req, res) {
       // bloqueo visual del campo "Proyecto" en Nueva OC (ver index.html).
       proyecto_id: (session && session.proyecto_id) ? session.proyecto_id : (body.proyecto_id || null),
       creado_por_usuario: session ? session.usuario : null,
-      proveedor_id: body.proveedor_id,
+      proveedor_id: proveedorId,
       empresa_id: empresaId,
       fecha: body.fecha || undefined,
       titulo: body.titulo || null,

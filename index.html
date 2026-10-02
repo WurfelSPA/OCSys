@@ -493,7 +493,7 @@ function ProveedorModal({ regiones, catalogosListos, onClose, onCreated, notify,
   );
 }
 
-function ProveedorPicker({ proveedores, value, onChange }) {
+function ProveedorPicker({ proveedores, value, onChange, disabled }) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const selected = proveedores.find((p) => p.id === value);
@@ -512,11 +512,12 @@ function ProveedorPicker({ proveedores, value, onChange }) {
     h("input", {
       value: open ? query : (selected ? label(selected) : ""),
       placeholder: "Escribe para buscar proveedor por nombre o RUT...",
-      onFocus: () => { setOpen(true); setQuery(""); },
+      disabled: !!disabled,
+      onFocus: () => { if (!disabled) { setOpen(true); setQuery(""); } },
       onBlur: () => setTimeout(() => setOpen(false), 150),
       onChange: (e) => { setQuery(e.target.value); if (!e.target.value) onChange(""); },
     }),
-    open && h("div", { className: "ac-list" },
+    open && !disabled && h("div", { className: "ac-list" },
       h("div", {
         className: "ac-item", style: { color: "var(--txm)", fontStyle: "italic" },
         onMouseDown: () => { onChange(""); setQuery(""); setOpen(false); },
@@ -778,6 +779,7 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, proyectos, refres
   const [cuotas, setCuotas] = useState(distribuirCuotas(1, 0));
   const [form, setForm] = useState(() => ({
     ...formBlank(),
+    proveedor_id: currentUser.proveedor_id || "",
     proyecto_id: currentUser.proyecto_id || "",
     centro_costo_codigo: currentUser.centro_costo_codigo || "",
     cuenta_contable_codigo: currentUser.cuenta_contable_codigo || "",
@@ -969,6 +971,7 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, proyectos, refres
   const limpiarFormulario = () => {
     setForm({
       ...formBlank(),
+      proveedor_id: currentUser.proveedor_id || "",
       proyecto_id: currentUser.proyecto_id || "",
       centro_costo_codigo: currentUser.centro_costo_codigo || "",
       cuenta_contable_codigo: currentUser.cuenta_contable_codigo || "",
@@ -1030,8 +1033,9 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, proyectos, refres
           h(ProveedorPicker, {
             proveedores, value: form.proveedor_id,
             onChange: (id) => setForm((f) => ({ ...f, proveedor_id: id })),
+            disabled: !!currentUser.proveedor_id,
           }),
-          h("button", { className: "btn-add", title: "Agregar proveedor", onClick: () => setShowModal(true) }, "+"),
+          !currentUser.proveedor_id && h("button", { className: "btn-add", title: "Agregar proveedor", onClick: () => setShowModal(true) }, "+"),
         )
       ),
       h(ProveedorInfoPanel, { proveedor: proveedores.find((p) => p.id === form.proveedor_id) }),
@@ -1948,7 +1952,7 @@ function ReportesList({ ordenes, proveedores, notify }) {
   );
 }
 
-const USUARIO_BLANK = { nombre: "", apellido: "", usuario: "", nivel_aprobacion: "0", password: "", empresa_id: null, proyecto_id: null, centro_costo_codigo: null, cuenta_contable_codigo: null };
+const USUARIO_BLANK = { nombre: "", apellido: "", usuario: "", nivel_aprobacion: "0", password: "", empresa_id: null, proyecto_id: null, centro_costo_codigo: null, cuenta_contable_codigo: null, proveedor_id: null };
 
 // Unico usuario con acceso completo a Administracion -- debe coincidir con
 // SUPERADMIN en api/usuarios.js. El resto solo ve/edita su propia cuenta.
@@ -1995,7 +1999,7 @@ function MiCuentaPanel({ currentUser, usuarios, notify }) {
   );
 }
 
-function UsuarioModal({ onClose, onSaved, notify, editUsuario, empresas, proyectosTodos, catalogosTodos }) {
+function UsuarioModal({ onClose, onSaved, notify, editUsuario, empresas, proyectosTodos, catalogosTodos, proveedores }) {
   const [form, setForm] = useState(editUsuario
     ? { ...USUARIO_BLANK, ...editUsuario, nivel_aprobacion: String(editUsuario.nivel_aprobacion), password: "" }
     : USUARIO_BLANK);
@@ -2088,6 +2092,12 @@ function UsuarioModal({ onClose, onSaved, notify, editUsuario, empresas, proyect
           )),
       ),
       form.empresa_id && h("div", { className: "hint", style: { marginTop: -8, marginBottom: 10 } }, "Si se fijan, en Nueva OC esos campos aparecen bloqueados con este valor (ej. proveedores en autogestión)."),
+      h(Field, { label: "Proveedor fijo (autogestión)" },
+        h(ProveedorPicker, {
+          proveedores: proveedores || [], value: form.proveedor_id,
+          onChange: (id) => setForm((f) => ({ ...f, proveedor_id: id || null })),
+        })),
+      h("div", { className: "hint", style: { marginTop: -8, marginBottom: 10 } }, "Si se fija, este usuario entra como ese proveedor: en Nueva OC el campo Proveedor queda bloqueado con este valor, y solo ve las OC de ese proveedor."),
       h(Field, { label: "Contraseña" },
         h("input", { type: "password", value: form.password, onChange: set("password"),
           placeholder: isEdit ? "Dejar en blanco para no cambiarla" : "Dejar en blanco por ahora" })),
@@ -2440,7 +2450,7 @@ function SeguimientoProyectosList({ proyectosSeguimiento, refreshProyectosSeguim
   );
 }
 
-function AdministracionList({ usuarios, refreshUsuarios, notify, currentUser, refreshOrdenes, refreshProveedores, refreshEmpresas, empresaId, empresa, empresas, proyectosTodos, catalogosTodos }) {
+function AdministracionList({ usuarios, refreshUsuarios, notify, currentUser, refreshOrdenes, refreshProveedores, refreshEmpresas, empresaId, empresa, empresas, proyectosTodos, catalogosTodos, proveedores }) {
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState(null);
   const closeAny = () => { setShowModal(false); setEditing(null); };
@@ -2453,7 +2463,7 @@ function AdministracionList({ usuarios, refreshUsuarios, notify, currentUser, re
     (showModal || editing) && h(UsuarioModal, {
       editUsuario: editing, onClose: closeAny,
       onSaved: () => { refreshUsuarios(); closeAny(); }, notify,
-      empresas, proyectosTodos, catalogosTodos,
+      empresas, proyectosTodos, catalogosTodos, proveedores,
     }),
     h("div", { className: "card" },
       h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 } },
@@ -3295,7 +3305,7 @@ function App({ currentUser, onLogout }) {
           value: empresaId, onChange: (e) => setEmpresaId(Number(e.target.value)),
           style: { fontSize: 12, padding: "5px 8px", width: "auto" },
         }, empresas.map((emp) => h("option", { key: emp.id, value: emp.id }, emp.nombre))),
-        esGestionObras && h("img", { src: "/logo-gestionaobras.png", alt: "Gestión Obras", style: { height: 24, width: "auto", display: "block" } }),
+        esGestionObras && h("img", { src: "/logo-gestionaobras.png", alt: "Gestión Obras", style: { height: 48, width: "auto", display: "block" } }),
         (currentUser.nombre || currentUser.usuario),
         h("button", { className: "btn-ghost", style: { padding: "5px 12px", fontSize: 11 }, onClick: onLogout }, "Cerrar sesión"),
       ),
@@ -3316,7 +3326,7 @@ function App({ currentUser, onLogout }) {
     tab === "rendiciones" && esPatagonica && h(RendicionGastosPage, { rendiciones, refreshRendiciones: loadRendiciones, catalogos, notify, currentUser, empresaId }),
     tab === "proveedores" && esPatagonica && h(ProveedoresList, { proveedores, catalogos, refreshProveedores: loadProveedores, notify, currentUser }),
     tab === "reportes" && esPatagonica && h(ReportesList, { ordenes, proveedores, notify }),
-    tab === "administracion" && h(AdministracionList, { usuarios, refreshUsuarios: loadUsuarios, notify, currentUser, refreshOrdenes: loadOrdenes, refreshProveedores: loadProveedores, refreshEmpresas: loadEmpresas, empresaId, empresa: empresaActual, empresas, proyectosTodos, catalogosTodos }),
+    tab === "administracion" && h(AdministracionList, { usuarios, refreshUsuarios: loadUsuarios, notify, currentUser, refreshOrdenes: loadOrdenes, refreshProveedores: loadProveedores, refreshEmpresas: loadEmpresas, empresaId, empresa: empresaActual, empresas, proyectosTodos, catalogosTodos, proveedores }),
     tab === "proyectos-seguimiento" && esPatagonica && h(SeguimientoProyectosList, { proyectosSeguimiento, refreshProyectosSeguimiento: loadProyectosSeguimiento, notify, empresaId }),
   );
 }

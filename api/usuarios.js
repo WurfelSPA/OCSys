@@ -107,6 +107,17 @@ export default async function handler(req, res) {
       }
     }
 
+    // Proveedor fijo (ej. Gestion Obras autogestionando sus propias OC):
+    // solo se valida que exista -- proveedores es un catalogo compartido,
+    // no esta ligado a una empresa en particular.
+    let proveedorIdFinal = body.proveedor_id || null;
+    if (proveedorIdFinal) {
+      const { data: prov, error: provError } = await db
+        .from("proveedores").select("id").eq("id", proveedorIdFinal).maybeSingle();
+      if (provError) return res.status(500).json({ error: provError.message });
+      if (!prov) return res.status(400).json({ error: "El proveedor seleccionado no existe" });
+    }
+
     const fields = {
       nombre: body.nombre,
       apellido: body.apellido,
@@ -116,6 +127,7 @@ export default async function handler(req, res) {
       proyecto_id: proyectoIdFinal,
       centro_costo_codigo: centroCostoFinal,
       cuenta_contable_codigo: cuentaContableFinal,
+      proveedor_id: proveedorIdFinal,
     };
     if (body.password) fields.password_hash = hashPassword(body.password);
 
