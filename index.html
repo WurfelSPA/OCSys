@@ -2174,21 +2174,6 @@ function UsuarioModal({ onClose, onSaved, notify, editUsuario, empresas, proyect
   );
 }
 
-const USUARIOS_COLUMNS = [
-  { key: "nombre", label: "Nombre" },
-  { key: "apellido", label: "Apellido" },
-  { key: "usuario", label: "Usuario" },
-  { key: "nivel_aprobacion", label: "Nivel Aprobación", render: (u) => (u.nivel_aprobacion === 1
-    ? h("span", { className: "pill pill-ok" }, "1 — Aprueba OC")
-    : h("span", { className: "pill pill-pend" }, "0 — No aprueba")) },
-  {
-    key: "acceso", label: "Proyecto", sortable: false,
-    render: (u) => (u.proyecto_id || u.empresa_id || (u.proveedor_ids && u.proveedor_ids.length)) ? h("span", { className: "pill pill-pend" }, "Restringido") : h("span", { className: "pill pill-ok" }, "Ve todo"),
-  },
-  { key: "tiene_password", label: "Contraseña", render: (u) => (u.tiene_password
-    ? h("span", { className: "pill pill-ok" }, "Configurada")
-    : h("span", { className: "pill pill-pend" }, "Sin definir")) },
-];
 
 function SincronizarAcquisys({ notify, refreshOrdenes, refreshProveedores, empresaId, empresa }) {
   const [acquisysToken, setAcquisysToken] = useState("");
@@ -2519,6 +2504,39 @@ function AdministracionList({ usuarios, refreshUsuarios, notify, currentUser, re
   const [editing, setEditing] = useState(null);
   const closeAny = () => { setShowModal(false); setEditing(null); };
 
+  const columns = useMemo(() => {
+    const empresaNombre = (id) => (empresas || []).find((e) => e.id === id)?.nombre || "—";
+    const proyectoNombre = (id) => (proyectosTodos || []).find((p) => p.id === id)?.nombre || "—";
+    const centroCostoLabel = (codigo, empresaId) => {
+      const c = (catalogosTodos?.centrosCosto || []).find((x) => x.codigo === codigo && x.empresa_id === empresaId);
+      return c ? c.codigo + " — " + c.descripcion : "—";
+    };
+    const cuentaContableLabel = (codigo, empresaId) => {
+      const c = (catalogosTodos?.cuentasContables || []).find((x) => x.codigo === codigo && x.empresa_id === empresaId);
+      return c ? c.codigo + " — " + c.descripcion : "—";
+    };
+    const proveedoresLabel = (ids) => {
+      if (!ids || !ids.length) return "—";
+      return ids.map((id) => (proveedores || []).find((p) => p.id === id)?.razon_social || "?").join(", ");
+    };
+    return [
+      { key: "nombre", label: "Nombre" },
+      { key: "apellido", label: "Apellido" },
+      { key: "usuario", label: "Usuario" },
+      { key: "nivel_aprobacion", label: "Nivel Aprobación", render: (u) => (u.nivel_aprobacion === 1
+        ? h("span", { className: "pill pill-ok" }, "1 — Aprueba OC")
+        : h("span", { className: "pill pill-pend" }, "0 — No aprueba")) },
+      { key: "empresa", label: "Empresa", sortable: false, render: (u) => u.empresa_id ? empresaNombre(u.empresa_id) : "Todas" },
+      { key: "proyecto", label: "Proyecto", sortable: false, render: (u) => u.proyecto_id ? proyectoNombre(u.proyecto_id) : "—" },
+      { key: "centro_costo", label: "Centro de Costo", sortable: false, render: (u) => u.centro_costo_codigo ? centroCostoLabel(u.centro_costo_codigo, u.empresa_id) : "—" },
+      { key: "cuenta_contable", label: "Cuenta Contable", sortable: false, render: (u) => u.cuenta_contable_codigo ? truncar(cuentaContableLabel(u.cuenta_contable_codigo, u.empresa_id), 220) : "—" },
+      { key: "proveedores", label: "Proveedores", sortable: false, render: (u) => truncar(proveedoresLabel(u.proveedor_ids), 260) },
+      { key: "tiene_password", label: "Contraseña", render: (u) => (u.tiene_password
+        ? h("span", { className: "pill pill-ok" }, "Configurada")
+        : h("span", { className: "pill pill-pend" }, "Sin definir")) },
+    ];
+  }, [empresas, proyectosTodos, catalogosTodos, proveedores]);
+
   if (currentUser.usuario !== SUPERADMIN) {
     return h(MiCuentaPanel, { currentUser, usuarios, notify });
   }
@@ -2535,7 +2553,7 @@ function AdministracionList({ usuarios, refreshUsuarios, notify, currentUser, re
         h("button", { className: "btn-primary", style: { padding: "8px 18px" }, onClick: () => setShowModal(true) }, "+ Nuevo Usuario"),
       ),
       h(DataTable, {
-        columns: USUARIOS_COLUMNS, rows: usuarios, rowKey: (u) => u.id,
+        columns, rows: usuarios, rowKey: (u) => u.id,
         // El superadmin edita cualquier perfil directo, sin pedir la
         // contraseña del usuario (no tiene por qué saberla -- de hecho el
         // caso típico es justo resetearla porque el usuario la olvidó).
