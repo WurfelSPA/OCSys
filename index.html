@@ -2973,6 +2973,15 @@ function GraficoMensual({ data, moneda, techo, subLabel }) {
   );
 }
 
+// Los 12 meses del año en curso (ej. "2026-01".."2026-12"), para que el
+// grafico siempre tenga el mismo ancho/cantidad de columnas -- sin esto, la
+// barra se veia mas angosta o mas ancha segun cuantos meses tuvieran OC
+// cargadas hasta el momento.
+function mesesDelAnioActual() {
+  const anio = new Date().getFullYear();
+  return Array.from({ length: 12 }, (_, i) => anio + "-" + String(i + 1).padStart(2, "0"));
+}
+
 function agruparMontoPorMesYMoneda(ordenes) {
   const porMoneda = {};
   ordenes.forEach((o) => {
@@ -2984,8 +2993,9 @@ function agruparMontoPorMesYMoneda(ordenes) {
   });
   const resultado = {};
   Object.keys(porMoneda).forEach((moneda) => {
-    resultado[moneda] = Object.keys(porMoneda[moneda]).sort().map((mes) => ({
-      mes, barras: [{ label: "Total OC", value: porMoneda[moneda][mes], color: colorPorMes(mes) }],
+    const meses = new Set([...Object.keys(porMoneda[moneda]), ...mesesDelAnioActual()]);
+    resultado[moneda] = Array.from(meses).sort().map((mes) => ({
+      mes, barras: [{ label: "Total OC", value: porMoneda[moneda][mes] || 0, color: colorPorMes(mes) }],
     }));
   });
   return resultado;
@@ -3004,15 +3014,19 @@ function agruparOCvsFacturadoPorMesYMoneda(ordenes) {
   });
   const resultado = {};
   Object.keys(porMoneda).forEach((moneda) => {
-    resultado[moneda] = Object.keys(porMoneda[moneda]).sort().map((mes) => ({
-      mes, barras: [
-        // Mismo color del mes para las 2 barras -- OC solida, Facturado en
-        // un tono mas claro del mismo color (no un color distinto), para
-        // que ambas se reconozcan como "el mismo mes" en todos los graficos.
-        { label: "OC", value: porMoneda[moneda][mes].oc, color: colorPorMes(mes) },
-        { label: "Facturado", value: porMoneda[moneda][mes].facturado, color: hexToRgba(colorPorMes(mes), 0.4) },
-      ],
-    }));
+    const meses = new Set([...Object.keys(porMoneda[moneda]), ...mesesDelAnioActual()]);
+    resultado[moneda] = Array.from(meses).sort().map((mes) => {
+      const d = porMoneda[moneda][mes] || { oc: 0, facturado: 0 };
+      return {
+        mes, barras: [
+          // Mismo color del mes para las 2 barras -- OC solida, Facturado en
+          // un tono mas claro del mismo color (no un color distinto), para
+          // que ambas se reconozcan como "el mismo mes" en todos los graficos.
+          { label: "OC", value: d.oc, color: colorPorMes(mes) },
+          { label: "Facturado", value: d.facturado, color: hexToRgba(colorPorMes(mes), 0.4) },
+        ],
+      };
+    });
   });
   return resultado;
 }
@@ -3071,11 +3085,11 @@ function Dashboard({ ordenes, onVerEstado }) {
         ),
       ),
     ),
-    h("div", { style: { display: "flex", flexDirection: "column", gap: 20, marginTop: 20 } },
-      // Grafico de barras a todo el ancho de la tarjeta (no comparte fila
-      // con nada) para que entren los 12 meses del año sin tener que
-      // desplazarse horizontalmente; la torta+leyenda van debajo.
-      montoPorMes.UF && h("div", { className: "card" },
+    h("div", { style: { display: "flex", gap: 20, flexWrap: "wrap", alignItems: "flex-start", marginTop: 20 } },
+      // Ancho suficiente para que entren los 12 meses del año sin scroll
+      // horizontal en pantallas normales (si la ventana es angosta, el
+      // grafico se desplaza solo dentro de su propia tarjeta, no la pagina).
+      montoPorMes.UF && h("div", { className: "card", style: { flex: "1 1 620px" } },
         h("h2", null, "Monto Total de OC por Mes"),
         h("div", { style: { marginTop: 18 } },
           h(GraficoMensual, {
@@ -3087,7 +3101,7 @@ function Dashboard({ ordenes, onVerEstado }) {
           ),
         ),
       ),
-      ocVsFacturado.UF && ocVsFacturado.UF.some((d) => d.barras[1].value > 0) && h("div", { className: "card" },
+      ocVsFacturado.UF && ocVsFacturado.UF.some((d) => d.barras[1].value > 0) && h("div", { className: "card", style: { flex: "1 1 620px" } },
         h("h2", null, "OC vs. Monto Facturado"),
         h("p", { className: "hint", style: { marginBottom: 4 } }, "Compara lo emitido en órdenes de compra contra lo efectivamente facturado por mes."),
         (() => {
