@@ -3089,7 +3089,7 @@ function Dashboard({ ordenes, onVerEstado }) {
       // Ancho suficiente para que entren los 12 meses del año sin scroll
       // horizontal en pantallas normales (si la ventana es angosta, el
       // grafico se desplaza solo dentro de su propia tarjeta, no la pagina).
-      montoPorMes.UF && h("div", { className: "card", style: { flex: "1 1 620px" } },
+      montoPorMes.UF && h("div", { className: "card", style: { flex: "0 1 620px" } },
         h("h2", null, "Monto Total de OC por Mes"),
         h("div", { style: { marginTop: 18 } },
           h(GraficoMensual, {
@@ -3101,7 +3101,7 @@ function Dashboard({ ordenes, onVerEstado }) {
           ),
         ),
       ),
-      ocVsFacturado.UF && ocVsFacturado.UF.some((d) => d.barras[1].value > 0) && h("div", { className: "card", style: { flex: "1 1 620px" } },
+      ocVsFacturado.UF && ocVsFacturado.UF.some((d) => d.barras[1].value > 0) && h("div", { className: "card", style: { flex: "0 1 620px" } },
         h("h2", null, "OC vs. Monto Facturado"),
         h("p", { className: "hint", style: { marginBottom: 4 } }, "Compara lo emitido en órdenes de compra contra lo efectivamente facturado por mes."),
         (() => {
