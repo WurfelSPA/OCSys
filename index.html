@@ -1673,7 +1673,7 @@ function EditarOrdenModal({ orden, proveedores, catalogos, proyectos, refreshPro
   );
 }
 
-function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores, catalogos, proyectos, refreshProyectos, refreshProyectosTodos, empresaId, empresa }) {
+function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores, catalogos, proyectos, refreshProyectos, refreshProyectosTodos, empresaId, empresa, filtroEstadoCategoria, onLimpiarFiltroEstado }) {
   const [accion, setAccion] = useState(null);
   const [editando, setEditando] = useState(null);
   const puedeAprobar = currentUser && currentUser.nivel_aprobacion === 1;
@@ -1764,6 +1764,14 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
       return (a.cuota_numero || 0) - (b.cuota_numero || 0);
     });
   }, [ordenes]);
+
+  // Al entrar desde un cuadro del Dashboard (ej. "Facturadas") se acota la
+  // lista a esa categoria nada mas -- el boton de navegacion "Ordenes" no
+  // pasa filtro, asi que ahi siempre se ven todas.
+  const ordenesFiltradas = useMemo(() => {
+    if (!filtroEstadoCategoria) return ordenesConVisible;
+    return ordenesConVisible.filter((o) => normalizarEstadoCategoria(o.estado) === filtroEstadoCategoria);
+  }, [ordenesConVisible, filtroEstadoCategoria]);
 
   const columns = useMemo(() => [
     {
@@ -1868,9 +1876,17 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
       onSaved: () => { refreshOrdenes(); setEditando(null); },
     }),
     h("div", { className: "card" },
-      h("h2", null, "Órdenes de Compra"),
+      h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: filtroEstadoCategoria ? 4 : 14 } },
+        h("h2", { style: { marginBottom: 0 } }, "Órdenes de Compra"),
+      ),
+      filtroEstadoCategoria && h("div", { className: "hint", style: { marginBottom: 14 } },
+        "Mostrando solo: ",
+        h("b", null, filtroEstadoCategoria),
+        " (" + ordenesFiltradas.length + ") — ",
+        h("a", { className: "link", style: { cursor: "pointer" }, onClick: onLimpiarFiltroEstado }, "Ver todas las órdenes"),
+      ),
       h(DataTable, {
-        columns, rows: ordenesConVisible, rowKey: (o) => o.id,
+        columns, rows: ordenesFiltradas, rowKey: (o) => o.id,
         searchFields: ["numero_oc_visible", "numero_hes", "numero_egreso", "numero_factura", "moneda"],
         searchPlaceholder: "Buscar por N° OC, N° HES, N° Factura o Moneda (ej. UF)",
         emptyText: "Aún no hay órdenes de compra creadas en OCFast",
@@ -2990,21 +3006,23 @@ function agruparOCvsFacturadoPorMesYMoneda(ordenes) {
   return resultado;
 }
 
-function Dashboard({ ordenes, setTab }) {
+function Dashboard({ ordenes, onVerEstado }) {
   const counts = useMemo(() => {
     const c = { "Borrador": 0, "Pendiente aprobación": 0, "Aprobada": 0, "Facturada": 0, "Completada": 0, "Otros (histórico)": 0 };
     ordenes.forEach((o) => { c[normalizarEstadoCategoria(o.estado)]++; });
     return c;
   }, [ordenes]);
 
+  // "categoria" es el valor que devuelve normalizarEstadoCategoria -- se usa
+  // para filtrar Órdenes al hacer clic (Total = null = sin filtro, ve todas).
   const items = [
-    { label: "Borrador", value: counts["Borrador"], color: "var(--txm)" },
-    { label: "Pendiente aprobación", value: counts["Pendiente aprobación"], color: "var(--amber)" },
-    { label: "Aprobadas", value: counts["Aprobada"], color: "var(--green)" },
-    { label: "Facturadas", value: counts["Facturada"], color: "var(--acc2)" },
-    { label: "Completadas", value: counts["Completada"], color: "var(--acc)" },
-    ...(counts["Otros (histórico)"] > 0 ? [{ label: "Otros (histórico)", value: counts["Otros (histórico)"], color: "var(--red)" }] : []),
-    { label: "Total", value: ordenes.length, color: "var(--tx)" },
+    { label: "Borrador", categoria: "Borrador", value: counts["Borrador"], color: "var(--txm)" },
+    { label: "Pendiente aprobación", categoria: "Pendiente aprobación", value: counts["Pendiente aprobación"], color: "var(--amber)" },
+    { label: "Aprobadas", categoria: "Aprobada", value: counts["Aprobada"], color: "var(--green)" },
+    { label: "Facturadas", categoria: "Facturada", value: counts["Facturada"], color: "var(--acc2)" },
+    { label: "Completadas", categoria: "Completada", value: counts["Completada"], color: "var(--acc)" },
+    ...(counts["Otros (histórico)"] > 0 ? [{ label: "Otros (histórico)", categoria: "Otros (histórico)", value: counts["Otros (histórico)"], color: "var(--red)" }] : []),
+    { label: "Total", categoria: null, value: ordenes.length, color: "var(--tx)" },
   ];
 
   const montoPorMes = useMemo(() => agruparMontoPorMesYMoneda(ordenes), [ordenes]);
@@ -3018,7 +3036,7 @@ function Dashboard({ ordenes, setTab }) {
         h("div", { className: "stat-strip" },
           items.map((it) => h("div", {
             key: it.label, className: "stat-item",
-            onClick: () => setTab("ordenes"),
+            onClick: () => onVerEstado(it.categoria),
           },
             h("div", { className: "stat-num", style: { color: it.color } }, it.value),
             h("div", { className: "stat-lbl" }, h("span", { className: "stat-dot", style: { background: it.color } }), it.label),
@@ -3272,6 +3290,10 @@ function RendicionGastosPage({ rendiciones, refreshRendiciones, catalogos, notif
 
 function App({ currentUser, onLogout }) {
   const [tab, setTab] = useState("dashboard");
+  // Filtro de estado al entrar a Órdenes desde un cuadro del Dashboard (ej.
+  // clic en "Facturadas" muestra solo esas) -- null = sin filtro, se ven
+  // todas. El botón de navegación "Órdenes" siempre lo limpia.
+  const [filtroEstadoOrdenes, setFiltroEstadoOrdenes] = useState(null);
   const [proveedores, setProveedores] = useState([]);
   const [ordenes, setOrdenes] = useState([]);
   const [rendiciones, setRendiciones] = useState([]);
@@ -3395,16 +3417,22 @@ function App({ currentUser, onLogout }) {
     h("div", { className: "nav" },
       h("button", { className: "nav-btn" + (tab === "dashboard" ? " active" : ""), onClick: () => setTab("dashboard") }, "Dashboard"),
       h("button", { className: "nav-btn" + (tab === "nueva" ? " active" : ""), onClick: () => setTab("nueva") }, "Nueva OC"),
-      h("button", { className: "nav-btn" + (tab === "ordenes" ? " active" : ""), onClick: () => setTab("ordenes") }, "Órdenes"),
+      h("button", { className: "nav-btn" + (tab === "ordenes" ? " active" : ""), onClick: () => { setFiltroEstadoOrdenes(null); setTab("ordenes"); } }, "Órdenes"),
       esPatagonica && h("button", { className: "nav-btn" + (tab === "rendiciones" ? " active" : ""), onClick: () => setTab("rendiciones") }, "Rendición de Gastos"),
       esPatagonica && h("button", { className: "nav-btn" + (tab === "proveedores" ? " active" : ""), onClick: () => setTab("proveedores") }, "Proveedores"),
       esPatagonica && h("button", { className: "nav-btn" + (tab === "reportes" ? " active" : ""), onClick: () => setTab("reportes") }, "Reportes"),
       h("button", { className: "nav-btn" + (tab === "administracion" ? " active" : ""), onClick: () => setTab("administracion") }, "Administración"),
       esPatagonica && h("button", { className: "nav-btn" + (tab === "proyectos-seguimiento" ? " active" : ""), onClick: () => setTab("proyectos-seguimiento") }, "Proyectos"),
     ),
-    tab === "dashboard" && h(Dashboard, { ordenes, setTab }),
+    tab === "dashboard" && h(Dashboard, {
+      ordenes,
+      onVerEstado: (categoria) => { setFiltroEstadoOrdenes(categoria); setTab("ordenes"); },
+    }),
     tab === "nueva" && h(NuevaOC, { proveedores, catalogos, refreshProveedores: loadProveedores, proyectos, refreshProyectos: loadProyectos, refreshProyectosTodos: loadProyectosTodos, notify, onCreated: loadOrdenes, currentUser, empresaId, empresa: empresaActual }),
-    tab === "ordenes" && h(OrdenesList, { ordenes, refreshOrdenes: loadOrdenes, notify, currentUser, proveedores, catalogos, proyectos, refreshProyectos: loadProyectos, refreshProyectosTodos: loadProyectosTodos, empresaId, empresa: empresaActual }),
+    tab === "ordenes" && h(OrdenesList, {
+      ordenes, refreshOrdenes: loadOrdenes, notify, currentUser, proveedores, catalogos, proyectos, refreshProyectos: loadProyectos, refreshProyectosTodos: loadProyectosTodos, empresaId, empresa: empresaActual,
+      filtroEstadoCategoria: filtroEstadoOrdenes, onLimpiarFiltroEstado: () => setFiltroEstadoOrdenes(null),
+    }),
     tab === "rendiciones" && esPatagonica && h(RendicionGastosPage, { rendiciones, refreshRendiciones: loadRendiciones, catalogos, notify, currentUser, empresaId }),
     tab === "proveedores" && esPatagonica && h(ProveedoresList, { proveedores, catalogos, refreshProveedores: loadProveedores, notify, currentUser }),
     tab === "reportes" && esPatagonica && h(ReportesList, { ordenes, proveedores, notify }),
