@@ -2907,7 +2907,7 @@ function marcasEjeY(max, cantidad) {
   return marcas;
 }
 
-function GraficoMensual({ data, moneda, techo }) {
+function GraficoMensual({ data, moneda, techo, subLabel }) {
   const [grown, setGrown] = useState(false);
   const sig = data.map((d) => d.mes + ":" + d.barras.map((b) => b.value).join(",")).join("|");
   useEffect(() => {
@@ -2922,7 +2922,7 @@ function GraficoMensual({ data, moneda, techo }) {
   const marcas = techo ? [0, techo / 4, techo / 2, techo * 3 / 4, techo] : marcasEjeY(maxDato, 4);
   const maxEscala = marcas[marcas.length - 1] || maxDato;
   const ALTO = 140;
-  const ZONA = ALTO - 16; // deja 16px de aire arriba para la etiqueta de valor de la barra mas alta
+  const ZONA = ALTO - (subLabel ? 28 : 16); // deja aire arriba para la(s) etiqueta(s) de la barra mas alta
 
   return h("div", { style: { display: "flex" } },
     h("div", { style: { position: "relative", width: 56, flexShrink: 0, height: ALTO } },
@@ -2946,7 +2946,10 @@ function GraficoMensual({ data, moneda, techo }) {
           data.map((d) => h("div", { key: d.mes, style: { display: "flex", flexDirection: "column", alignItems: "center", gap: 8, flexShrink: 0 } },
             h("div", { style: { display: "flex", alignItems: "flex-end", gap: 4, height: ALTO } },
               d.barras.map((b, i) => h("div", { key: i, style: { display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-end", height: "100%" } },
-                grown && b.value > 0 && h("div", { style: { fontSize: 9, fontWeight: 700, color: "var(--txm)", marginBottom: 3, whiteSpace: "nowrap" } }, fmtCompacto(b.value, moneda)),
+                grown && b.value > 0 && h("div", { style: { marginBottom: 3, textAlign: "center" } },
+                  h("div", { style: { fontSize: 9, fontWeight: 700, color: "var(--txm)", whiteSpace: "nowrap" } }, fmtCompacto(b.value, moneda)),
+                  subLabel && h("div", { style: { fontSize: 8, color: "var(--txd)", whiteSpace: "nowrap" } }, subLabel(b.value)),
+                ),
                 h("div", {
                   title: b.label + " " + fmtMesCorto(d.mes) + ": " + fmtMontoMoneda(b.value, moneda),
                   className: "bar-fill", style: {
@@ -3007,6 +3010,17 @@ function agruparOCvsFacturadoPorMesYMoneda(ordenes) {
 }
 
 function Dashboard({ ordenes, onVerEstado }) {
+  // Valor de la UF de hoy, solo para mostrar un equivalente aproximado en
+  // pesos junto a cada barra en UF -- si falla la consulta, simplemente no
+  // se muestra el paréntesis (el grafico en UF sigue funcionando igual).
+  const [valorUF, setValorUF] = useState(null);
+  useEffect(() => {
+    fetch("https://mindicador.cl/api/uf")
+      .then((r) => r.json())
+      .then((d) => setValorUF(d?.serie?.[0]?.valor || null))
+      .catch(() => {});
+  }, []);
+
   const counts = useMemo(() => {
     const c = { "Borrador": 0, "Pendiente aprobación": 0, "Aprobada": 0, "Facturada": 0, "Completada": 0, "Otros (histórico)": 0 };
     ordenes.forEach((o) => { c[normalizarEstadoCategoria(o.estado)]++; });
@@ -3051,12 +3065,14 @@ function Dashboard({ ordenes, onVerEstado }) {
       ),
     ),
     h("div", { style: { display: "flex", gap: 20, flexWrap: "wrap", alignItems: "flex-start", marginTop: 20 } },
-      Object.keys(montoPorMes).length > 0 && h("div", { className: "card", style: { flex: "1 1 440px" } },
+      montoPorMes.UF && h("div", { className: "card", style: { flex: "1 1 440px" } },
         h("h2", null, "Monto Total de OC por Mes"),
-        Object.keys(montoPorMes).sort().map((moneda) => h("div", { key: moneda, style: { marginTop: 18 } },
-          h("div", { className: "section-lbl", style: { marginTop: 0, paddingTop: 0, borderTop: "none" } }, moneda),
+        ["UF"].map((moneda) => h("div", { key: moneda, style: { marginTop: 18 } },
           h("div", { style: { display: "flex", gap: 20, flexWrap: "wrap", alignItems: "center" } },
-            h("div", { style: { flex: "2 1 240px", minWidth: 0 } }, h(GraficoMensual, { data: montoPorMes[moneda], moneda })),
+            h("div", { style: { flex: "2 1 240px", minWidth: 0 } }, h(GraficoMensual, {
+              data: montoPorMes[moneda], moneda,
+              subLabel: valorUF ? (v) => "(" + fmtCompacto(v * valorUF, "CLP") + ")" : null,
+            })),
             h("div", { style: { flex: "1 1 180px", minWidth: 0 } },
               h(DonutParticipacion, { data: montoPorMes[moneda].map((d) => ({ mes: d.mes, valor: d.barras[0].value })), moneda }),
             ),
