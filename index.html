@@ -3009,8 +3009,17 @@ function agruparOCvsFacturadoPorMesYMoneda(ordenes) {
     const mes = o.fecha.slice(0, 7);
     porMoneda[moneda] = porMoneda[moneda] || {};
     porMoneda[moneda][mes] = porMoneda[moneda][mes] || { oc: 0, facturado: 0 };
-    porMoneda[moneda][mes].oc += Number(o.monto_total) || 0;
-    if (o.monto_facturado != null) porMoneda[moneda][mes].facturado += Number(o.monto_facturado);
+    // monto_facturado es siempre el total de la factura EN PESOS (asi
+    // funcionan las facturas electronicas chilenas, incluso para una OC en
+    // UF -- el IVA nunca se expresa en UF). Sumarlo tal cual bajo el balde
+    // "UF" mezclaba pesos con UF (un desfase de ~40.000x, el numero
+    // disparatado que se veia en el grafico). Para una OC en UF se compara
+    // neto contra neto, ambos en UF de verdad: monto_neto (OC) contra
+    // monto_facturado_uf (lo unico que la factura expresa en UF).
+    const esUF = moneda === "UF";
+    porMoneda[moneda][mes].oc += Number(esUF ? o.monto_neto : o.monto_total) || 0;
+    const facturado = esUF ? o.monto_facturado_uf : o.monto_facturado;
+    if (facturado != null) porMoneda[moneda][mes].facturado += Number(facturado) || 0;
   });
   const resultado = {};
   Object.keys(porMoneda).forEach((moneda) => {
