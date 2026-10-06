@@ -2807,14 +2807,19 @@ function Medidor({ pct, etiqueta, facturado, oc, moneda }) {
   );
 }
 
-// Rampa ordinal (un solo tono, mas claro -> mas oscuro) para los meses de la
-// torta de participacion: el orden cronologico SI cambia el significado
-// (es una secuencia), asi que es un caso ordinal, no categorico — no hacen
-// falta 8 tonos fijos, un degrade monotono del acento es lo correcto.
-function tonoOrdinal(indice, total) {
-  const t = total <= 1 ? 0 : indice / (total - 1);
-  const l = 78 - t * 46; // 78% (mas antiguo) -> 32% (mas reciente)
-  return "hsl(208, 65%, " + l.toFixed(0) + "%)";
+// Un color fijo por mes del año (identidad categorica, no un degrade por
+// recencia) -- asi "febrero" es el mismo color en la torta, en la barra y en
+// cualquier otro grafico del Dashboard. Orden validado con el script del
+// skill de dataviz (6 checks, pares adyacentes) contra la superficie clara
+// de esta app -- ver docs/superpowers/specs si se vuelve a tocar.
+const PALETA_MESES = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#4a3aa7", "#e34948", "#1a85b8", "#6b7a1e", "#a8447a", "#4a7a2e"];
+function colorPorMes(mes) {
+  const mm = Number((mes || "").slice(5, 7)) || 1;
+  return PALETA_MESES[(mm - 1 + 12) % 12];
+}
+function hexToRgba(hex, alpha) {
+  const n = parseInt(hex.replace("#", ""), 16);
+  return "rgba(" + [(n >> 16) & 255, (n >> 8) & 255, n & 255].join(",") + "," + alpha + ")";
 }
 
 function polarACartesiano(cx, cy, r, anguloDeg) {
@@ -2845,7 +2850,7 @@ function DonutParticipacion({ data, moneda }) {
     const fin = acumulado * 360 - gapDeg / 2;
     return {
       ...d, pct: frac * 100,
-      color: tonoOrdinal(i, data.length),
+      color: colorPorMes(d.mes),
       path: fin > inicio ? trazoAnillo(cx, cy, R, r, inicio, fin) : null,
     };
   });
@@ -2980,7 +2985,7 @@ function agruparMontoPorMesYMoneda(ordenes) {
   const resultado = {};
   Object.keys(porMoneda).forEach((moneda) => {
     resultado[moneda] = Object.keys(porMoneda[moneda]).sort().map((mes) => ({
-      mes, barras: [{ label: "Total OC", value: porMoneda[moneda][mes], color: "var(--acc)" }],
+      mes, barras: [{ label: "Total OC", value: porMoneda[moneda][mes], color: colorPorMes(mes) }],
     }));
   });
   return resultado;
@@ -3001,8 +3006,11 @@ function agruparOCvsFacturadoPorMesYMoneda(ordenes) {
   Object.keys(porMoneda).forEach((moneda) => {
     resultado[moneda] = Object.keys(porMoneda[moneda]).sort().map((mes) => ({
       mes, barras: [
-        { label: "OC", value: porMoneda[moneda][mes].oc, color: "var(--acc)" },
-        { label: "Facturado", value: porMoneda[moneda][mes].facturado, color: "var(--green)" },
+        // Mismo color del mes para las 2 barras -- OC solida, Facturado en
+        // un tono mas claro del mismo color (no un color distinto), para
+        // que ambas se reconozcan como "el mismo mes" en todos los graficos.
+        { label: "OC", value: porMoneda[moneda][mes].oc, color: colorPorMes(mes) },
+        { label: "Facturado", value: porMoneda[moneda][mes].facturado, color: hexToRgba(colorPorMes(mes), 0.4) },
       ],
     }));
   });
@@ -3041,7 +3049,6 @@ function Dashboard({ ordenes, onVerEstado }) {
 
   const montoPorMes = useMemo(() => agruparMontoPorMesYMoneda(ordenes), [ordenes]);
   const ocVsFacturado = useMemo(() => agruparOCvsFacturadoPorMesYMoneda(ordenes), [ordenes]);
-  const monedasConFactura = Object.keys(ocVsFacturado).filter((m) => ocVsFacturado[m].some((d) => d.barras[1].value > 0));
 
   return h("div", { className: "page fade-up" },
     h("div", { style: { display: "flex", gap: 20, flexWrap: "wrap", alignItems: "stretch" } },
@@ -3079,26 +3086,28 @@ function Dashboard({ ordenes, onVerEstado }) {
           ),
         )),
       ),
-      monedasConFactura.length > 0 && h("div", { className: "card", style: { flex: "1 1 440px" } },
+      ocVsFacturado.UF && ocVsFacturado.UF.some((d) => d.barras[1].value > 0) && h("div", { className: "card", style: { flex: "1 1 440px" } },
         h("h2", null, "OC vs. Monto Facturado"),
         h("p", { className: "hint", style: { marginBottom: 4 } }, "Compara lo emitido en órdenes de compra contra lo efectivamente facturado por mes."),
-        monedasConFactura.sort().map((moneda) => {
-          const totales = ocVsFacturado[moneda].reduce((acc, d) => ({
+        (() => {
+          const totales = ocVsFacturado.UF.reduce((acc, d) => ({
             oc: acc.oc + d.barras[0].value, facturado: acc.facturado + d.barras[1].value,
           }), { oc: 0, facturado: 0 });
           const pct = totales.oc > 0 ? (totales.facturado / totales.oc) * 100 : 0;
-          return h("div", { key: moneda, style: { marginTop: 18 } },
-            h("div", { className: "section-lbl", style: { marginTop: 0, paddingTop: 0, borderTop: "none" } }, moneda),
-            h(GraficoMensual, { data: ocVsFacturado[moneda], moneda }),
+          return h("div", { style: { marginTop: 18 } },
+            h(GraficoMensual, {
+              data: ocVsFacturado.UF, moneda: "UF",
+              subLabel: valorUF ? (v) => "(" + fmtCompacto(v * valorUF, "CLP") + ")" : null,
+            }),
             h(Medidor, {
               pct, etiqueta: "% Facturado del Total OC",
-              facturado: totales.facturado, oc: totales.oc, moneda,
+              facturado: totales.facturado, oc: totales.oc, moneda: "UF",
             }),
           );
-        }),
+        })(),
         h("div", { className: "row-inline", style: { marginTop: 12, gap: 16 } },
-          h("span", { style: { display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, color: "var(--txm)" } }, h("span", { className: "stat-dot", style: { background: "var(--acc)" } }), "OC"),
-          h("span", { style: { display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, color: "var(--txm)" } }, h("span", { className: "stat-dot", style: { background: "var(--green)" } }), "Facturado"),
+          h("span", { style: { display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, color: "var(--txm)" } }, h("span", { className: "stat-dot", style: { background: "var(--tx)" } }), "OC (color del mes)"),
+          h("span", { style: { display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, color: "var(--txm)" } }, h("span", { className: "stat-dot", style: { background: "var(--tx)", opacity: .4 } }), "Facturado (mismo color, más claro)"),
         ),
       ),
     ),
