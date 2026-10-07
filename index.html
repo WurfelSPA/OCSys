@@ -1765,9 +1765,152 @@ function EditarOrdenModal({ orden, proveedores, catalogos, proyectos, refreshPro
   );
 }
 
+// Edita los datos compartidos de una OC dividida en cuotas (proveedor, N° de
+// cotización, título, descripción, condiciones, proyecto, centro de costo,
+// cuenta contable, documentos de respaldo) aplicando el cambio a las N
+// cuotas a la vez -- son los mismos campos que se copian identicos a cada
+// fila al dividir (ver Cambio 2 en 2026-09-29-ordenes-en-cuotas-design.md).
+// Los montos y el reparto en cuotas NO se editan aqui: cada cuota ya es una
+// fila independiente con su propio monto/estado.
+function EditarGrupoModal({ grupo, proveedores, catalogos, proyectos, refreshProyectos, refreshProyectosTodos, empresaId, notify, onClose, onSaved }) {
+  const [form, setForm] = useState({
+    proveedor_id: grupo.proveedor_id || "",
+    numero_cotizacion: grupo.numero_cotizacion || "",
+    proyecto_id: grupo.proyecto_id || "",
+    titulo: grupo.titulo || "",
+    descripcion: grupo.descripcion || "",
+    condiciones: grupo.condiciones || "",
+    fecha: grupo.fecha || "",
+    centro_costo_codigo: grupo.centro_costo_codigo || "",
+    cuenta_contable_codigo: grupo.cuenta_contable_codigo || "",
+    tipo_orden: grupo.tipo_orden || "Afecto",
+    tipo_compra: grupo.tipo_compra || "Servicios",
+    moneda: grupo.moneda || "CLP",
+    documentos_respaldo: grupo.documentos_respaldo || [],
+  });
+  const [saving, setSaving] = useState(false);
+  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  const agregarProyecto = async () => {
+    const nombre = window.prompt("Nombre del nuevo proyecto:");
+    if (!nombre || !nombre.trim()) return;
+    try {
+      const { proyecto } = await api("proyectos", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nombre: nombre.trim(), empresa_id: empresaId }),
+      });
+      refreshProyectos();
+      if (refreshProyectosTodos) refreshProyectosTodos();
+      setForm((f) => ({ ...f, proyecto_id: proyecto.id }));
+    } catch (e) {
+      notify("err", e.message);
+    }
+  };
+
+  const guardar = async () => {
+    if (!form.proveedor_id) return notify("err", "Selecciona un proveedor");
+    setSaving(true);
+    try {
+      await Promise.all(grupo._hijos.map((hijo) =>
+        api("ordenes?id=" + hijo.id, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(form),
+        })
+      ));
+      notify("ok", "Las " + grupo._hijos.length + " cuotas de " + grupo.numero_oc_visible + " se actualizaron");
+      onSaved();
+    } catch (e) {
+      notify("err", e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return h("div", { className: "overlay", onClick: (e) => e.target === e.currentTarget && onClose() },
+    h("div", { className: "modal", style: { width: 560, maxHeight: "90vh", overflowY: "auto" } },
+      h("div", { className: "modal-hdr" },
+        h("h3", null, "Editar OC " + grupo.numero_oc_visible + " (" + grupo._hijos.length + " cuotas)"),
+        h("button", { className: "modal-close", onClick: onClose }, "×")
+      ),
+      h("div", { className: "hint", style: { marginBottom: 14 } },
+        "Estos cambios se aplican a las " + grupo._hijos.length + " cuotas a la vez. Los montos y el reparto en cuotas no se editan aquí."),
+      h(Field, { label: "Proveedor *" },
+        h(ProveedorPicker, { proveedores, value: form.proveedor_id, onChange: (id) => setForm((f) => ({ ...f, proveedor_id: id })) })),
+      h("div", { className: "grid2" },
+        h(Field, { label: "N° Cotización" }, h("input", { value: form.numero_cotizacion, onChange: set("numero_cotizacion") })),
+        h(Field, { label: "Fecha" }, h("input", { type: "date", value: form.fecha, onChange: set("fecha") })),
+      ),
+      h(Field, { label: "Documentos de Respaldo (opcional)" },
+        h(DocumentosRespaldoEditor, {
+          documentos: form.documentos_respaldo,
+          setDocumentos: (docs) => setForm((f) => ({ ...f, documentos_respaldo: docs })),
+          notify,
+        })),
+      h(Field, { label: "Título" }, h("input", { value: form.titulo, onChange: set("titulo") })),
+      h(Field, { label: "Descripción" }, h("textarea", { rows: 2, value: form.descripcion, onChange: set("descripcion") })),
+      h(Field, { label: "Condiciones" }, h("textarea", { rows: 2, value: form.condiciones, onChange: set("condiciones") })),
+      h("div", { className: "grid3" },
+        h(Field, { label: "Tipo de Orden" },
+          h("select", { value: form.tipo_orden, onChange: set("tipo_orden") },
+            h("option", { value: "Afecto" }, "Afecto"),
+            h("option", { value: "Exento" }, "Exento"),
+          )),
+        h(Field, { label: "Tipo de Compra" },
+          h("select", { value: form.tipo_compra, onChange: set("tipo_compra") },
+            h("option", { value: "Servicios" }, "Servicios"),
+            h("option", { value: "Bienes" }, "Bienes"),
+          )),
+        h(Field, { label: "Moneda" },
+          h("select", { value: form.moneda, onChange: set("moneda") },
+            h("option", { value: "CLP" }, "CLP"),
+            h("option", { value: "USD" }, "USD"),
+            h("option", { value: "UF" }, "UF"),
+          )),
+      ),
+      h("div", { className: "grid3" },
+        h(Field, { label: "Centro de Costo" },
+          h("select", {
+            value: form.centro_costo_codigo, disabled: !catalogos.listos,
+            onChange: (e) => setForm((f) => ({ ...f, centro_costo_codigo: e.target.value, cuenta_contable_codigo: "" })),
+          },
+            h("option", { value: "" }, catalogos.listos ? "Selecciona" : "Cargando..."),
+            catalogos.centrosCosto.map((c) => h("option", { key: c.codigo, value: c.codigo }, c.codigo + " — " + c.descripcion)),
+          )),
+        h(Field, { label: "Cuenta Contable" },
+          !form.centro_costo_codigo
+            ? h("input", { disabled: true, placeholder: "Primero selecciona un Centro de Costo" })
+            : h(SearchSelect, {
+                options: catalogos.cuentasContables
+                  .filter((c) => c.centro_costo_codigo === form.centro_costo_codigo)
+                  .map((c) => ({ value: c.codigo, label: c.codigo + " — " + c.descripcion })),
+                value: form.cuenta_contable_codigo,
+                onChange: (v) => setForm((f) => ({ ...f, cuenta_contable_codigo: v })),
+                placeholder: "Escribe para buscar cuenta contable...",
+              })),
+        h(Field, { label: "Proyectos" },
+          h("div", { className: "row-inline" },
+            h("select", {
+              value: form.proyecto_id, onChange: (e) => setForm((f) => ({ ...f, proyecto_id: e.target.value })),
+            },
+              h("option", { value: "" }, "Selecciona"),
+              proyectos.map((p) => h("option", { key: p.id, value: p.id }, p.nombre)),
+            ),
+            h("button", { className: "btn-add", title: "Agregar proyecto", type: "button", onClick: agregarProyecto }, "+"),
+          )),
+      ),
+      h("div", { style: { display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 16 } },
+        h("button", { className: "btn-ghost", onClick: onClose }, "Cancelar"),
+        h("button", { className: "btn-ghost", onClick: guardar, disabled: saving }, saving ? "Guardando..." : "Guardar cambios"),
+      ),
+    )
+  );
+}
+
 function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores, catalogos, proyectos, refreshProyectos, refreshProyectosTodos, empresaId, empresa, filtroEstadoCategoria, onLimpiarFiltroEstado }) {
   const [accion, setAccion] = useState(null);
   const [editando, setEditando] = useState(null);
+  const [editandoGrupo, setEditandoGrupo] = useState(null);
   const [search, setSearch] = useState("");
   const [gruposExpandidos, setGruposExpandidos] = useState({});
   const puedeAprobar = currentUser && currentUser.nivel_aprobacion === 1;
@@ -1781,6 +1924,21 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
     try {
       await api("ordenes?id=" + o.id, { method: "DELETE" });
       notify("ok", "OC " + o.numero_oc + " eliminada");
+      refreshOrdenes();
+    } catch (e) {
+      notify("err", e.message);
+    }
+  };
+
+  const eliminarGrupo = async (o) => {
+    if (!puedeAprobar) {
+      notify("err", "Solo un administrador puede eliminar órdenes de compra.");
+      return;
+    }
+    if (!window.confirm("¿Eliminar COMPLETA la OC " + o.numero_oc_visible + " y sus " + o._hijos.length + " cuotas? Dejará de verse en OCFast y en los informes.")) return;
+    try {
+      await Promise.all(o._hijos.map((hijo) => api("ordenes?id=" + hijo.id, { method: "DELETE" })));
+      notify("ok", "OC " + o.numero_oc_visible + " eliminada (" + o._hijos.length + " cuotas)");
       refreshOrdenes();
     } catch (e) {
       notify("err", e.message);
@@ -1909,6 +2067,7 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
         id: "grupo-" + b,
         _esGrupo: true,
         _grupoId: b,
+        _hijos: hijos,
         _indicadorEstados: indicadorEstados,
         numero_hes: hijos.map((h) => h.numero_hes).filter(Boolean).join(", "),
         // El N° de OC visible/interno del grupo es el base sin el sufijo -N
@@ -2042,16 +2201,23 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
     },
     {
       key: "editar", label: "Editar", sortable: false,
-      render: (o) => (!o._esGrupo && ["Borrador", "Pendiente aprobación"].includes(o.estado))
+      render: (o) => o._esGrupo
+        // Si alguna cuota ya avanzo mas alla de Pendiente aprobacion, el
+        // servidor rechazaria el PUT para esa fila (CAMPOS_SOLO_ANTES_DE_APROBAR)
+        // -- se oculta el lapiz para no dejar al grupo editado a medias.
+        ? (o._hijos.every((h) => ["Borrador", "Pendiente aprobación"].includes(h.estado))
+            ? h("button", { className: "btn-ghost", title: "Editar datos compartidos de las " + o._hijos.length + " cuotas", style: { padding: "4px 8px", fontSize: 12 }, onClick: () => setEditandoGrupo(o) }, "✏️")
+            : null)
+        : ["Borrador", "Pendiente aprobación"].includes(o.estado)
         ? h("button", { className: "btn-ghost", title: "Editar OC", style: { padding: "4px 8px", fontSize: 12 }, onClick: () => setEditando(o) }, "✏️")
         : null,
     },
     {
       key: "eliminar", label: "Borrar", sortable: false,
-      render: (o) => o._esGrupo ? null : h("button", {
-        className: "btn-ghost", title: puedeAprobar ? "Eliminar OC" : "Solo un administrador puede eliminar órdenes",
+      render: (o) => h("button", {
+        className: "btn-ghost", title: puedeAprobar ? (o._esGrupo ? "Eliminar OC completa (" + o._hijos.length + " cuotas)" : "Eliminar OC") : "Solo un administrador puede eliminar órdenes",
         style: { padding: "4px 8px", fontSize: 12, color: puedeAprobar ? "var(--red)" : "var(--txd)" },
-        onClick: () => eliminarOrden(o),
+        onClick: () => o._esGrupo ? eliminarGrupo(o) : eliminarOrden(o),
       }, "🗑"),
     },
     {
@@ -2090,6 +2256,11 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
       orden: editando, proveedores, catalogos, proyectos, refreshProyectos, refreshProyectosTodos, empresaId, empresa, notify,
       onClose: () => setEditando(null),
       onSaved: () => { refreshOrdenes(); setEditando(null); },
+    }),
+    editandoGrupo && h(EditarGrupoModal, {
+      grupo: editandoGrupo, proveedores, catalogos, proyectos, refreshProyectos, refreshProyectosTodos, empresaId, notify,
+      onClose: () => setEditandoGrupo(null),
+      onSaved: () => { refreshOrdenes(); setEditandoGrupo(null); },
     }),
     h("div", { className: "card" },
       h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: filtroEstadoCategoria ? 4 : 14 } },

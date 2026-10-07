@@ -54,8 +54,17 @@ Nueva columna "Detalles" entre "N° OC" y "Fecha": solo las OC con cuotas muestr
   al grupo completo).
 - Estado: texto tipo "3 Facturadas · 2 Pendiente aprobación · 1 Aprobada" en vez de un solo
   pill (opción elegida por el usuario sobre puntos de color o barra de progreso).
-- Acción / Editar / Borrar: deshabilitadas ("Expandir para gestionar" / nada) — cada cuota se
-  gestiona individualmente, nunca como grupo.
+- Acción: deshabilitada ("Expandir para gestionar") — aprobar/facturar/pagar sigue siendo
+  por cuota individual.
+- Editar (agregado 2026-10-07): abre `EditarGrupoModal`, que edita SOLO los campos
+  compartidos (proveedor, N° cotización, título, descripción, condiciones, proyecto, centro
+  de costo, cuenta contable, documentos de respaldo) y aplica el cambio a las N cuotas a la
+  vez (un PUT por fila). Los montos y el reparto en cuotas no se tocan desde aquí. Se oculta
+  si alguna cuota ya avanzó más allá de "Pendiente aprobación" (el servidor rechazaría el PUT
+  para esa fila por `CAMPOS_SOLO_ANTES_DE_APROBAR`, dejando el grupo editado a medias).
+- Borrar (agregado 2026-10-07): elimina (soft-delete) las N cuotas del grupo de una vez, con
+  una sola confirmación — mismo caso de uso que "me equivoqué de cotización, quiero rehacer
+  la OC completa".
 
 Al expandir (clic en ▸) se insertan debajo las N filas individuales tal como se ven hoy, con
 una marca "↳" en la columna Detalles para distinguirlas visualmente del resto.
