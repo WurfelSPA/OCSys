@@ -251,6 +251,7 @@ function formBlank() {
     centro_costo_codigo: "", cuenta_contable_codigo: "",
     tipo_orden: "Afecto", tipo_compra: "Servicios", moneda: "CLP",
     monto_neto: "", monto_iva: "", monto_total: "",
+    documentos_respaldo: [],
   };
 }
 
@@ -823,6 +824,55 @@ function CuotasEditor({ cuotas, setCuotas, montoNeto, moneda }) {
   );
 }
 
+// Lista libre de documentos de respaldo de una OC, ademas de la cotizacion
+// (ej. el PDF descriptivo del proyecto) -- se pueden ir agregando de a uno,
+// cada uno queda disponible para ver en cualquier momento. `documentos` es
+// un array [{url, nombre, subido_en}]; `setDocumentos` recibe el array
+// completo nuevo (mismo patron que los demas campos del formulario).
+function DocumentosRespaldoEditor({ documentos, setDocumentos, notify }) {
+  const [subiendo, setSubiendo] = useState(false);
+  const inputId = "documento-respaldo-" + useMemo(() => Math.random().toString(36).slice(2), []);
+
+  const agregar = async (file) => {
+    if (!file) return;
+    setSubiendo(true);
+    try {
+      const base64 = await fileToBase64(file);
+      const up = await api("upload", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filename: file.name, base64 }),
+      });
+      setDocumentos([...(documentos || []), { url: up.url, nombre: file.name, subido_en: new Date().toISOString() }]);
+    } catch (e) {
+      notify("err", e.message);
+    } finally {
+      setSubiendo(false);
+    }
+  };
+
+  const quitar = (i) => setDocumentos((documentos || []).filter((_, idx) => idx !== i));
+
+  return h("div", null,
+    (documentos || []).length > 0 && h("div", { style: { display: "flex", flexDirection: "column", gap: 6, marginBottom: 8 } },
+      documentos.map((d, i) => h("div", { key: i, style: { display: "flex", alignItems: "center", gap: 8 } },
+        h("a", { className: "link", href: d.url, target: "_blank", rel: "noreferrer", style: { flex: 1 } }, truncar(d.nombre, 280)),
+        h("button", {
+          type: "button", className: "btn-ghost", style: { padding: "2px 8px", fontSize: 11 },
+          onClick: () => quitar(i),
+        }, "Quitar"),
+      )),
+    ),
+    h("label", {
+      htmlFor: inputId, className: "btn-ghost",
+      style: { display: "inline-flex", alignItems: "center", padding: "6px 14px", fontSize: 12, cursor: subiendo ? "default" : "pointer", opacity: subiendo ? 0.6 : 1 },
+    }, subiendo ? "Subiendo..." : "+ Agregar documento"),
+    h("input", {
+      id: inputId, type: "file", style: { display: "none" }, disabled: subiendo,
+      onChange: (e) => { const f = e.target.files[0]; e.target.value = ""; agregar(f); },
+    }),
+  );
+}
+
 function NuevaOC({ proveedores, catalogos, refreshProveedores, proyectos, refreshProyectos, refreshProyectosTodos, notify, onCreated, currentUser, empresaId, empresa }) {
   const [showModal, setShowModal] = useState(false);
   const [provPrefill, setProvPrefill] = useState(null);
@@ -1103,6 +1153,14 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, proyectos, refres
         )
       ),
       h(ProveedorInfoPanel, { proveedor: proveedores.find((p) => p.id === form.proveedor_id) }),
+
+      h(Field, { label: "Documentos de Respaldo (opcional)" },
+        h(DocumentosRespaldoEditor, {
+          documentos: form.documentos_respaldo,
+          setDocumentos: (docs) => setForm((f) => ({ ...f, documentos_respaldo: docs })),
+          notify,
+        })),
+      h("div", { className: "hint", style: { marginTop: -8, marginBottom: 10 } }, "Cualquier otro archivo útil de tener a mano (ej. ficha descriptiva del proyecto), además de la cotización."),
 
       h("div", { className: "section-lbl" }, "Detalle de la Orden"),
       h(Field, { label: "Título" }, h("input", { value: form.titulo, onChange: set("titulo") })),
@@ -1454,6 +1512,7 @@ function EditarOrdenModal({ orden, proveedores, catalogos, proyectos, refreshPro
     monto_neto: orden.monto_neto || "",
     monto_iva: orden.monto_iva || "",
     monto_total: orden.monto_total || "",
+    documentos_respaldo: orden.documentos_respaldo || [],
   });
   const [numCuotas, setNumCuotas] = useState((orden.cuotas || []).length || 1);
   const [cuotas, setCuotas] = useState((orden.cuotas || []).length ? orden.cuotas : distribuirCuotas(1, orden.monto_neto || 0));
@@ -1589,6 +1648,12 @@ function EditarOrdenModal({ orden, proveedores, catalogos, proyectos, refreshPro
         h(Field, { label: "N° Cotización" }, h("input", { value: form.numero_cotizacion, onChange: set("numero_cotizacion") })),
         h(Field, { label: "Fecha" }, h("input", { type: "date", value: form.fecha, onChange: set("fecha") })),
       ),
+      h(Field, { label: "Documentos de Respaldo (opcional)" },
+        h(DocumentosRespaldoEditor, {
+          documentos: form.documentos_respaldo,
+          setDocumentos: (docs) => setForm((f) => ({ ...f, documentos_respaldo: docs })),
+          notify,
+        })),
       h(Field, { label: "Título" }, h("input", { value: form.titulo, onChange: set("titulo") })),
       h(Field, { label: "Descripción" }, h("textarea", { rows: 2, value: form.descripcion, onChange: set("descripcion") })),
       h(Field, { label: "Condiciones" },
@@ -1778,6 +1843,12 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
       key: "archivo", label: "Cotiz.", sortable: false,
       render: (o) => o.archivo_url
         ? h("a", { className: "link", href: o.archivo_url, target: "_blank", rel: "noreferrer", title: o.archivo_nombre || "Ver cotización" }, o.numero_cotizacion || "Ver")
+        : "—",
+    },
+    {
+      key: "documentos_respaldo", label: "Respaldo", sortable: false,
+      render: (o) => (o.documentos_respaldo || []).length
+        ? h("span", { title: (o.documentos_respaldo || []).map((d) => d.nombre).join(", ") }, "📎 " + o.documentos_respaldo.length)
         : "—",
     },
     {

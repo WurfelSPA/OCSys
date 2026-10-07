@@ -191,6 +191,10 @@ export default async function handler(req, res) {
     if (body.monto_total !== undefined) fields.monto_total = body.monto_total;
     if (body.fecha !== undefined) fields.fecha = body.fecha;
     if (body.cuotas !== undefined) fields.cuotas = Array.isArray(body.cuotas) ? body.cuotas : [];
+    // Documentos de respaldo (ademas de la cotizacion): solo material de
+    // referencia, no cambia el fondo de la OC -- se puede agregar/quitar en
+    // cualquier momento, incluso con la OC ya aprobada/facturada.
+    if (body.documentos_respaldo !== undefined) fields.documentos_respaldo = Array.isArray(body.documentos_respaldo) ? body.documentos_respaldo : [];
 
     if (Object.keys(fields).length === 0) {
       return res.status(400).json({ error: "No hay campos para actualizar" });
@@ -349,6 +353,7 @@ export default async function handler(req, res) {
       archivo_url: body.archivo_url || null,
       archivo_nombre: body.archivo_nombre || null,
       creado_por: body.creado_por || null,
+      documentos_respaldo: Array.isArray(body.documentos_respaldo) ? body.documentos_respaldo : [],
     };
 
     // Una OC con mas de 1 cuota se divide en N filas independientes (mismo
