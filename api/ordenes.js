@@ -195,6 +195,10 @@ export default async function handler(req, res) {
     // referencia, no cambia el fondo de la OC -- se puede agregar/quitar en
     // cualquier momento, incluso con la OC ya aprobada/facturada.
     if (body.documentos_respaldo !== undefined) fields.documentos_respaldo = Array.isArray(body.documentos_respaldo) ? body.documentos_respaldo : [];
+    // Etiqueta de una cuota individual (ej. "Anticipo", "1era entrega") --
+    // igual que documentos_respaldo, es solo descriptivo y editable en
+    // cualquier estado.
+    if (body.cuota_observacion !== undefined) fields.cuota_observacion = body.cuota_observacion || null;
 
     if (Object.keys(fields).length === 0) {
       return res.status(400).json({ error: "No hay campos para actualizar" });

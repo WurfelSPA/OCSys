@@ -1787,6 +1787,21 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
     }
   };
 
+  const editarObservacionCuota = async (o) => {
+    const valor = window.prompt("Observación de la cuota " + o.cuota_numero + "/" + o.cuota_total + ":", o.cuota_observacion || "");
+    if (valor === null) return;
+    try {
+      await api("ordenes?id=" + o.id, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cuota_observacion: valor }),
+      });
+      refreshOrdenes();
+    } catch (e) {
+      notify("err", e.message);
+    }
+  };
+
   const desaprobarOrden = async (o) => {
     if (!window.confirm("¿Desaprobar la OC " + (o.numero_oc_acquisys || o.numero_oc) + "? Volverá a estado Pendiente aprobación y se podrá editar de nuevo.")) return;
     try {
@@ -1938,8 +1953,14 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
           ? h("a", { className: "link", href: o.archivo_oc_url, target: "_blank", rel: "noreferrer", title: "Ver PDF de la OC" }, o.numero_oc_visible)
           : o.numero_oc_visible,
         o.numero_oc_acquisys && h("div", { style: { fontSize: 10, color: "var(--txd)" } }, o.numero_oc),
-        (!o._esGrupo && o.cuota_total) && h("div", { style: { fontSize: 11, color: "var(--txm)" } },
-          o.cuota_numero + "/" + o.cuota_total + (o.cuota_observacion ? " " + o.cuota_observacion : "")),
+        (!o._esGrupo && o.cuota_total) && h("div", { style: { fontSize: 11, color: "var(--txm)", display: "flex", alignItems: "center", gap: 4 } },
+          h("span", null, o.cuota_numero + "/" + o.cuota_total + (o.cuota_observacion ? " " + o.cuota_observacion : "")),
+          h("button", {
+            className: "btn-ghost", title: "Editar observación de esta cuota",
+            style: { padding: "0 3px", fontSize: 10, lineHeight: 1 },
+            onClick: () => editarObservacionCuota(o),
+          }, "✏️"),
+        ),
       ),
     },
     {
