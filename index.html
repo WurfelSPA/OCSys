@@ -819,6 +819,43 @@ async function generarYAdjuntarPdf(ordenFila, proveedor, empresa) {
 
 function CuotasEditor({ cuotas, setCuotas, montoNeto, moneda }) {
   const setCuota = (i, k, v) => setCuotas((cs) => cs.map((c, idx) => idx === i ? { ...c, [k]: v, porcentaje: k === "monto" ? (montoNeto ? Math.round((Number(v) / Number(montoNeto)) * 100) : 0) : c.porcentaje } : c));
+
+  // El monto de una cuota en UF puede traer decimales (ej. 5536.9) -- a
+  // diferencia de CLP/USD, que se redondean a entero.
+  const redondearMonto = (v) => moneda === "UF" ? Math.round(v * 100) / 100 : Math.round(v);
+
+  // Editar el % de la cuota i recalcula su monto y reparte el % restante
+  // (100% menos lo ya fijado en las cuotas 1..i) en partes iguales entre las
+  // cuotas que vienen DESPUES de i -- las anteriores quedan tal cual, ya que
+  // se asume que esas ya se decidieron primero.
+  const setPorcentaje = (i, pctRaw) => {
+    const total = Number(montoNeto) || 0;
+    let pct = Number(pctRaw);
+    if (!Number.isFinite(pct)) pct = 0;
+    pct = Math.max(0, Math.min(100, pct));
+    setCuotas((cs) => {
+      const nuevas = cs.map((c) => ({ ...c }));
+      nuevas[i].porcentaje = pct;
+      nuevas[i].monto = redondearMonto((total * pct) / 100);
+
+      const restantes = nuevas.length - 1 - i;
+      if (restantes > 0) {
+        const acumuladoHastaI = nuevas.slice(0, i + 1).reduce((s, c) => s + (Number(c.monto) || 0), 0);
+        const montoRestante = Math.max(0, total - acumuladoHastaI);
+        const base = redondearMonto(montoRestante / restantes);
+        let acumulado = 0;
+        for (let j = i + 1; j < nuevas.length; j++) {
+          const esUltima = j === nuevas.length - 1;
+          const montoFila = esUltima ? redondearMonto(montoRestante - acumulado) : base;
+          acumulado += montoFila;
+          nuevas[j].monto = montoFila;
+          nuevas[j].porcentaje = total ? Math.round((montoFila / total) * 100) : 0;
+        }
+      }
+      return nuevas;
+    });
+  };
+
   const totalCuotas = cuotas.reduce((s, c) => s + (Number(c.monto) || 0), 0);
   return h("div", null,
     h("table", null,
@@ -829,7 +866,7 @@ function CuotasEditor({ cuotas, setCuotas, montoNeto, moneda }) {
         h("td", null, h("input", { type: "number", value: c.dias, onChange: (e) => setCuota(i, "dias", e.target.value), style: { width: 70 } })),
         h("td", null, h("input", { value: c.observacion, onChange: (e) => setCuota(i, "observacion", e.target.value), style: { width: 90 } })),
         h("td", null, h("input", { type: "number", value: c.monto, onChange: (e) => setCuota(i, "monto", e.target.value), style: { width: 110 } })),
-        h("td", null, (c.porcentaje || 0) + " %"),
+        h("td", null, h("input", { type: "number", value: c.porcentaje || 0, onChange: (e) => setPorcentaje(i, e.target.value), style: { width: 60 } }), " %"),
       ))),
     ),
     h("div", { className: "hint", style: { marginTop: 6 } }, "Suma de cuotas: " + totalCuotas.toLocaleString("es-CL") + " / Monto Neto: " + (Number(montoNeto) || 0).toLocaleString("es-CL")),
