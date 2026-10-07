@@ -1909,6 +1909,15 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
     return resultado;
   }, [ordenesFiltradas, hayFiltroActivo, gruposExpandidos]);
 
+  const centroCostoLabel = (codigo) => {
+    const c = (catalogos.centrosCosto || []).find((x) => x.codigo === codigo);
+    return c ? c.codigo + " — " + c.descripcion : codigo;
+  };
+  const cuentaContableLabel = (codigo) => {
+    const c = (catalogos.cuentasContables || []).find((x) => x.codigo === codigo);
+    return c ? c.codigo + " — " + c.descripcion : codigo;
+  };
+
   const columns = useMemo(() => [
     {
       key: "archivo", label: "Cotiz.", sortable: false,
@@ -2024,7 +2033,23 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
         onClick: () => eliminarOrden(o),
       }, "🗑"),
     },
-  ], [puedeAprobar, gruposExpandidos]);
+    {
+      key: "contexto_proyecto", label: "Centro Costo / Cuenta / Proyecto", sortable: false,
+      render: (o) => {
+        const proyectoNombre = o.proyectos ? o.proyectos.nombre : "—";
+        const texto = (o.centro_costo_codigo || "—") + " - " + (o.cuenta_contable_codigo || "—") + " - " + proyectoNombre;
+        const tooltip = [
+          o.centro_costo_codigo ? centroCostoLabel(o.centro_costo_codigo) : "Sin centro de costo",
+          o.cuenta_contable_codigo ? cuentaContableLabel(o.cuenta_contable_codigo) : "Sin cuenta contable",
+          proyectoNombre,
+        ].join(" · ");
+        return h("span", {
+          title: tooltip,
+          style: { display: "inline-block", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", verticalAlign: "bottom" },
+        }, texto);
+      },
+    },
+  ], [puedeAprobar, gruposExpandidos, catalogos]);
 
   // Mientras se agrupa (sin busqueda/filtro activos), el orden queda fijo
   // por N° de OC -- se deshabilita el sort por columna para no romper el
