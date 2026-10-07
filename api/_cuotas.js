@@ -25,6 +25,7 @@ export function calcularFilasCuotas({ cuotas, montoNeto, montoIva, numeroBase })
       monto_total: montoNetoCuota + montoIvaCuota,
       cuota_numero: i + 1,
       cuota_total: cuotas.length,
+      cuota_observacion: c.observacion || null,
     };
   });
 }

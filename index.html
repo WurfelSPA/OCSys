@@ -291,7 +291,7 @@ function Field({ label, children }) {
   return h("div", { className: "field" }, h("label", null, label), children);
 }
 
-function DataTable({ columns, rows, rowKey, searchPlaceholder, searchFields, onRowClick, emptyText, searchValue, onSearchChange }) {
+function DataTable({ columns, rows, rowKey, searchPlaceholder, searchFields, onRowClick, emptyText, searchValue, onSearchChange, rowStyle }) {
   const [searchInterno, setSearchInterno] = useState("");
   // Controlado (searchValue/onSearchChange) cuando el padre necesita saber si
   // hay texto de busqueda; si no se pasan, se comporta igual que siempre.
@@ -353,7 +353,7 @@ function DataTable({ columns, rows, rowKey, searchPlaceholder, searchFields, onR
           )),
           h("tbody", null, sorted.map((row, i) => h("tr", {
             key: rowKey ? rowKey(row) : i,
-            style: onRowClick ? { cursor: "pointer" } : undefined,
+            style: { ...(onRowClick ? { cursor: "pointer" } : null), ...(rowStyle ? rowStyle(row) : null) },
             onClick: onRowClick ? () => onRowClick(row) : undefined,
           }, columns.map((c) => h("td", { key: c.key }, c.render ? c.render(row) : (row[c.key] ?? "—")))))),
         ))
@@ -1929,6 +1929,8 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
           ? h("a", { className: "link", href: o.archivo_oc_url, target: "_blank", rel: "noreferrer", title: "Ver PDF de la OC" }, o.numero_oc_visible)
           : o.numero_oc_visible,
         o.numero_oc_acquisys && h("div", { style: { fontSize: 10, color: "var(--txd)" } }, o.numero_oc),
+        (!o._esGrupo && o.cuota_total) && h("div", { style: { fontSize: 11, color: "var(--txm)" } },
+          o.cuota_numero + "/" + o.cuota_total + (o.cuota_observacion ? " " + o.cuota_observacion : "")),
       ),
     },
     {
@@ -2058,6 +2060,10 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
         searchFields: ["numero_oc_visible", "numero_hes", "numero_egreso", "numero_factura", "moneda"],
         searchPlaceholder: "Buscar por N° OC, N° HES, N° Factura o Moneda (ej. UF)",
         searchValue: search, onSearchChange: setSearch,
+        // OC compuestas (divididas en cuotas) se distinguen con un fondo
+        // tenue -- tanto la fila resumen del grupo como cada cuota cuando
+        // esta expandida.
+        rowStyle: (o) => (o.cuota_total) ? { backgroundColor: "var(--accbg)" } : undefined,
         emptyText: "Aún no hay órdenes de compra creadas en OCFast",
       }),
     )
