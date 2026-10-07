@@ -1037,9 +1037,11 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, proyectos, refres
   const submit = async (estado) => {
     if (!form.proveedor_id) return notify("err", "Selecciona un proveedor");
     if (estado === "Pendiente aprobación") {
+      // Solo avisa, no bloquea -- la ficha puede completarse despues (ej.
+      // datos bancarios), no tiene por que detener la generacion de la OC.
       const proveedorSel = proveedores.find((p) => p.id === form.proveedor_id);
       if (proveedorSel && !proveedorSel.datos_completos) {
-        return notify("err", "El proveedor \"" + proveedorSel.razon_social + "\" tiene la ficha incompleta — complétala en Proveedores antes de generar la OC.");
+        notify("warn", "El proveedor \"" + proveedorSel.razon_social + "\" tiene la ficha incompleta — puedes completarla más tarde.");
       }
     }
     setSaving(true);
