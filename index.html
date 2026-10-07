@@ -291,8 +291,12 @@ function Field({ label, children }) {
   return h("div", { className: "field" }, h("label", null, label), children);
 }
 
-function DataTable({ columns, rows, rowKey, searchPlaceholder, searchFields, onRowClick, emptyText }) {
-  const [search, setSearch] = useState("");
+function DataTable({ columns, rows, rowKey, searchPlaceholder, searchFields, onRowClick, emptyText, searchValue, onSearchChange }) {
+  const [searchInterno, setSearchInterno] = useState("");
+  // Controlado (searchValue/onSearchChange) cuando el padre necesita saber si
+  // hay texto de busqueda; si no se pasan, se comporta igual que siempre.
+  const search = searchValue !== undefined ? searchValue : searchInterno;
+  const setSearch = onSearchChange || setSearchInterno;
   const [sortKey, setSortKey] = useState(null);
   const [sortDir, setSortDir] = useState("asc");
 
@@ -303,9 +307,11 @@ function DataTable({ columns, rows, rowKey, searchPlaceholder, searchFields, onR
   }, [rows, search, searchFields]);
 
   const sorted = useMemo(() => {
-    if (!sortKey) return filtered;
     const col = columns.find((c) => c.key === sortKey);
-    const getVal = col && col.sortValue ? col.sortValue : (r) => r[sortKey];
+    // Si la columna ya no es ordenable (ej. se desactivo el sort al agrupar),
+    // se ignora un sortKey que haya quedado de una interaccion anterior.
+    if (!sortKey || !col || col.sortable === false) return filtered;
+    const getVal = col.sortValue ? col.sortValue : (r) => r[sortKey];
     const copy = [...filtered];
     copy.sort((a, b) => {
       let va = getVal(a), vb = getVal(b);
@@ -1755,6 +1761,8 @@ function EditarOrdenModal({ orden, proveedores, catalogos, proyectos, refreshPro
 function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores, catalogos, proyectos, refreshProyectos, refreshProyectosTodos, empresaId, empresa, filtroEstadoCategoria, onLimpiarFiltroEstado }) {
   const [accion, setAccion] = useState(null);
   const [editando, setEditando] = useState(null);
+  const [search, setSearch] = useState("");
+  const [gruposExpandidos, setGruposExpandidos] = useState({});
   const puedeAprobar = currentUser && currentUser.nivel_aprobacion === 1;
 
   const eliminarOrden = async (o) => {
@@ -1811,6 +1819,7 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
         return {
           ...o,
           numero_oc_visible: o.numero_oc_acquisys || o.numero_oc,
+          numero_oc_base: o.numero_oc_acquisys || o.numero_oc,
           monto_neto_grupo: Number(o.monto_neto) || 0,
           // Sin cuotas: pendiente es el neto completo hasta que se registra
           // el pago (estado Completada).
@@ -1827,18 +1836,16 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
       return {
         ...o,
         numero_oc_visible: o.numero_oc_acquisys || o.numero_oc,
+        numero_oc_base: b,
         monto_neto_grupo: totalGrupo,
         pendiente_calc: totalGrupo - acumuladoHastaEsta,
       };
     });
 
     return conDerivados.sort((a, b) => {
-      // Orden por defecto: mas reciente primero; si comparten fecha, se
-      // agrupan las cuotas de una misma OC una al lado de la otra y en
-      // orden (1, 2, 3...).
-      const fechaCmp = (b.fecha || "").localeCompare(a.fecha || "");
-      if (fechaCmp !== 0) return fechaCmp;
-      const baseCmp = base(a).localeCompare(base(b));
+      // Orden por N° de OC (mas nuevo primero); si comparten N° base (varias
+      // cuotas de una misma OC), quedan juntas y en orden de cuota (1, 2, 3...).
+      const baseCmp = b.numero_oc_base.localeCompare(a.numero_oc_base);
       if (baseCmp !== 0) return baseCmp;
       return (a.cuota_numero || 0) - (b.cuota_numero || 0);
     });
@@ -1851,6 +1858,49 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
     if (!filtroEstadoCategoria) return ordenesConVisible;
     return ordenesConVisible.filter((o) => normalizarEstadoCategoria(o.estado) === filtroEstadoCategoria);
   }, [ordenesConVisible, filtroEstadoCategoria]);
+
+  // Con busqueda de texto o filtro de categoria desde el Dashboard activos no
+  // se agrupa -- se quiere ver la fila exacta que calza, no tener que
+  // expandir un grupo para encontrarla.
+  const hayFiltroActivo = !!filtroEstadoCategoria || search.trim().length > 0;
+
+  // Agrupa las cuotas de una misma OC en una sola fila resumen (colapsada por
+  // defecto); al expandirla se insertan las filas individuales justo debajo,
+  // en orden de cuota.
+  const filasAgrupadas = useMemo(() => {
+    if (hayFiltroActivo) return ordenesFiltradas;
+    const vistos = new Set();
+    const resultado = [];
+    ordenesFiltradas.forEach((o) => {
+      if (!o.cuota_total) { resultado.push(o); return; }
+      const b = o.numero_oc_base;
+      if (vistos.has(b)) return;
+      vistos.add(b);
+      const hijos = ordenesFiltradas
+        .filter((x) => x.cuota_total && x.numero_oc_base === b)
+        .sort((x, y) => (x.cuota_numero || 0) - (y.cuota_numero || 0));
+      const conteoPorEstado = {};
+      hijos.forEach((h) => { conteoPorEstado[h.estado] = (conteoPorEstado[h.estado] || 0) + 1; });
+      const indicadorEstados = Object.entries(conteoPorEstado).map(([estado, n]) => n + " " + estado).join(" · ");
+      resultado.push({
+        ...hijos[0],
+        id: "grupo-" + b,
+        _esGrupo: true,
+        _grupoId: b,
+        _indicadorEstados: indicadorEstados,
+        numero_hes: hijos.map((h) => h.numero_hes).filter(Boolean).join(", "),
+        // El N° de OC visible/interno del grupo es el base sin el sufijo -N
+        // de la cuota 1 (que es lo que trae hijos[0] tal cual).
+        numero_oc_visible: b,
+        numero_oc: hijos[0].numero_oc.replace(/-\d+$/, ""),
+        numero_oc_acquisys: hijos[0].numero_oc_acquisys ? hijos[0].numero_oc_acquisys.replace(/-\d+$/, "") : null,
+      });
+      if (gruposExpandidos[b]) {
+        hijos.forEach((h) => resultado.push({ ...h, _esHijoDeGrupo: true }));
+      }
+    });
+    return resultado;
+  }, [ordenesFiltradas, hayFiltroActivo, gruposExpandidos]);
 
   const columns = useMemo(() => [
     {
@@ -1873,6 +1923,21 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
           : o.numero_oc_visible,
         o.numero_oc_acquisys && h("div", { style: { fontSize: 10, color: "var(--txd)" } }, o.numero_oc),
       ),
+    },
+    {
+      key: "detalles", label: "Detalles", sortable: false,
+      render: (o) => {
+        if (o._esGrupo) {
+          const expandido = !!gruposExpandidos[o._grupoId];
+          return h("button", {
+            className: "btn-ghost", title: expandido ? "Ocultar cuotas" : "Ver cuotas",
+            style: { padding: "2px 8px", fontSize: 12 },
+            onClick: () => setGruposExpandidos((g) => ({ ...g, [o._grupoId]: !g[o._grupoId] })),
+          }, expandido ? "▾" : "▸");
+        }
+        if (o._esHijoDeGrupo) return h("span", { className: "hint" }, "↳");
+        return null;
+      },
     },
     { key: "fecha", label: "Fecha", render: (o) => fmtDate(o.fecha) },
     { key: "proveedor", label: "Proveedor", sortValue: (o) => (o.proveedores ? o.proveedores.razon_social : ""), render: (o) => truncar(o.proveedores ? o.proveedores.razon_social : "—", 160) },
@@ -1897,30 +1962,33 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
     },
     {
       key: "monto_cuota", label: "Monto Cuota", sortable: false,
-      render: (o) => o.cuota_total ? fmtMontoMoneda(o.monto_neto, o.moneda || "CLP") : "—",
+      render: (o) => (!o._esGrupo && o.cuota_total) ? fmtMontoMoneda(o.monto_neto, o.moneda || "CLP") : "—",
     },
     {
       key: "numero_factura", label: "N° Factura",
-      render: (o) => o.archivo_factura_url
+      render: (o) => o._esGrupo ? "—" : o.archivo_factura_url
         ? h("a", { className: "link", href: o.archivo_factura_url, target: "_blank", rel: "noreferrer", title: "Ver factura" }, o.numero_factura)
         : (o.numero_factura || "—"),
     },
     {
       key: "comprobante", label: "Comprobante", sortable: false,
-      render: (o) => o.archivo_comprobante_url
+      render: (o) => (!o._esGrupo && o.archivo_comprobante_url)
         ? h("a", { className: "link", href: o.archivo_comprobante_url, target: "_blank", rel: "noreferrer", title: o.archivo_comprobante_nombre || "Ver comprobante de pago" }, "Ver")
         : "—",
     },
     {
       key: "pendiente", label: "Pendiente",
       sortValue: (o) => o.pendiente_calc,
-      render: (o) => fmtMontoMoneda(o.pendiente_calc, o.moneda || "CLP"),
+      render: (o) => o._esGrupo ? "—" : fmtMontoMoneda(o.pendiente_calc, o.moneda || "CLP"),
     },
-    { key: "estado", label: "Estado", render: (o) => estadoPill(o.estado) },
+    {
+      key: "estado", label: "Estado",
+      render: (o) => o._esGrupo ? h("span", { className: "hint" }, o._indicadorEstados) : estadoPill(o.estado),
+    },
     { key: "creado_por_usuario", label: "Usuario", render: (o) => o.creado_por_usuario || "—" },
     {
       key: "accion", label: "Acción", sortable: false,
-      render: (o) => o.estado === "Pendiente aprobación"
+      render: (o) => o._esGrupo ? h("span", { className: "hint" }, "Expandir para gestionar") : o.estado === "Pendiente aprobación"
         ? (puedeAprobar
             ? h("button", { className: "btn-ghost", style: { padding: "4px 10px", fontSize: 11 }, onClick: () => setAccion({ orden: o, tipo: "aprobar" }) }, "Aprobar")
             : h("span", { className: "hint" }, "Requiere aprobador"))
@@ -1935,19 +2003,27 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
     },
     {
       key: "editar", label: "Editar", sortable: false,
-      render: (o) => ["Borrador", "Pendiente aprobación"].includes(o.estado)
+      render: (o) => (!o._esGrupo && ["Borrador", "Pendiente aprobación"].includes(o.estado))
         ? h("button", { className: "btn-ghost", title: "Editar OC", style: { padding: "4px 8px", fontSize: 12 }, onClick: () => setEditando(o) }, "✏️")
         : null,
     },
     {
       key: "eliminar", label: "Borrar", sortable: false,
-      render: (o) => h("button", {
+      render: (o) => o._esGrupo ? null : h("button", {
         className: "btn-ghost", title: puedeAprobar ? "Eliminar OC" : "Solo un administrador puede eliminar órdenes",
         style: { padding: "4px 8px", fontSize: 12, color: puedeAprobar ? "var(--red)" : "var(--txd)" },
         onClick: () => eliminarOrden(o),
       }, "🗑"),
     },
-  ], [puedeAprobar]);
+  ], [puedeAprobar, gruposExpandidos]);
+
+  // Mientras se agrupa (sin busqueda/filtro activos), el orden queda fijo
+  // por N° de OC -- se deshabilita el sort por columna para no romper el
+  // agrupamiento.
+  const columnsEfectivas = useMemo(
+    () => (hayFiltroActivo ? columns : columns.map((c) => ({ ...c, sortable: false }))),
+    [columns, hayFiltroActivo]
+  );
 
   return h("div", { className: "page fade-up" },
     accion && h(OrdenAccionModal, {
@@ -1971,9 +2047,10 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
         h("a", { className: "link", style: { cursor: "pointer" }, onClick: onLimpiarFiltroEstado }, "Ver todas las órdenes"),
       ),
       h(DataTable, {
-        columns, rows: ordenesFiltradas, rowKey: (o) => o.id,
+        columns: columnsEfectivas, rows: filasAgrupadas, rowKey: (o) => o.id,
         searchFields: ["numero_oc_visible", "numero_hes", "numero_egreso", "numero_factura", "moneda"],
         searchPlaceholder: "Buscar por N° OC, N° HES, N° Factura o Moneda (ej. UF)",
+        searchValue: search, onSearchChange: setSearch,
         emptyText: "Aún no hay órdenes de compra creadas en OCFast",
       }),
     )
