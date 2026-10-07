@@ -977,6 +977,13 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, proyectos, refres
       }
 
       const neto = datos.monto_neto || 0;
+      // Algunas cotizaciones solo imprimen el neto, sin IVA ni total -- en
+      // ese caso la IA deja esos campos en 0 (ver instrucciones en
+      // api/extraer-cotizacion.js) y se completan aqui mismo con el 19%,
+      // igual que cuando el neto se escribe a mano (ver setMontoNeto).
+      const sinIvaNiTotal = neto && !datos.monto_iva && !datos.monto_total;
+      const iva = sinIvaNiTotal ? Math.round(neto * 0.19) : datos.monto_iva;
+      const total = sinIvaNiTotal ? Math.round(neto * 1.19) : datos.monto_total;
       setForm((f) => ({
         ...f,
         proveedor_id: proveedorMatch ? proveedorMatch.id : f.proveedor_id,
@@ -986,8 +993,8 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, proyectos, refres
         condiciones: datos.condiciones || f.condiciones,
         moneda: datos.moneda || f.moneda,
         monto_neto: neto || f.monto_neto,
-        monto_iva: datos.monto_iva !== undefined ? datos.monto_iva : f.monto_iva,
-        monto_total: datos.monto_total !== undefined ? datos.monto_total : f.monto_total,
+        monto_iva: iva !== undefined ? iva : f.monto_iva,
+        monto_total: total !== undefined ? total : f.monto_total,
       }));
       if (neto) setCuotas(distribuirCuotas(numCuotas, neto));
 

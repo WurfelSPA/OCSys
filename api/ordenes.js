@@ -323,8 +323,7 @@ export default async function handler(req, res) {
     if (empresaError) return res.status(500).json({ error: empresaError.message });
     const { data: siguiente, error: seqError } = await db.rpc("siguiente_numero_oc", { p_empresa_id: empresaId });
     if (seqError) return res.status(500).json({ error: seqError.message });
-    const fechaHoy = new Date().toISOString().slice(0, 10).replace(/-/g, "");
-    const numeroBase = (empresa?.codigo || "OC") + "-OC-" + fechaHoy + "-" + String(siguiente).padStart(5, "0");
+    const numeroBase = (empresa?.codigo || "OC") + "-OC-" + String(siguiente).padStart(5, "0");
 
     const camposBase = {
       numero_cotizacion: body.numero_cotizacion || null,
