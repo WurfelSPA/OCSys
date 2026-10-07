@@ -618,15 +618,21 @@ function SearchSelect({ options, value, onChange, placeholder, disabled }) {
   );
 }
 
-function ProveedorInfoPanel({ proveedor }) {
+function ProveedorInfoPanel({ proveedor, onEditar }) {
   if (!proveedor) return null;
   const dato = (label, value) => h("div", null,
     h("div", { style: { fontSize: 9.5, fontWeight: 700, color: "var(--txd)", textTransform: "uppercase", letterSpacing: ".05em" } }, label),
     h("div", { style: { fontSize: 12 } }, value || "—"),
   );
   return h("div", { style: { background: "var(--surf2)", border: "1px solid var(--bdr)", borderRadius: 10, padding: "14px 16px", marginTop: 10 } },
-    !proveedor.datos_completos && h("div", { className: "pill pill-pend", style: { marginBottom: 10 } }, "⚠ Ficha incompleta — revisa en Proveedores"),
-    h("div", { className: "section-lbl", style: { marginTop: 0, paddingTop: 0, borderTop: "none" } }, "Datos del Proveedor Seleccionado"),
+    !proveedor.datos_completos && h("div", { style: { display: "flex", alignItems: "center", gap: 10, marginBottom: 10, flexWrap: "wrap" } },
+      h("div", { className: "pill pill-pend" }, "⚠ Ficha incompleta"),
+      onEditar && h("button", { type: "button", className: "btn-ghost", style: { padding: "3px 10px", fontSize: 11 }, onClick: onEditar }, "✏️ Editar ficha del proveedor"),
+    ),
+    h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center" } },
+      h("div", { className: "section-lbl", style: { marginTop: 0, paddingTop: 0, borderTop: "none" } }, "Datos del Proveedor Seleccionado"),
+      proveedor.datos_completos && onEditar && h("button", { type: "button", className: "btn-ghost", style: { padding: "3px 10px", fontSize: 11 }, onClick: onEditar }, "✏️ Editar"),
+    ),
     h("div", { className: "grid3" },
       dato("Razón Social", proveedor.razon_social),
       dato("RUT", proveedor.rut),
@@ -1152,7 +1158,13 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, proyectos, refres
           !(currentUser.proveedor_ids && currentUser.proveedor_ids.length) && h("button", { className: "btn-add", title: "Agregar proveedor", onClick: () => setShowModal(true) }, "+"),
         )
       ),
-      h(ProveedorInfoPanel, { proveedor: proveedores.find((p) => p.id === form.proveedor_id) }),
+      h(ProveedorInfoPanel, {
+        proveedor: proveedores.find((p) => p.id === form.proveedor_id),
+        onEditar: () => {
+          const p = proveedores.find((x) => x.id === form.proveedor_id);
+          if (p) { setProvEditing(p); setShowModal(true); }
+        },
+      }),
 
       h(Field, { label: "Documentos de Respaldo (opcional)" },
         h(DocumentosRespaldoEditor, {
