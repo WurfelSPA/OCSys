@@ -1127,10 +1127,13 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, proyectos, refres
       }
 
       const primera = ordenesCreadas[0];
-      const mensaje = ordenesCreadas.length > 1
+      let mensaje = ordenesCreadas.length > 1
         ? "OC generada en " + ordenesCreadas.length + " cuotas (" + ordenesCreadas.map((o) => o.numero_oc).join(", ") + ")"
         : (estado === "Borrador" ? "Borrador guardado: " : "OC generada: ") + primera.numero_oc;
-      notify("ok", mensaje);
+      if (estado === "Pendiente aprobación") {
+        mensaje += respuesta.correoError ? " — aviso a aprobador no enviado: " + respuesta.correoError : " — aviso enviado a aprobador";
+      }
+      notify(estado === "Pendiente aprobación" && respuesta.correoError ? "warn" : "ok", mensaje);
       onCreated();
       limpiarFormulario();
     } catch (e) {
@@ -1667,7 +1670,9 @@ function EditarOrdenModal({ orden, proveedores, catalogos, proyectos, refreshPro
             await generarYAdjuntarPdf(fila, proveedor, empresa);
           }
         }
-        notify("ok", "OC generada en " + ordenesCreadas.length + " cuotas (" + ordenesCreadas.map((o) => o.numero_oc).join(", ") + ")");
+        notify(respuesta.correoError ? "warn" : "ok",
+          "OC generada en " + ordenesCreadas.length + " cuotas (" + ordenesCreadas.map((o) => o.numero_oc).join(", ") + ")"
+          + (respuesta.correoError ? " — aviso a aprobador no enviado: " + respuesta.correoError : " — aviso enviado a aprobador"));
         onSaved();
         return;
       }
@@ -1685,12 +1690,13 @@ function EditarOrdenModal({ orden, proveedores, catalogos, proyectos, refreshPro
         cuerpo.archivo_oc_url = up.url;
         cuerpo.archivo_oc_nombre = orden.numero_oc + ".pdf";
       }
-      await api("ordenes?id=" + orden.id, {
+      const { correoError } = await api("ordenes?id=" + orden.id, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(cuerpo),
       });
-      notify("ok", "OC generada: " + orden.numero_oc);
+      notify(correoError ? "warn" : "ok",
+        "OC generada: " + orden.numero_oc + (correoError ? " — aviso a aprobador no enviado: " + correoError : " — aviso enviado a aprobador"));
       onSaved();
     } catch (e) {
       notify("err", e.message + (sePartioEnCuotas ? " — la OC ya quedó dividida en cuotas, revisa el listado antes de reintentar" : ""));

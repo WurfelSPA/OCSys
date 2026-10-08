@@ -1,7 +1,7 @@
 import { supabase, readJsonBody } from "./_supabase.js";
 import { calcularFilasCuotas } from "./_cuotas.js";
 import { verifyToken, parseCookie } from "./_session.js";
-import { enviarCorreoAprobacion, enviarCorreoFactura, enviarCorreoPago } from "./_email.js";
+import { enviarCorreoAprobacion, enviarCorreoFactura, enviarCorreoPago, enviarCorreoNuevaOC } from "./_email.js";
 
 // Aprobada -> se asigna HES y se envia la OC al proveedor.
 // Facturada -> se subio la factura del proveedor; se avisa al equipo de pagos.
@@ -77,7 +77,14 @@ async function dividirEnCuotasPUT(db, id, body, res) {
     filasNuevas = insertadas;
   }
 
-  return res.status(200).json({ ordenes: [filaActualizada, ...filasNuevas] });
+  const todas = [filaActualizada, ...filasNuevas];
+  let correoError = null;
+  try {
+    await enviarCorreoNuevaOC(todas, filaActualizada.creado_por_usuario || null);
+  } catch (e) {
+    correoError = e.message;
+  }
+  return res.status(200).json({ ordenes: todas, correoError });
 }
 
 export default async function handler(req, res) {
@@ -110,6 +117,7 @@ export default async function handler(req, res) {
 
     const fields = {};
     let session = null;
+    let estadoAntes = undefined;
     if (body.estado !== undefined) {
       if (!ESTADOS_OCSYS.includes(body.estado)) {
         return res.status(400).json({ error: "estado inválido" });
@@ -140,6 +148,10 @@ export default async function handler(req, res) {
         // el estado). Requiere el mismo nivel que se usa para aprobar. No se
         // permite si ya paso a Facturada/Completada (ahi solo cabe Anular).
         const { data: filaActual } = await db.from("ordenes_compra").select("estado").eq("id", id).maybeSingle();
+        // Se guarda para decidir mas abajo si corresponde avisar a quien
+        // aprueba de una OC "nueva" -- un desaprobar (Aprobada -> Pendiente)
+        // no es una generacion nueva, no se notifica igual.
+        estadoAntes = filaActual ? filaActual.estado : null;
         if (filaActual && filaActual.estado === "Aprobada") {
           session = verifyToken(parseCookie(req.headers.cookie, "ocsys_token"), process.env.SESSION_SECRET || "");
           if (!session || session.nivel_aprobacion !== 1) {
@@ -237,6 +249,15 @@ export default async function handler(req, res) {
     if (body.estado === "Completada") {
       try {
         await enviarCorreoPago(data, ccUsuario);
+      } catch (e) {
+        correoError = e.message;
+      }
+    }
+    // Genuina Borrador -> Pendiente aprobacion (no un desaprobar, que vuelve
+    // de Aprobada): avisa a quien aprueba que hay una OC nueva esperando.
+    if (body.estado === "Pendiente aprobación" && estadoAntes !== "Aprobada") {
+      try {
+        await enviarCorreoNuevaOC([data], ccUsuario);
       } catch (e) {
         correoError = e.message;
       }
@@ -376,10 +397,18 @@ export default async function handler(req, res) {
           monto_total: body.monto_total || null,
           cuotas,
         })
-        .select("*, proveedores(razon_social, rut)")
+        .select("*, proveedores(razon_social, rut), proyectos(nombre)")
         .single();
       if (error) return res.status(500).json({ error: error.message });
-      return res.status(201).json({ orden: data });
+      let correoError = null;
+      if (estado === "Pendiente aprobación") {
+        try {
+          await enviarCorreoNuevaOC([data], data.creado_por_usuario || null);
+        } catch (e) {
+          correoError = e.message;
+        }
+      }
+      return res.status(201).json({ orden: data, correoError });
     }
 
     const filasCuotas = calcularFilasCuotas({ cuotas, montoNeto: body.monto_neto, montoIva: body.monto_iva, numeroBase });
@@ -387,9 +416,15 @@ export default async function handler(req, res) {
     const { data, error } = await db
       .from("ordenes_compra")
       .insert(filas)
-      .select("*, proveedores(razon_social, rut)");
+      .select("*, proveedores(razon_social, rut), proyectos(nombre)");
     if (error) return res.status(500).json({ error: error.message });
-    return res.status(201).json({ ordenes: data });
+    let correoError = null;
+    try {
+      await enviarCorreoNuevaOC(data, data[0]?.creado_por_usuario || null);
+    } catch (e) {
+      correoError = e.message;
+    }
+    return res.status(201).json({ ordenes: data, correoError });
   }
 
   res.setHeader("Allow", "GET, POST, PUT, DELETE");

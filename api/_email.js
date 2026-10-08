@@ -227,6 +227,77 @@ export async function enviarCorreoPago(orden, cc) {
   await sendGmail(token, to, from, asunto, html, attachment ? [attachment] : [], cc);
 }
 
+// Correo interno (no al proveedor) avisando a quien aprueba que se generó
+// una OC nueva y está esperando su revisión. `ordenes` es un array porque
+// una OC dividida en cuotas se genera de una sola vez en N filas -- se manda
+// UN solo correo por generación (no uno por cuota) con el detalle de todas.
+// `destinatarioOverride` es solo para pruebas (manda a una direccion puntual
+// en vez del destinatario real configurado).
+export async function enviarCorreoNuevaOC(ordenes, cc, destinatarioOverride) {
+  if (!process.env.GMAIL_CLIENT_ID || !process.env.GMAIL_CLIENT_SECRET || !process.env.GMAIL_REFRESH_TOKEN) {
+    throw new Error("Credenciales de Gmail no configuradas (GMAIL_CLIENT_ID/GMAIL_CLIENT_SECRET/GMAIL_REFRESH_TOKEN)");
+  }
+  const from = process.env.GMAIL_FROM || "facturacion@patagonica.cl";
+  const to = destinatarioOverride || process.env.APROBADOR_EMAIL_TO || "wurfel.cl@gmail.com";
+
+  const [primera] = ordenes;
+  const numeroOcPrimera = primera.numero_oc_acquisys || primera.numero_oc;
+  const numeroBase = ordenes.length > 1 ? numeroOcPrimera.replace(/-\d+$/, "") : numeroOcPrimera;
+  const proveedor = primera.proveedores || {};
+  const montoTotalGrupo = ordenes.reduce((s, o) => s + (Number(o.monto_total) || 0), 0);
+
+  const asunto = `Nueva OC para aprobar: ${numeroBase}${primera.titulo ? " — " + primera.titulo : ""}`;
+
+  const tablaCuotas = ordenes.length > 1
+    ? `<table style="border-collapse:collapse;margin:6px 0 14px" cellpadding="6">
+        <tr style="background:#f2f2f2">
+          <th align="left">Cuota</th><th align="left">Observación</th>
+          <th align="right">Neto</th><th align="right">IVA</th><th align="right">Total</th>
+        </tr>
+        ${ordenes.map((o) => `<tr>
+          <td>${o.cuota_numero}/${o.cuota_total}</td>
+          <td>${o.cuota_observacion || "—"}</td>
+          <td align="right">${fmtMontoEmail(o.monto_neto, o.moneda)}</td>
+          <td align="right">${fmtMontoEmail(o.monto_iva, o.moneda)}</td>
+          <td align="right">${fmtMontoEmail(o.monto_total, o.moneda)}</td>
+        </tr>`).join("")}
+      </table>`
+    : "";
+
+  const P = 'style="margin:0 0 14px"';
+  const html = `<!DOCTYPE html><html><body style="font-family:Arial,sans-serif;color:#1a1a1a;font-size:14px">
+    <p ${P}>Estimado(a),</p>
+    <p ${P}>Se generó una nueva Orden de Compra en OCFast que requiere tu aprobación:</p>
+    <p ${P}>
+      N° OC: <b>${numeroBase}</b>${ordenes.length > 1 ? ` (dividida en ${ordenes.length} cuotas)` : ""}<br>
+      Proveedor: ${proveedor.razon_social || "—"} (${proveedor.rut || "—"})<br>
+      Proyecto: ${primera.proyectos?.nombre || "—"}<br>
+      Centro de Costo: ${primera.centro_costo_codigo || "—"}<br>
+      Título: ${primera.titulo || "—"}<br>
+      Descripción: ${primera.descripcion || "—"}<br>
+      Condiciones: ${primera.condiciones || "—"}<br>
+      Moneda: ${primera.moneda || "CLP"}<br>
+      Monto Total: ${fmtMontoEmail(montoTotalGrupo, primera.moneda)}
+    </p>
+    ${tablaCuotas}
+    <p ${P}>Ingresa a OCFast (Órdenes de Compra) para revisarla y aprobarla.</p>
+    ${FIRMA_HTML}
+  </body></html>`;
+
+  const attachments = [];
+  for (const o of ordenes) {
+    if (o.archivo_oc_url) {
+      try {
+        const content = await fetchAsBase64(o.archivo_oc_url);
+        attachments.push({ filename: o.archivo_oc_nombre || (o.numero_oc_acquisys || o.numero_oc) + ".pdf", content });
+      } catch (e) { /* si falla el adjunto, se envía igual el correo sin él */ }
+    }
+  }
+
+  const token = await getGmailToken();
+  await sendGmail(token, to, from, asunto, html, attachments, cc);
+}
+
 function abrevTipoCuenta(tipo) {
   if (!tipo) return "";
   if (/corriente/i.test(tipo)) return "Cte.";
