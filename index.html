@@ -2767,38 +2767,279 @@ function ConfiguracionCorreos({ empresa, notify, refreshEmpresas }) {
   );
 }
 
-function ProyectoModal({ editProyecto, empresaId, notify, onClose, onSaved, onComentario }) {
-  const isEdit = !!editProyecto;
-  const [descripcion, setDescripcion] = useState(editProyecto ? editProyecto.descripcion || "" : "");
-  const [fechaInicio, setFechaInicio] = useState(editProyecto ? editProyecto.fecha_inicio || "" : new Date().toISOString().slice(0, 10));
-  const [finalizado, setFinalizado] = useState(editProyecto ? !!editProyecto.finalizado : false);
-  const [fechaCulminacion, setFechaCulminacion] = useState(editProyecto ? editProyecto.fecha_culminacion || "" : "");
+// ===== Menú Proyectos (Fase 1) =====
+// Ficha de proyecto sobre el catálogo `proyectos` (el mismo de Nueva OC) +
+// Órdenes de Trabajo + bitácora. Sin aprobaciones propias: el gasto sale de
+// las OC del proyecto, convertido a UF (neto). Ver
+// docs/superpowers/specs/2026-10-08-proyectos-fase1-design.md.
+const ESTADOS_PROYECTO = ["Planificado", "En ejecución", "Pausado", "En recepción", "Cerrado", "Cancelado"];
+const ESTADOS_OT = ["Pendiente", "En ejecución", "Terminada", "Cancelada"];
+const TIPOS_PROYECTO = ["Obra", "Mantención", "Habilitación", "TI", "Otro"];
+const PRIORIDADES = ["Alta", "Media", "Baja"];
+
+function proyectoPill(estado) {
+  const map = {
+    "Planificado": "pill-draft", "En ejecución": "pill-info", "Pausado": "pill-pend",
+    "En recepción": "pill-pend", "Cerrado": "pill-ok", "Cancelado": "pill-anul",
+    "Pendiente": "pill-draft", "Terminada": "pill-ok", "Cancelada": "pill-anul",
+  };
+  return h("span", { className: "pill " + (map[estado] || "pill-draft") }, estado || "—");
+}
+
+function fmtUF(v, decimales) {
+  if (v === null || v === undefined || v === "" || isNaN(Number(v))) return "—";
+  return "UF " + Number(v).toLocaleString("es-CL", { maximumFractionDigits: decimales === undefined ? 2 : decimales });
+}
+
+function hoyISO() {
+  return new Date().toLocaleDateString("en-CA", { timeZone: "America/Santiago" });
+}
+
+function pctConsumo(p) {
+  if (!p.presupuesto_uf || Number(p.presupuesto_uf) <= 0) return null;
+  return (p.comprometido_uf || 0) / Number(p.presupuesto_uf) * 100;
+}
+
+function colorConsumo(pct) {
+  if (pct === null) return "var(--txd)";
+  if (pct >= 100) return "var(--red)";
+  if (pct >= 80) return "var(--amber)";
+  return "var(--green)";
+}
+
+// Barra compacta para tablas: % de avance o % del presupuesto consumido.
+function MiniBarra({ pct, color }) {
+  if (pct === null || pct === undefined) return h("span", { style: { color: "var(--txd)" } }, "—");
+  const ancho = Math.max(0, Math.min(100, pct));
+  return h("div", { style: { display: "flex", alignItems: "center", gap: 8 } },
+    h("div", { style: { width: 70, height: 6, borderRadius: 3, background: "var(--surf3)", overflow: "hidden" } },
+      h("div", { style: { width: ancho + "%", height: "100%", background: color || "var(--acc)" } })),
+    h("span", { style: { fontWeight: 600, color: color || "var(--tx)" } }, Math.round(pct) + "%"),
+  );
+}
+
+function nombreEjecutor(x) {
+  if (!x) return "—";
+  if (x.ejecutor_tipo === "contratista") return x.proveedores ? x.proveedores.razon_social : "Contratista";
+  if (x.ejecutor_tipo === "interno") return (x.ejecutor_interno || "Interno") + " (interno)";
+  return "—";
+}
+
+function nombreUsuario(usuarios, correo) {
+  if (!correo) return "—";
+  const u = (usuarios || []).find((x) => x.usuario === correo);
+  return u ? ((u.nombre || "") + " " + (u.apellido || "")).trim() || correo : correo;
+}
+
+function proyectoFormDesde(p) {
+  const v = (k) => (p && p[k] !== null && p[k] !== undefined ? p[k] : "");
+  return {
+    nombre: v("nombre"), tipo: v("tipo"), prioridad: v("prioridad"), descripcion: v("descripcion"),
+    ubicacion: v("ubicacion"), solicitante: v("solicitante"), jefe_proyecto: v("jefe_proyecto"),
+    ejecutor_tipo: v("ejecutor_tipo"), ejecutor_proveedor_id: v("ejecutor_proveedor_id"), ejecutor_interno: v("ejecutor_interno"),
+    presupuesto_uf: v("presupuesto_uf"),
+    fecha_inicio_plan: v("fecha_inicio_plan"), fecha_termino_plan: v("fecha_termino_plan"),
+    fecha_inicio_real: v("fecha_inicio_real"), fecha_termino_real: v("fecha_termino_real"),
+    estado_proyecto: p ? p.estado_proyecto : "Planificado", avance_pct: p ? p.avance_pct : 0,
+  };
+}
+
+// Selector de ejecutor: interno (texto libre) o contratista (obligatorio
+// desde el catálogo de proveedores). Lo usan la ficha del proyecto y la OT.
+function EjecutorFields({ form, set, setForm, proveedores }) {
+  return h(React.Fragment, null,
+    h(Field, { label: "Ejecutor" },
+      h("select", {
+        value: form.ejecutor_tipo || "",
+        onChange: (e) => setForm((f) => ({ ...f, ejecutor_tipo: e.target.value })),
+      },
+        h("option", { value: "" }, "— Sin definir —"),
+        h("option", { value: "interno" }, "Interno (personal propio)"),
+        h("option", { value: "contratista" }, "Contratista (catálogo de proveedores)"),
+      )),
+    form.ejecutor_tipo === "interno" && h(Field, { label: "Persona / cuadrilla interna" },
+      h("input", { value: form.ejecutor_interno || "", onChange: set("ejecutor_interno"), placeholder: "Ej: Juan Pérez, cuadrilla mantención" })),
+    form.ejecutor_tipo === "contratista" && h(Field, { label: "Contratista *" },
+      h(ProveedorPicker, {
+        proveedores: proveedores.filter((p) => p.activo !== false),
+        value: form.ejecutor_proveedor_id || "",
+        onChange: (id) => setForm((f) => ({ ...f, ejecutor_proveedor_id: id })),
+      }),
+      h("div", { className: "hint" }, "Si no aparece, primero ingrésalo en el menú Proveedores.")),
+  );
+}
+
+function ProyectoForm({ form, setForm, proveedores, usuarios, esPermanente, ufHoy }) {
+  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  const estados = esPermanente ? ["En ejecución", "Pausado"] : ESTADOS_PROYECTO;
+  return h("div", null,
+    h("div", { className: "section-lbl" }, "Identificación"),
+    h(Field, { label: "Nombre del proyecto *" },
+      h("input", { value: form.nombre, onChange: set("nombre"), disabled: esPermanente, placeholder: "Ej: Remodelación oficinas piso 2" })),
+    h("div", { className: "grid3" },
+      h(Field, { label: "Tipo" },
+        h("select", { value: form.tipo, onChange: set("tipo") },
+          h("option", { value: "" }, "—"), TIPOS_PROYECTO.map((t) => h("option", { key: t, value: t }, t)))),
+      h(Field, { label: "Prioridad" },
+        h("select", { value: form.prioridad, onChange: set("prioridad") },
+          h("option", { value: "" }, "—"), PRIORIDADES.map((t) => h("option", { key: t, value: t }, t)))),
+      h(Field, { label: "Estado" },
+        h("select", { value: form.estado_proyecto, onChange: set("estado_proyecto") },
+          estados.map((t) => h("option", { key: t, value: t }, t)))),
+    ),
+    h(Field, { label: "Descripción / alcance" },
+      h("textarea", { rows: 3, value: form.descripcion, onChange: set("descripcion"), placeholder: "Qué se va a hacer y qué queda fuera" })),
+    h("div", { className: "section-lbl" }, "Lugar y personas"),
+    h("div", { className: "grid3" },
+      h(Field, { label: "Ubicación" }, h("input", { value: form.ubicacion, onChange: set("ubicacion"), placeholder: "Sede, edificio, dirección..." })),
+      h(Field, { label: "Solicitante" }, h("input", { value: form.solicitante, onChange: set("solicitante"), placeholder: "Quién pidió el trabajo" })),
+      h(Field, { label: "Jefe de proyecto" },
+        h("select", { value: form.jefe_proyecto, onChange: set("jefe_proyecto") },
+          h("option", { value: "" }, "—"),
+          (usuarios || []).map((u) => h("option", { key: u.usuario, value: u.usuario }, ((u.nombre || "") + " " + (u.apellido || "")).trim() || u.usuario)))),
+    ),
+    h("div", { className: "grid2" }, h(EjecutorFields, { form, set, setForm, proveedores })),
+    h("div", { className: "section-lbl" }, "Presupuesto y plazos"),
+    h("div", { className: "grid3" },
+      h(Field, { label: "Presupuesto (UF, neto)" },
+        h("input", { type: "number", min: 0, step: "0.01", value: form.presupuesto_uf, onChange: set("presupuesto_uf") }),
+        ufHoy && form.presupuesto_uf !== "" && h("div", { className: "hint" },
+          "≈ " + fmtMoney(Math.round(Number(form.presupuesto_uf) * ufHoy)) + " al valor UF de hoy")),
+      h(Field, { label: "Avance físico (%)" },
+        h("div", { style: { display: "flex", gap: 10, alignItems: "center" } },
+          h("input", { type: "range", min: 0, max: 100, step: 5, value: form.avance_pct || 0, onChange: set("avance_pct"), style: { flex: 1, padding: 0 } }),
+          h("input", { type: "number", min: 0, max: 100, value: form.avance_pct, onChange: set("avance_pct"), style: { width: 70 } }))),
+      h("div"),
+    ),
+    h("div", { className: "grid2" },
+      h(Field, { label: "Inicio planificado" }, h("input", { type: "date", value: form.fecha_inicio_plan, onChange: set("fecha_inicio_plan") })),
+      h(Field, { label: "Término planificado" }, h("input", { type: "date", value: form.fecha_termino_plan, onChange: set("fecha_termino_plan") })),
+      h(Field, { label: "Inicio real" }, h("input", { type: "date", value: form.fecha_inicio_real, onChange: set("fecha_inicio_real") }),
+        h("div", { className: "hint" }, "Se completa sola al pasar a \"En ejecución\" si está vacía.")),
+      h(Field, { label: "Término real" }, h("input", { type: "date", value: form.fecha_termino_real, onChange: set("fecha_termino_real") }),
+        h("div", { className: "hint" }, "Se completa sola al pasar a \"Cerrado\" si está vacía.")),
+    ),
+  );
+}
+
+function validarEjecutor(form, notify) {
+  if (form.ejecutor_tipo === "contratista" && !form.ejecutor_proveedor_id) {
+    notify("err", "Selecciona el contratista desde el catálogo de proveedores");
+    return false;
+  }
+  return true;
+}
+
+function NuevoProyectoModal({ empresaId, proveedores, usuarios, ufHoy, notify, onClose, onCreado }) {
+  const [form, setForm] = useState(proyectoFormDesde(null));
   const [saving, setSaving] = useState(false);
-  const [comentarioNuevo, setComentarioNuevo] = useState("");
-  const [comentarios, setComentarios] = useState(editProyecto ? editProyecto.seguimiento_proyectos_comentarios || [] : []);
-  const [enviandoComentario, setEnviandoComentario] = useState(false);
+  const guardar = async () => {
+    if (!form.nombre.trim()) return notify("err", "Ingresa el nombre del proyecto");
+    if (!validarEjecutor(form, notify)) return;
+    setSaving(true);
+    try {
+      const { proyecto } = await api("proyectos-seguimiento", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...form, empresa_id: empresaId }),
+      });
+      notify("ok", "Proyecto " + proyecto.codigo + " creado");
+      onCreado(proyecto);
+    } catch (e) {
+      notify("err", e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+  return h("div", { className: "overlay", onClick: (e) => e.target === e.currentTarget && onClose() },
+    h("div", { className: "modal", style: { width: 760 } },
+      h("div", { className: "modal-hdr" },
+        h("h3", null, "Nuevo Proyecto"),
+        h("button", { className: "modal-close", onClick: onClose }, "×")),
+      h("div", { className: "hint", style: { marginBottom: 12, fontSize: 11.5 } },
+        "El código (ej. PA-PRY-004) se asigna solo. El proyecto quedará disponible también en el campo \"Proyecto\" de Nueva OC."),
+      h(ProyectoForm, { form, setForm, proveedores, usuarios, esPermanente: false, ufHoy }),
+      h("div", { style: { display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 8 } },
+        h("button", { className: "btn-ghost", onClick: onClose }, "Cancelar"),
+        h("button", { className: "btn-primary", onClick: guardar, disabled: saving }, saving ? "Guardando..." : "Crear proyecto")),
+    ));
+}
+
+function otFormDesde(ot) {
+  const v = (k) => (ot && ot[k] !== null && ot[k] !== undefined ? ot[k] : "");
+  return {
+    descripcion: v("descripcion"), ubicacion: v("ubicacion"), responsable: v("responsable"),
+    ejecutor_tipo: v("ejecutor_tipo"), ejecutor_proveedor_id: v("ejecutor_proveedor_id"), ejecutor_interno: v("ejecutor_interno"),
+    fecha_inicio: ot ? v("fecha_inicio") : hoyISO(), fecha_limite: v("fecha_limite"), fecha_culminacion: v("fecha_culminacion"),
+    estado: ot ? ot.estado : "Pendiente",
+  };
+}
+
+// Hilo de bitácora (comentarios + eventos automáticos del sistema).
+function BitacoraHilo({ entradas, ots, alto }) {
+  const codigoOt = (id) => { const o = (ots || []).find((x) => x.id === id); return o ? o.codigo : "OT"; };
+  return h("div", { style: { maxHeight: alto || 360, overflowY: "auto", border: "1px solid var(--bdr)", borderRadius: 8, padding: "10px 12px", marginBottom: 10, background: "var(--surf)" } },
+    entradas.length === 0
+      ? h("div", { className: "hint" }, "Todavía no hay registros.")
+      : entradas.map((b) => h("div", { key: b.id, style: { marginBottom: 10, fontSize: 12.5 } },
+          h("div", { style: { color: "var(--txm)", fontSize: 10.5, display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" } },
+            (b.usuario || "—") + " · " + new Date(b.created_at).toLocaleString("es-CL"),
+            ots && b.ot_id && h("span", { className: "pill pill-info", style: { fontSize: 9.5, padding: "1px 7px" } }, codigoOt(b.ot_id))),
+          h("div", { style: b.tipo === "sistema" ? { color: "var(--txm)", fontStyle: "italic" } : null },
+            (b.tipo === "sistema" ? "⚙ " : "") + b.texto),
+        )),
+  );
+}
+
+function AgregarComentario({ proyectoId, otId, notify, onAgregado }) {
+  const [texto, setTexto] = useState("");
+  const [enviando, setEnviando] = useState(false);
+  const enviar = async () => {
+    if (!texto.trim()) return;
+    setEnviando(true);
+    try {
+      const { entrada } = await api("proyectos-seguimiento?bitacora=1", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ proyecto_id: proyectoId, ot_id: otId || null, texto }),
+      });
+      setTexto("");
+      onAgregado(entrada);
+    } catch (e) {
+      notify("err", e.message);
+    } finally {
+      setEnviando(false);
+    }
+  };
+  return h("div", { style: { display: "flex", gap: 8 } },
+    h("input", {
+      value: texto, onChange: (e) => setTexto(e.target.value), placeholder: "Agregar un comentario o avance...",
+      style: { flex: 1 }, onKeyDown: (e) => { if (e.key === "Enter") enviar(); },
+    }),
+    h("button", { className: "btn-ghost", onClick: enviar, disabled: enviando || !texto.trim() }, enviando ? "..." : "Agregar"));
+}
+
+function OtModal({ ot, proyectoId, proveedores, bitacora, notify, onClose, onSaved }) {
+  const isEdit = !!ot;
+  const [form, setForm] = useState(otFormDesde(ot));
+  const [saving, setSaving] = useState(false);
+  const [entradas, setEntradas] = useState(isEdit ? bitacora.filter((b) => b.ot_id === ot.id) : []);
+  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
   const guardar = async () => {
-    if (!isEdit) {
-      if (!descripcion.trim()) return notify("err", "Ingresa una descripción");
-      if (!fechaInicio) return notify("err", "Ingresa la fecha de inicio");
-    }
+    if (!form.descripcion.trim()) return notify("err", "Ingresa la descripción de la OT");
+    if (!validarEjecutor(form, notify)) return;
     setSaving(true);
     try {
       if (isEdit) {
-        await api("proyectos-seguimiento?id=" + editProyecto.id, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ finalizado, fecha_culminacion: fechaCulminacion || null }),
+        await api("proyectos-seguimiento?ot_id=" + ot.id, {
+          method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form),
         });
-        notify("ok", "Proyecto actualizado");
+        notify("ok", "OT " + ot.codigo + " actualizada");
       } else {
-        await api("proyectos-seguimiento", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ descripcion, fecha_inicio: fechaInicio, empresa_id: empresaId }),
+        const { ot: nueva } = await api("proyectos-seguimiento?ot=1", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...form, proyecto_id: proyectoId }),
         });
-        notify("ok", "Proyecto creado");
+        notify("ok", "OT " + nueva.codigo + " creada");
       }
       onSaved();
     } catch (e) {
@@ -2808,148 +3049,321 @@ function ProyectoModal({ editProyecto, empresaId, notify, onClose, onSaved, onCo
     }
   };
 
-  const agregarComentario = async () => {
-    if (!comentarioNuevo.trim()) return;
-    setEnviandoComentario(true);
+  const eliminar = async () => {
+    if (!window.confirm("¿Eliminar la OT " + ot.codigo + "? Dejará de verse en el proyecto.")) return;
     try {
-      const { comentario } = await api("proyectos-seguimiento?comentario=1", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ proyecto_id: editProyecto.id, texto: comentarioNuevo }),
-      });
-      setComentarios((c) => [...c, comentario]);
-      setComentarioNuevo("");
-      onComentario();
+      await api("proyectos-seguimiento?ot_id=" + ot.id, { method: "DELETE" });
+      notify("ok", "OT eliminada");
+      onSaved();
     } catch (e) {
       notify("err", e.message);
-    } finally {
-      setEnviandoComentario(false);
     }
   };
 
   return h("div", { className: "overlay", onClick: (e) => e.target === e.currentTarget && onClose() },
-    h("div", { className: "modal", style: { width: 460, maxHeight: "90vh", overflowY: "auto" } },
+    h("div", { className: "modal", style: { width: 640 } },
       h("div", { className: "modal-hdr" },
-        h("h3", null, isEdit ? "Editar Proyecto" : "Nuevo Proyecto"),
-        h("button", { className: "modal-close", onClick: onClose }, "×")
-      ),
-      isEdit
-        ? h(Field, { label: "Descripción" }, h("div", null, descripcion))
-        : h(Field, { label: "Descripción *" }, h("textarea", { rows: 2, value: descripcion, onChange: (e) => setDescripcion(e.target.value) })),
+        h("h3", null, isEdit ? "Orden de Trabajo " + ot.codigo : "Nueva Orden de Trabajo"),
+        h("button", { className: "modal-close", onClick: onClose }, "×")),
+      h(Field, { label: "Descripción del trabajo *" },
+        h("textarea", { rows: 2, value: form.descripcion, onChange: set("descripcion") })),
       h("div", { className: "grid2" },
-        isEdit
-          ? h(Field, { label: "Fecha Inicio" }, h("div", null, fmtDate(fechaInicio)))
-          : h(Field, { label: "Fecha Inicio *" }, h("input", { type: "date", value: fechaInicio, onChange: (e) => setFechaInicio(e.target.value) })),
-        isEdit && h(Field, { label: "Fecha Culminación" }, h("input", { type: "date", value: fechaCulminacion, onChange: (e) => setFechaCulminacion(e.target.value) })),
+        h(Field, { label: "Ubicación" }, h("input", { value: form.ubicacion, onChange: set("ubicacion") })),
+        h(Field, { label: "Responsable (quién hace el seguimiento)" }, h("input", { value: form.responsable, onChange: set("responsable") })),
+        h(EjecutorFields, { form, set, setForm, proveedores }),
       ),
-      isEdit && h(Field, { label: "Estado" },
-        h("label", { style: { display: "flex", alignItems: "center", gap: 8 } },
-          h("input", {
-            type: "checkbox", checked: finalizado,
+      h("div", { className: "grid2" },
+        h(Field, { label: "Fecha inicio" }, h("input", { type: "date", value: form.fecha_inicio, onChange: set("fecha_inicio") })),
+        h(Field, { label: "Fecha límite" }, h("input", { type: "date", value: form.fecha_limite, onChange: set("fecha_limite") })),
+        h(Field, { label: "Estado" },
+          h("select", {
+            value: form.estado,
             onChange: (e) => {
-              setFinalizado(e.target.checked);
-              if (e.target.checked && !fechaCulminacion) setFechaCulminacion(new Date().toISOString().slice(0, 10));
+              const estado = e.target.value;
+              setForm((f) => ({ ...f, estado, fecha_culminacion: estado === "Terminada" && !f.fecha_culminacion ? hoyISO() : f.fecha_culminacion }));
             },
-          }),
-          finalizado ? "Finalizado" : "En Ejecución",
-        )),
-      h("div", { style: { display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 16 } },
-        h("button", { className: "btn-ghost", onClick: onClose }, "Cancelar"),
-        h("button", { className: "btn-primary", onClick: guardar, disabled: saving }, saving ? "Guardando..." : "Guardar"),
+          }, ESTADOS_OT.map((t) => h("option", { key: t, value: t }, t)))),
+        h(Field, { label: "Fecha culminación" }, h("input", { type: "date", value: form.fecha_culminacion, onChange: set("fecha_culminacion") })),
       ),
+      h("div", { style: { display: "flex", justifyContent: "space-between", gap: 10, marginTop: 8 } },
+        isEdit ? h("button", { className: "btn-ghost", onClick: eliminar, style: { color: "var(--red)" } }, "Eliminar OT") : h("div"),
+        h("div", { style: { display: "flex", gap: 10 } },
+          h("button", { className: "btn-ghost", onClick: onClose }, "Cancelar"),
+          h("button", { className: "btn-primary", onClick: guardar, disabled: saving }, saving ? "Guardando..." : "Guardar"))),
       isEdit && h(React.Fragment, null,
-        h("div", { className: "section-lbl" }, "Comentarios"),
-        h("div", { style: { maxHeight: 220, overflowY: "auto", border: "1px solid var(--bdr)", borderRadius: 8, padding: "8px 10px", marginBottom: 10 } },
-          comentarios.length === 0
-            ? h("div", { className: "hint" }, "Todavía no hay comentarios.")
-            : comentarios.map((c) => h("div", { key: c.id, style: { marginBottom: 8, fontSize: 13 } },
-                h("div", { style: { color: "var(--txm)", fontSize: 11 } }, (c.usuario || "—") + " · " + new Date(c.created_at).toLocaleString("es-CL")),
-                h("div", null, c.texto),
-              )),
-        ),
-        h("div", { style: { display: "flex", gap: 8 } },
-          h("input", { value: comentarioNuevo, onChange: (e) => setComentarioNuevo(e.target.value), placeholder: "Agregar un comentario...", style: { flex: 1 } }),
-          h("button", { className: "btn-ghost", onClick: agregarComentario, disabled: enviandoComentario || !comentarioNuevo.trim() }, "Agregar"),
-        ),
-      ),
-    )
-  );
+        h("div", { className: "section-lbl" }, "Bitácora de la OT"),
+        h(BitacoraHilo, { entradas, alto: 220 }),
+        h(AgregarComentario, {
+          proyectoId, otId: ot.id, notify,
+          onAgregado: (entrada) => setEntradas((c) => [...c, entrada]),
+        })),
+    ));
 }
 
-function SeguimientoProyectosList({ proyectosSeguimiento, refreshProyectosSeguimiento, notify, empresaId }) {
-  const [showModal, setShowModal] = useState(false);
-  const [editando, setEditando] = useState(null);
-  const closeAny = () => { setShowModal(false); setEditando(null); };
+function KpiProyecto({ label, valor, sub, color }) {
+  return h("div", { className: "stat-item", style: { cursor: "default" } },
+    h("div", { className: "stat-num", style: { fontSize: 20, color: color || "var(--tx)" } }, valor),
+    h("div", { className: "stat-lbl" }, label),
+    sub && h("div", { className: "hint", style: { marginTop: 2 } }, sub));
+}
 
-  const toggleFinalizado = async (p, checked) => {
+function ProyectoFicha({ id, proveedores, usuarios, notify, onVolver }) {
+  const [data, setData] = useState(null);
+  const [tabFicha, setTabFicha] = useState("resumen");
+  const [form, setForm] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [otEditando, setOtEditando] = useState(null);
+  const [otNueva, setOtNueva] = useState(false);
+
+  const cargar = useCallback(() => {
+    return api("proyectos-seguimiento?id=" + id)
+      .then((d) => { setData(d); setForm(proyectoFormDesde(d.proyecto)); })
+      .catch((e) => notify("err", e.message));
+  }, [id, notify]);
+
+  useEffect(() => { cargar(); }, [cargar]);
+
+  if (!data || !form) {
+    return h("div", { className: "page fade-up" },
+      h("div", { className: "card" }, h("div", { style: { display: "flex", gap: 10, alignItems: "center" } }, h("span", { className: "spinner" }), "Cargando proyecto...")));
+  }
+
+  const p = data.proyecto;
+  const pct = pctConsumo(p);
+  const saldo = p.presupuesto_uf ? Number(p.presupuesto_uf) - (p.comprometido_uf || 0) : null;
+
+  const guardar = async () => {
+    if (!form.nombre.trim()) return notify("err", "Ingresa el nombre del proyecto");
+    if (!validarEjecutor(form, notify)) return;
+    setSaving(true);
     try {
       await api("proyectos-seguimiento?id=" + p.id, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ finalizado: checked }),
+        method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form),
       });
-      refreshProyectosSeguimiento();
+      notify("ok", "Proyecto actualizado");
+      await cargar();
     } catch (e) {
       notify("err", e.message);
+    } finally {
+      setSaving(false);
     }
   };
 
-  const eliminarProyecto = async (p) => {
-    if (!window.confirm("¿Eliminar este proyecto? Dejará de verse en la lista.")) return;
+  const eliminar = async () => {
+    if (!window.confirm("¿Eliminar el proyecto " + p.codigo + "? También dejará de aparecer en Nueva OC.")) return;
     try {
       await api("proyectos-seguimiento?id=" + p.id, { method: "DELETE" });
       notify("ok", "Proyecto eliminado");
-      refreshProyectosSeguimiento();
+      onVolver();
     } catch (e) {
       notify("err", e.message);
     }
   };
 
-  const columns = useMemo(() => [
-    { key: "fecha_inicio", label: "Fecha Inicio", render: (p) => fmtDate(p.fecha_inicio) },
-    { key: "descripcion", label: "Descripción", render: (p) => truncar(p.descripcion || "", 200) },
+  const hoy = hoyISO();
+  const otColumns = [
+    { key: "codigo", label: "Código", render: (o) => h("b", null, o.codigo) },
+    { key: "descripcion", label: "Descripción", render: (o) => truncar(o.descripcion || "", 320) },
+    { key: "ejecutor", label: "Ejecutor", sortValue: (o) => nombreEjecutor(o), render: (o) => nombreEjecutor(o) },
+    { key: "responsable", label: "Responsable", render: (o) => o.responsable || "—" },
+    { key: "fecha_inicio", label: "Inicio", render: (o) => fmtDate(o.fecha_inicio) },
     {
-      key: "finalizado", label: "Estado", sortable: false,
-      render: (p) => h("label", {
-        style: { display: "flex", alignItems: "center", gap: 6, cursor: "pointer" },
-        onClick: (e) => e.stopPropagation(),
+      key: "fecha_limite", label: "Fecha límite",
+      render: (o) => {
+        const vencida = o.fecha_limite && o.fecha_limite < hoy && (o.estado === "Pendiente" || o.estado === "En ejecución");
+        return h("span", { style: vencida ? { color: "var(--red)", fontWeight: 700 } : null }, fmtDate(o.fecha_limite) + (vencida ? " ⚠" : ""));
       },
-        h("input", { type: "checkbox", checked: !!p.finalizado, onChange: (e) => toggleFinalizado(p, e.target.checked) }),
-        p.finalizado ? "Finalizado" : "Ejecución"),
     },
-    { key: "fecha_culminacion", label: "Fecha Culminación", render: (p) => p.fecha_culminacion ? fmtDate(p.fecha_culminacion) : "—" },
-    {
-      key: "comentarios", label: "Comentarios", sortable: false,
-      render: (p) => "💬 " + ((p.seguimiento_proyectos_comentarios || []).length),
-    },
-    {
-      key: "eliminar", label: "", sortable: false,
-      render: (p) => h("button", {
-        className: "btn-ghost", title: "Eliminar", style: { padding: "4px 8px", fontSize: 12 },
-        onClick: (e) => { e.stopPropagation(); eliminarProyecto(p); },
-      }, "🗑️"),
-    },
-  ], []);
+    { key: "fecha_culminacion", label: "Culminación", render: (o) => fmtDate(o.fecha_culminacion) },
+    { key: "estado", label: "Estado", render: (o) => proyectoPill(o.estado) },
+    { key: "com", label: "Bitácora", sortable: false, render: (o) => "💬 " + data.bitacora.filter((b) => b.ot_id === o.id && b.tipo === "comentario").length },
+  ];
+
+  const ocColumns = [
+    { key: "numero_oc", label: "N° OC", render: (o) => h("b", null, o.numero_oc) },
+    { key: "fecha", label: "Fecha", render: (o) => fmtDate(o.fecha) },
+    { key: "proveedor", label: "Proveedor", render: (o) => truncar(o.proveedor || "—", 220) },
+    { key: "titulo", label: "Título", render: (o) => truncar(o.titulo || "—", 260) },
+    { key: "cuota", label: "Cuota", render: (o) => o.cuota || "—" },
+    { key: "estado", label: "Estado", render: (o) => estadoPill(o.estado) },
+    { key: "monto_neto", label: "Neto", sortValue: (o) => Number(o.monto_neto), render: (o) => fmtMontoMoneda(o.monto_neto, o.moneda) },
+    { key: "neto_uf", label: "Neto UF", sortValue: (o) => o.neto_uf ?? -1, render: (o) => fmtUF(o.neto_uf) },
+    { key: "valor_uf", label: "Valor UF usado", render: (o) => o.valor_uf ? fmtMoney(o.valor_uf) : "—" },
+  ];
+
+  const tabBtn = (key, label) => h("button", {
+    className: "nav-btn" + (tabFicha === key ? " active" : ""), onClick: () => setTabFicha(key),
+  }, label);
 
   return h("div", { className: "page fade-up" },
-    (showModal || editando) && h(ProyectoModal, {
-      editProyecto: editando, empresaId, notify,
-      onClose: closeAny,
-      onSaved: () => { refreshProyectosSeguimiento(); closeAny(); },
-      onComentario: refreshProyectosSeguimiento,
+    (otNueva || otEditando) && h(OtModal, {
+      ot: otEditando, proyectoId: p.id, proveedores, bitacora: data.bitacora, notify,
+      onClose: () => { setOtNueva(false); setOtEditando(null); },
+      onSaved: () => { setOtNueva(false); setOtEditando(null); cargar(); },
     }),
     h("div", { className: "card" },
-      h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 } },
-        h("h2", { style: { marginBottom: 0 } }, "Proyectos"),
-        h("button", { className: "btn-primary", style: { padding: "8px 18px" }, onClick: () => setShowModal(true) }, "+ Nuevo Proyecto"),
+      h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" } },
+        h("div", null,
+          h("button", { className: "btn-ghost", style: { padding: "5px 12px", fontSize: 11, marginBottom: 10 }, onClick: onVolver }, "← Volver a proyectos"),
+          h("div", { style: { fontSize: 11, fontWeight: 700, color: "var(--acc2)", letterSpacing: ".04em" } }, p.codigo),
+          h("h2", { style: { fontSize: 18, margin: "2px 0 6px" } }, p.nombre),
+          h("div", { style: { display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", color: "var(--txm)", fontSize: 12 } },
+            proyectoPill(p.estado_proyecto),
+            p.tipo && h("span", null, p.tipo),
+            p.ubicacion && h("span", null, "· 📍 " + p.ubicacion),
+            p.jefe_proyecto && h("span", null, "· Jefe: " + nombreUsuario(usuarios, p.jefe_proyecto)),
+            h("span", null, "· Ejecutor: " + nombreEjecutor(p))),
+        ),
       ),
+      h("div", { className: "stat-strip" },
+        h(KpiProyecto, { label: "Presupuesto", valor: fmtUF(p.presupuesto_uf, 0), sub: p.presupuesto_uf && data.uf_hoy ? "≈ " + fmtMoney(Math.round(p.presupuesto_uf * data.uf_hoy)) : null }),
+        h(KpiProyecto, { label: "Comprometido (OC aprobadas)", valor: fmtUF(p.comprometido_uf, 0), color: colorConsumo(pct), sub: pct !== null ? Math.round(pct) + "% del presupuesto" : "sin presupuesto cargado" }),
+        h(KpiProyecto, { label: "Facturado", valor: fmtUF(p.facturado_uf, 0) }),
+        h(KpiProyecto, { label: "Por aprobar", valor: fmtUF(p.por_aprobar_uf, 0), sub: "OC pendientes de aprobación" }),
+        h(KpiProyecto, { label: "Saldo", valor: fmtUF(saldo, 0), color: saldo !== null && saldo < 0 ? "var(--red)" : undefined }),
+        h(KpiProyecto, { label: "Avance físico", valor: (p.avance_pct || 0) + "%" }),
+      ),
+      p.sin_convertir > 0 && h("div", { className: "hint", style: { marginTop: 8, color: "var(--amber)" } },
+        "⚠ " + p.sin_convertir + " OC en otra moneda (no CLP/UF) no se incluyen en los totales."),
+    ),
+    h("div", { style: { display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" } },
+      tabBtn("resumen", "Resumen"),
+      tabBtn("ot", "Órdenes de Trabajo (" + data.ots.length + ")"),
+      tabBtn("oc", "OC vinculadas (" + data.ordenes.length + ")"),
+      tabBtn("bitacora", "Bitácora (" + data.bitacora.length + ")"),
+    ),
+    tabFicha === "resumen" && h("div", { className: "card" },
+      p.es_permanente && h("div", { className: "hint", style: { marginBottom: 10, fontSize: 11.5 } },
+        "Proyecto permanente: agrupa las OT operativas que no pertenecen a un proyecto específico. No se puede renombrar, cerrar ni eliminar."),
+      h(ProyectoForm, { form, setForm, proveedores, usuarios, esPermanente: p.es_permanente, ufHoy: data.uf_hoy }),
+      h("div", { style: { display: "flex", justifyContent: "space-between", gap: 10, marginTop: 8 } },
+        !p.es_permanente ? h("button", { className: "btn-ghost", onClick: eliminar, style: { color: "var(--red)" } }, "Eliminar proyecto") : h("div"),
+        h("div", { style: { display: "flex", gap: 10 } },
+          h("button", { className: "btn-ghost", onClick: () => setForm(proyectoFormDesde(p)) }, "Descartar cambios"),
+          h("button", { className: "btn-primary", onClick: guardar, disabled: saving }, saving ? "Guardando..." : "Guardar cambios"))),
+    ),
+    tabFicha === "ot" && h("div", { className: "card" },
+      h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 } },
+        h("h2", { style: { marginBottom: 0 } }, "Órdenes de Trabajo"),
+        h("button", { className: "btn-primary", style: { padding: "8px 18px" }, onClick: () => setOtNueva(true) }, "+ Nueva OT")),
       h(DataTable, {
-        columns, rows: proyectosSeguimiento, rowKey: (p) => p.id,
-        onRowClick: (p) => setEditando(p),
-        searchFields: ["descripcion"],
-        searchPlaceholder: "Buscar por descripción",
-        emptyText: "Aún no hay proyectos registrados",
+        columns: otColumns, rows: data.ots, rowKey: (o) => o.id,
+        onRowClick: (o) => setOtEditando(o),
+        searchFields: ["codigo", "descripcion", "responsable", "ejecutor_interno"],
+        searchPlaceholder: "Buscar por código, descripción o responsable",
+        emptyText: "Este proyecto aún no tiene Órdenes de Trabajo",
       }),
+    ),
+    tabFicha === "oc" && h("div", { className: "card" },
+      h("h2", null, "OC vinculadas a este proyecto"),
+      h("div", { className: "hint", style: { marginBottom: 12, fontSize: 11.5 } },
+        "Solo lectura — se gestionan en el menú Órdenes. Montos netos; las OC en CLP se convierten con el valor UF de la fecha de la OC. Comprometido = todo lo aprobado en adelante (no cuenta Borrador, Pendiente aprobación ni Anulado)."),
+      h(DataTable, {
+        columns: ocColumns, rows: data.ordenes, rowKey: (o) => o.id,
+        searchFields: ["numero_oc", "proveedor", "titulo", "estado"],
+        searchPlaceholder: "Buscar por N° OC, proveedor, título o estado",
+        emptyText: "No hay OC con este proyecto asignado",
+      }),
+    ),
+    tabFicha === "bitacora" && h("div", { className: "card" },
+      h("h2", null, "Bitácora del proyecto"),
+      h(BitacoraHilo, { entradas: data.bitacora, ots: data.ots, alto: 480 }),
+      h(AgregarComentario, {
+        proyectoId: p.id, notify,
+        onAgregado: (entrada) => setData((d) => ({ ...d, bitacora: [...d.bitacora, entrada] })),
+      }),
+    ),
+  );
+}
+
+function ProyectosPage({ empresaId, proveedores, notify }) {
+  const [proyectos, setProyectos] = useState(null);
+  const [ufHoy, setUfHoy] = useState(null);
+  const [usuarios, setUsuarios] = useState([]);
+  const [filtro, setFiltro] = useState("activos");
+  const [seleccionado, setSeleccionado] = useState(null);
+  const [showNuevo, setShowNuevo] = useState(false);
+
+  const cargar = useCallback(() => {
+    api("proyectos-seguimiento?empresa_id=" + empresaId)
+      .then((d) => { setProyectos(d.proyectos); setUfHoy(d.uf_hoy); })
+      .catch((e) => { notify("err", e.message); setProyectos([]); });
+  }, [empresaId, notify]);
+
+  useEffect(() => { setSeleccionado(null); setProyectos(null); cargar(); }, [cargar]);
+  useEffect(() => {
+    api("proyectos-seguimiento?usuarios=1").then((d) => setUsuarios(d.usuarios)).catch(() => {});
+  }, []);
+
+  if (seleccionado) {
+    return h(ProyectoFicha, {
+      id: seleccionado, proveedores, usuarios, notify,
+      onVolver: () => { setSeleccionado(null); cargar(); },
+    });
+  }
+
+  const todos = proyectos || [];
+  const cerrado = (p) => p.estado_proyecto === "Cerrado" || p.estado_proyecto === "Cancelado";
+  const filas = todos.filter((p) => filtro === "todos" ? true : filtro === "cerrados" ? cerrado(p) : !cerrado(p));
+  const activos = todos.filter((p) => !cerrado(p));
+  const sum = (arr, k) => arr.reduce((s, p) => s + Number(p[k] || 0), 0);
+  const hoy = hoyISO();
+
+  const columns = [
+    { key: "codigo", label: "Código", render: (p) => h("b", null, p.codigo) },
+    { key: "nombre", label: "Proyecto", render: (p) => h("span", null, truncar(p.nombre, 300), p.es_permanente && h("span", { className: "pill pill-draft", style: { marginLeft: 6, fontSize: 9 } }, "permanente")) },
+    { key: "ejecutor", label: "Ejecutor", sortValue: (p) => nombreEjecutor(p), render: (p) => truncar(nombreEjecutor(p), 200) },
+    { key: "jefe_proyecto", label: "Jefe", sortValue: (p) => nombreUsuario(usuarios, p.jefe_proyecto), render: (p) => nombreUsuario(usuarios, p.jefe_proyecto) },
+    { key: "presupuesto_uf", label: "Presupuesto", sortValue: (p) => Number(p.presupuesto_uf || 0), render: (p) => fmtUF(p.presupuesto_uf, 0) },
+    { key: "comprometido_uf", label: "Comprometido", sortValue: (p) => p.comprometido_uf || 0, render: (p) => fmtUF(p.comprometido_uf, 0) },
+    { key: "consumo", label: "% Ppto.", sortValue: (p) => pctConsumo(p) ?? -1, render: (p) => { const c = pctConsumo(p); return h(MiniBarra, { pct: c, color: colorConsumo(c) }); } },
+    { key: "avance_pct", label: "Avance", sortValue: (p) => p.avance_pct || 0, render: (p) => h(MiniBarra, { pct: p.avance_pct || 0 }) },
+    {
+      key: "fecha_termino_plan", label: "Término plan.",
+      render: (p) => {
+        const atrasado = p.fecha_termino_plan && p.fecha_termino_plan < hoy && !cerrado(p);
+        return h("span", { style: atrasado ? { color: "var(--red)", fontWeight: 700 } : null }, fmtDate(p.fecha_termino_plan) + (atrasado ? " ⚠" : ""));
+      },
+    },
+    { key: "estado_proyecto", label: "Estado", render: (p) => proyectoPill(p.estado_proyecto) },
+    { key: "ot_abiertas", label: "OT abiertas", sortValue: (p) => p.ot_abiertas, render: (p) => p.ot_abiertas + " / " + p.ot_total },
+  ];
+
+  const filtroBtn = (key, label) => h("button", {
+    className: "nav-btn" + (filtro === key ? " active" : ""), style: { padding: "5px 12px", fontSize: 11 }, onClick: () => setFiltro(key),
+  }, label);
+
+  return h("div", { className: "page fade-up" },
+    showNuevo && h(NuevoProyectoModal, {
+      empresaId, proveedores, usuarios, ufHoy, notify,
+      onClose: () => setShowNuevo(false),
+      onCreado: (proyecto) => { setShowNuevo(false); setSeleccionado(proyecto.id); },
+    }),
+    h("div", { className: "card" },
+      h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" } },
+        h("div", null,
+          h("h2", { style: { marginBottom: 2 } }, "Proyectos"),
+          h("div", { className: "hint" }, "Montos netos en UF, calculados desde las OC de cada proyecto" + (ufHoy ? " · UF hoy " + fmtMoney(ufHoy) : ""))),
+        h("button", { className: "btn-primary", style: { padding: "8px 18px" }, onClick: () => setShowNuevo(true) }, "+ Nuevo Proyecto")),
+      h("div", { className: "stat-strip" },
+        h(KpiProyecto, { label: "Proyectos activos", valor: activos.length }),
+        h(KpiProyecto, { label: "Presupuesto activos", valor: fmtUF(sum(activos, "presupuesto_uf"), 0) }),
+        h(KpiProyecto, { label: "Comprometido activos", valor: fmtUF(sum(activos, "comprometido_uf"), 0) }),
+        h(KpiProyecto, { label: "OT abiertas", valor: sum(todos, "ot_abiertas") }),
+      ),
+    ),
+    h("div", { className: "card" },
+      h("div", { style: { display: "flex", gap: 6, marginBottom: 12 } },
+        filtroBtn("activos", "Activos"), filtroBtn("cerrados", "Cerrados / Cancelados"), filtroBtn("todos", "Todos")),
+      proyectos === null
+        ? h("div", { style: { display: "flex", gap: 10, alignItems: "center" } }, h("span", { className: "spinner" }), "Cargando proyectos...")
+        : h(DataTable, {
+            columns, rows: filas, rowKey: (p) => p.id,
+            onRowClick: (p) => setSeleccionado(p.id),
+            searchFields: ["codigo", "nombre", "ubicacion", "solicitante", "ejecutor_interno"],
+            searchPlaceholder: "Buscar por código, nombre, ubicación o solicitante",
+            emptyText: "No hay proyectos en este filtro",
+          }),
     ),
   );
 }
@@ -3788,7 +4202,6 @@ function App({ currentUser, onLogout }) {
   const [usuarios, setUsuarios] = useState([]);
   const [proyectos, setProyectos] = useState([]);
   const [proyectosTodos, setProyectosTodos] = useState([]);
-  const [proyectosSeguimiento, setProyectosSeguimiento] = useState([]);
   const [catalogos, setCatalogos] = useState({ centrosCosto: [], cuentasContables: [], regiones: [], ciudades: [], listos: false });
   const [catalogosTodos, setCatalogosTodos] = useState({ centrosCosto: [], cuentasContables: [] });
   const [notif, notify] = useNotif();
@@ -3850,10 +4263,6 @@ function App({ currentUser, onLogout }) {
       .catch((e) => notify("err", e.message));
   }, [notify]);
 
-  const loadProyectosSeguimiento = useCallback(() => {
-    api("proyectos-seguimiento?empresa_id=" + empresaId).then((d) => setProyectosSeguimiento(d.proyectos)).catch((e) => notify("err", e.message));
-  }, [notify, empresaId]);
-
   useEffect(() => {
     loadEmpresas();
     loadProveedores();
@@ -3870,7 +4279,6 @@ function App({ currentUser, onLogout }) {
     loadRendiciones();
     loadCatalogos();
     loadProyectos();
-    loadProyectosSeguimiento();
   }, [empresaId]);
 
   useEffect(() => {
@@ -3925,7 +4333,7 @@ function App({ currentUser, onLogout }) {
     tab === "proveedores" && esPatagonica && h(ProveedoresList, { proveedores, catalogos, refreshProveedores: loadProveedores, notify, currentUser }),
     tab === "reportes" && esPatagonica && h(ReportesList, { ordenes, proveedores, notify }),
     tab === "administracion" && h(AdministracionList, { usuarios, refreshUsuarios: loadUsuarios, notify, currentUser, refreshOrdenes: loadOrdenes, refreshProveedores: loadProveedores, refreshEmpresas: loadEmpresas, empresaId, empresa: empresaActual, empresas, proyectosTodos, catalogosTodos, proveedores }),
-    tab === "proyectos-seguimiento" && esPatagonica && h(SeguimientoProyectosList, { proyectosSeguimiento, refreshProyectosSeguimiento: loadProyectosSeguimiento, notify, empresaId }),
+    tab === "proyectos-seguimiento" && esPatagonica && h(ProyectosPage, { empresaId, proveedores, notify }),
   );
 }
 
