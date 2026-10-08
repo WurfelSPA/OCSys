@@ -5,7 +5,7 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>OCFast — Órdenes de Compra Patagónica</title>
-<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
 <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
@@ -13,14 +13,18 @@
 <script src="https://unpkg.com/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
+/* Tokens del Sistema Visual Patagónica (subconjunto 02/03/04/05/07 — ver
+   facturacion-patagonica/DESIGN-SYSTEM.md). Los neutros se comparten entre
+   las 3 empresas; el acento (--acc/--acc2/--accl/--accbg) es el único que
+   cambia por empresa más abajo, para que siempre se note con cuál se trabaja. */
 :root{
-  --bg:#dbe1e8;--surf:#ffffff;--surf2:#eef1f4;--surf3:#e3e8ed;
-  --bdr:#c7d0d9;--bdr2:#b0bcc7;
-  --tx:#1a2230;--txm:#5c6b7a;--txd:#94a1ad;
-  --green:#0a7c4e;--gbg:#e8f5f0;
-  --amber:#a05c00;--abg:#fff8e8;
-  --red:#c0392b;--rbg:#fdf0ef;
-  --acc:#0e4a8f;--acc2:#1b7cb3;--accl:#0a3a70;--accbg:#e8f1fb;
+  --bg:#FBFAF6;--surf:#FFFFFF;--surf2:#F6F5F0;--surf3:#EFEEE9;
+  --bdr:#E6E4DC;--bdr2:#D9D7CE;
+  --tx:#1A1D2E;--txm:#6B6E7B;--txd:#9A9CA6;
+  --green:#1F7A4D;--gbg:#E8F3EC;
+  --amber:#B26B00;--abg:#FBF0DC;
+  --red:#B42318;--rbg:#FBE9E7;
+  --acc:#0F153E;--acc2:#2B7FA6;--accl:#0F153E;--accbg:#E4F4FB;
 }
 /* Campo Mar usa tonos verdes en vez de los azules de Patagonica, para que
    siempre sea obvio con que empresa se esta trabajando. */
@@ -33,13 +37,13 @@
 [data-empresa="3"]{
   --acc:#1a1f26;--acc2:#1ec65a;--accl:#10131a;--accbg:#e8f9ee;
 }
-html,body,#root{height:100%;font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--tx);font-size:13px}
+html,body,#root{height:100%;font-family:'Inter',sans-serif;font-variant-numeric:tabular-nums;background:var(--bg);color:var(--tx);font-size:13px}
 ::-webkit-scrollbar{width:4px;height:4px}
 ::-webkit-scrollbar-thumb{background:var(--bdr2);border-radius:4px}
-input,select,textarea{font-family:'DM Mono',monospace;background:var(--surf);border:1px solid var(--bdr);color:var(--tx);border-radius:8px;padding:8px 12px;font-size:12px;outline:none;transition:border 0.2s;width:100%}
+input,select,textarea{font-family:'Inter',sans-serif;font-variant-numeric:tabular-nums;background:var(--surf);border:1px solid var(--bdr2);color:var(--tx);border-radius:6px;padding:8px 12px;font-size:12px;outline:none;transition:border 0.2s;width:100%}
 input:focus,select:focus,textarea:focus{border-color:var(--acc2)}
 input::placeholder,textarea::placeholder{color:var(--txd)}
-button{font-family:'DM Sans',sans-serif;cursor:pointer;transition:all 0.15s}
+button{font-family:'Inter',sans-serif;cursor:pointer;transition:all 0.15s}
 @keyframes fadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
 @keyframes fadeIn{from{opacity:0}to{opacity:1}}
 @keyframes spin{to{transform:rotate(360deg)}}
@@ -58,11 +62,11 @@ button{font-family:'DM Sans',sans-serif;cursor:pointer;transition:all 0.15s}
 .header h1{font-size:19px;font-weight:800;color:var(--acc)}
 .header .sub{font-size:12px;color:var(--txm)}
 .nav{display:flex;gap:8px;padding:14px 24px 0}
-.nav-btn{background:transparent;border:1px solid var(--bdr);color:var(--txm);border-radius:8px;padding:8px 16px;font-size:12px;font-weight:600}
+.nav-btn{background:transparent;border:1px solid var(--bdr2);color:var(--txm);border-radius:6px;padding:8px 16px;font-size:12px;font-weight:600}
 .nav-btn:hover{background:var(--surf2);color:var(--tx)}
 .nav-btn.active{background:var(--acc);border-color:var(--acc);color:#fff}
 .page{padding:20px 24px 60px;max-width:1800px;margin:0 auto}
-.card{background:var(--surf);border:1px solid var(--bdr);border-radius:14px;padding:22px 24px;margin-bottom:18px}
+.card{background:var(--surf);border:1px solid var(--bdr);border-radius:8px;padding:22px 24px;margin-bottom:18px}
 .card h2{font-size:14px;font-weight:700;margin-bottom:14px;color:var(--tx)}
 .section-lbl{font-size:10px;font-weight:700;color:var(--acc);letter-spacing:.06em;text-transform:uppercase;margin:18px 0 10px;padding-top:14px;border-top:1px solid var(--bdr)}
 .section-lbl:first-child{margin-top:0;padding-top:0;border-top:none}
@@ -71,12 +75,12 @@ button{font-family:'DM Sans',sans-serif;cursor:pointer;transition:all 0.15s}
 .field{display:flex;flex-direction:column;gap:5px;margin-bottom:12px}
 .field label{font-size:11px;font-weight:600;color:var(--txm)}
 .row-inline{display:flex;gap:8px;align-items:flex-end}
-.btn-add{background:var(--accbg);border:1px solid var(--acc2);color:var(--acc);width:36px;height:36px;border-radius:8px;font-size:18px;font-weight:700;flex-shrink:0;display:flex;align-items:center;justify-content:center;line-height:1}
+.btn-add{background:var(--accbg);border:1px solid var(--acc2);color:var(--acc);width:30px;height:30px;border-radius:6px;font-size:18px;font-weight:700;flex-shrink:0;display:flex;align-items:center;justify-content:center;line-height:1}
 .btn-add:hover{background:var(--acc);color:#fff}
-.btn-primary{background:linear-gradient(135deg,var(--acc),var(--acc2));color:#fff;border:none;border-radius:10px;padding:11px 28px;font-size:13px;font-weight:700;letter-spacing:-0.2px;box-shadow:0 4px 20px rgba(14,74,143,0.25)}
+.btn-primary{background:linear-gradient(135deg,var(--acc),var(--acc2));color:#fff;border:none;border-radius:6px;padding:11px 28px;font-size:13px;font-weight:700;letter-spacing:-0.2px;box-shadow:0 4px 20px rgba(14,74,143,0.25)}
 .btn-primary:hover{opacity:0.9;transform:translateY(-1px)}
 .btn-primary:disabled{opacity:0.4;cursor:not-allowed;transform:none}
-.btn-ghost{background:transparent;border:1px solid var(--bdr);color:var(--txm);border-radius:8px;padding:10px 20px;font-size:12px;font-weight:600}
+.btn-ghost{background:transparent;border:1px solid var(--bdr2);color:var(--txm);border-radius:6px;padding:10px 20px;font-size:12px;font-weight:600}
 .btn-ghost:hover{background:var(--surf2)}
 .overlay{position:fixed;inset:0;background:rgba(10,20,35,0.5);display:flex;align-items:center;justify-content:center;z-index:100;padding:20px;overflow:auto}
 .modal{background:var(--surf);border:1px solid var(--bdr2);border-radius:18px;padding:26px 28px;width:680px;max-width:100%;max-height:90vh;overflow:auto;animation:fadeUp 0.25s cubic-bezier(.16,1,.3,1)}
