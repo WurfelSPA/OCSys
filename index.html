@@ -3459,7 +3459,7 @@ function fmtFechaHora(iso) {
 
 function NuevaOtModal({ empresaId, catalogo, currentUser, notify, onClose, onCreated }) {
   const [form, setForm] = useState({
-    titulo: "", categoria: "", elemento_afectado: "", cliente_id: "", ubicacion_id: "",
+    titulo: "", categoria: "", cliente_id: "", ubicacion_id: "",
     reportado_por: (currentUser && (currentUser.nombre ? (currentUser.nombre + " " + (currentUser.apellido || "")).trim() : currentUser.usuario)) || "",
   });
   const [saving, setSaving] = useState(false);
@@ -3547,8 +3547,6 @@ function NuevaOtModal({ empresaId, catalogo, currentUser, notify, onClose, onCre
         "Este cliente no tiene unidades vigentes asociadas"),
       form.cliente_id && opcionesUbicacion.length > 1 && h("div", { className: "hint" },
         "Este cliente tiene " + opcionesUbicacion.length + " unidades vigentes — selecciona la correcta"),
-      h(Field, { label: "Elemento afectado" },
-        h("input", { value: form.elemento_afectado, onChange: set("elemento_afectado"), placeholder: "Ej: Canaleta norte" })),
 
       h("div", { className: "section-lbl" }, "Seguimiento"),
       h(Field, { label: "Reportado por" },
