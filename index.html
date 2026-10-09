@@ -3535,10 +3535,13 @@ function NuevaOtModal({ empresaId, catalogo, currentUser, notify, onClose, onCre
   };
 
   return h("div", { className: "overlay", onClick: (e) => e.target === e.currentTarget && onClose() },
-    h("div", { className: "modal", style: { width: 520 } },
+    h("div", { className: "modal", style: { width: 560, maxHeight: "90vh", overflowY: "auto" } },
       h("div", { className: "modal-hdr" }, h("h3", null, "Registro rápido"), h("button", { className: "modal-close", onClick: onClose }, "×")),
+
       h(Field, { label: "¿Qué pasa? *" },
         h("input", { value: form.titulo, onChange: set("titulo"), placeholder: "Ej: Gotera activa sobre bodega" })),
+
+      h("div", { className: "section-lbl" }, "Ubicación"),
       h(Field, { label: "Cliente (opcional)" },
         h("select", { value: form.cliente_id, onChange: seleccionarCliente },
           h("option", { value: "" }, "— sin especificar —"),
@@ -3554,19 +3557,24 @@ function NuevaOtModal({ empresaId, catalogo, currentUser, notify, onClose, onCre
             opcionesUbicacion.map((o) => h("option", { key: o.value, value: o.value }, o.label))))),
       form.cliente_id && form.ubicacion_tipo === "unidad" && opcionesUbicacion.length === 0 && h("div", { className: "hint" },
         "Este cliente no tiene unidades vigentes asociadas"),
+
+      h("div", { className: "section-lbl" }, "Clasificación"),
       h("div", { className: "grid2" },
         h(Field, { label: "Categoría" },
           h("select", { value: form.categoria, onChange: set("categoria") },
             h("option", { value: "" }, "Selecciona"),
             OT_CATEGORIAS.map((c) => h("option", { key: c, value: c }, c)))),
-        h(Field, { label: "Elemento afectado" },
-          h("input", { value: form.elemento_afectado, onChange: set("elemento_afectado"), placeholder: "Ej: Canaleta norte" }))),
-      h(Field, { label: "Urgencia *" },
-        h("select", { value: form.urgencia, onChange: set("urgencia") },
-          h("option", { value: "" }, "Selecciona"),
-          OT_URGENCIAS.map((o) => h("option", { key: o, value: o }, o)))),
+        h(Field, { label: "Urgencia *" },
+          h("select", { value: form.urgencia, onChange: set("urgencia") },
+            h("option", { value: "" }, "Selecciona"),
+            OT_URGENCIAS.map((o) => h("option", { key: o, value: o }, o))))),
+      h(Field, { label: "Elemento afectado" },
+        h("input", { value: form.elemento_afectado, onChange: set("elemento_afectado"), placeholder: "Ej: Canaleta norte" })),
+
+      h("div", { className: "section-lbl" }, "Seguimiento"),
       h(Field, { label: "Reportado por" },
         h("input", { value: form.reportado_por, onChange: set("reportado_por"), placeholder: "Nombre de quien avisó" })),
+
       h("div", { style: { display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 16 } },
         h("button", { className: "btn-ghost", onClick: onClose }, "Cancelar"),
         h("button", { className: "btn-primary", onClick: submit, disabled: saving }, saving ? "Creando..." : "Crear OT")),
