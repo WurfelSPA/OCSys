@@ -3,3 +3,5 @@ node_modules
 .env
 .env.local
 .superpowers/
+*.mp4
+operaciones-patagonica-spec-beta.md
