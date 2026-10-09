@@ -2900,14 +2900,16 @@ function ProyectoForm({ form, setForm, proveedores, usuarios, esPermanente, ufHo
               setForm((f) => ({ ...f, nombre, sigla: sugerirSigla && !siglaManual ? sugerirSiglaProyecto(nombre) : f.sigla }));
             },
           }))),
-      h(Field, { label: "Sigla (código OT)" },
+      h(Field, { label: "Sigla (código de proyecto)" },
         h("input", {
           value: form.sigla, disabled: esPermanente, maxLength: 4, placeholder: "Ej: GL",
           onChange: (e) => { setSiglaManual(true); setForm((f) => ({ ...f, sigla: e.target.value.toUpperCase().replace(/[^A-Z]/g, "") })); },
         }),
         h("div", { className: "hint" }, codigoActual
-          ? (form.sigla && !esPermanente && codigoActual.indexOf("OT" + form.sigla + "-") !== 0 ? "Cambiará a OT" + form.sigla + codigoActual.slice(codigoActual.indexOf("-")) : "Código: " + codigoActual)
-          : "Código: OT" + (form.sigla || "??") + "-### (correlativo)")),
+          ? (form.sigla && !esPermanente && codigoActual.indexOf(form.sigla + "-PRY-") !== 0
+              ? "Cambiará a " + form.sigla + "-PRY-" + codigoActual.slice(codigoActual.lastIndexOf("-") + 1)
+              : "Código: " + codigoActual)
+          : "Código: " + (form.sigla || "??") + "-PRY-### (correlativo)")),
     ),
     h("div", { className: "grid3" },
       h(Field, { label: "Tipo" },

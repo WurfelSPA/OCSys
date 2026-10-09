@@ -27,15 +27,18 @@ Había colisión: en Proyectos, "OT" = el código del proyecto de capital (`OTPA
 nuevo, "OT" = un ticket de mantención — que es como se le llama realmente en el rubro. Se decide:
 
 - **OT queda libre para los tickets de mantención** (el uso real/natural del término).
-- El código de **proyecto de capital se renombra**: `{empresa}-OT-{n}` → `{empresa}-PRY-{n}`
-  (ej. `OTPA-001` → `PA-PRY-001`; Tarea `OTPA-001-02` → `PA-PRY-001-02`). Requiere tocar la
-  migración de triggers de Fase 1 de Proyectos (`docs/migrations/2026-10-09-codigo-ot-sigla.sql`)
-  y el código ya desplegado (`ProyectosPage`/`ProyectoFicha`/`OtModal`, `api/proyectos-seguimiento.js`).
+- El código de **proyecto de capital se renombra**: `{sigla}OT-{n}` → `{sigla}-PRY-{n}` — se
+  mantiene la sigla distintiva por proyecto que ya existe (GL = Glamping, CO = El Cortijo, PA/CM/EV
+  = empresa para "Mantención General"), solo cambia el "OT" de en medio por "PRY" (ej.
+  `OTGL-006` → `GL-PRY-006`, `OTPA-001` → `PA-PRY-001`; Tarea `OTPA-001-02` → `PA-PRY-001-02`).
+  Requiere tocar la migración de triggers de Fase 1 de Proyectos
+  (`docs/migrations/2026-10-09-codigo-ot-sigla.sql`, función `codigo_proyecto`) y el código ya
+  desplegado (`ProyectosPage`/`ProyectoFicha`/`OtModal`, `api/proyectos-seguimiento.js`).
 - **OT de mantención**: `OT-{n}`, correlativo **global** (todas las empresas), **sin año y sin
   prefijo de empresa** (ej. `OT-0034`) — a propósito distinto en forma de `{empresa}-OC-{n}` (las
   Órdenes de Compra), para que nunca se confundan por una sola letra (OC vs OT) cuando aparecen
   juntas (una OT de mantención puede generar una OC).
-- Las 3 familias de código conviven así: `PA-OC-00331` (OC) · `PA-PRY-001` (proyecto de capital)
+- Las 3 familias de código conviven así: `PA-OC-00331` (OC) · `GL-PRY-006` (proyecto de capital)
   · `OT-0034` (OT de mantención).
 
 ### Alcance multiempresa
@@ -215,7 +218,36 @@ antigüedad, SLA vencido, contrato por vencer. Cambiar la prioridad exige un mot
 
 Reutiliza `usuarios` + `rol_operaciones` (análogo a `nivel_aprobacion`): Coordinador (gestiona
 todo), Técnico (solo ve/actúa sobre sus OT asignadas), Administración (cierra OT y define cargo),
-Gerencia (solo lectura + aprueba gastos sobre el umbral).
+Gerencia (solo lectura + aprueba gastos sobre el umbral). **El menú "OT Mantención" lo ve
+cualquier usuario @patagonica.cl** (igual que Proyectos) — `rol_operaciones` solo acota qué puede
+*hacer* dentro, no si lo ve.
+
+## SLA contractual (actualizado — SÍ afecta el cálculo desde esta fase)
+
+`contrato_operaciones.sla_contractual` deja de ser texto libre informativo: pasa a ser
+`sla_respuesta_horas`/`sla_solucion_dias` (ambos nullable — null = usa el SLA estándar de la
+tabla 7.2). Al calcular `fecha_limite_respuesta`/`fecha_limite_solucion` de una OT, si el
+contrato del cliente afectado tiene un SLA propio **más exigente** (número menor) que el de la
+matriz estándar, prevalece el del contrato. Si hay varios clientes/contratos afectados, se usa el
+más exigente de todos.
+
+## Umbral de aprobación de gasto — ligado al presupuesto del área (actualizado)
+
+No es un solo valor global fijo: cada **Centro de Costo** (la misma tabla `centros_costo` que ya
+usan las OC) puede tener un `presupuesto_asignado_uf` opcional, que se va descontando a medida que
+se ejecuta (igual lógica de "Comprometido" que ya existe en Proyectos: suma de OC/costos de OT en
+cualquier estado salvo Borrador/Anulada). Regla de aprobación de gasto para una OT:
+
+- Si el Centro de Costo de la OT **tiene** presupuesto asignado: requiere aprobación de gerencia
+  si `costo_estimado` deja el saldo disponible del área en negativo (presupuesto − comprometido −
+  este costo < 0), **o** si supera el umbral global de todos modos (ver abajo) — lo que sea más
+  restrictivo.
+- Si el Centro de Costo **no tiene** presupuesto asignado: se usa solo el umbral global
+  ($500.000 por defecto, editable en Configuración).
+
+Esto es la base para que, a futuro, el presupuesto por área se use igual para las OC normales (no
+solo para OT de mantención) — por ahora se implementa el campo y la regla de aprobación en la OT,
+sin tocar el flujo de OC existente.
 
 ## Fuera de alcance de esta fase (confirmado con el usuario)
 
