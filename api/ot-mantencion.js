@@ -25,7 +25,27 @@ const CATEGORIAS = {
   "Plagas": { subcategorias: ["Roedores", "Insectos"], cargo: "Por definir" },
   "Solicitud de servicio": { subcategorias: ["Tarjetas o llaves", "Permiso de ingreso o mudanza", "Estacionamiento", "Certificados"], cargo: "No aplica" },
   "Reclamo de convivencia": { subcategorias: ["Ruido", "Mal uso de estacionamientos", "Vecinos"], cargo: "No aplica" },
+  "Otro": { subcategorias: [], cargo: "Por definir" },
 };
+
+// El campo "Impacto" ya no se pide en el Registro rápido: se deriva de la
+// categoría elegida (section 7.1 sigue usando impacto x urgencia -> prioridad).
+const CATEGORIA_IMPACTO = {
+  "Techumbre y filtraciones": "Operación afectada",
+  "Eléctrico": "Operación detenida",
+  "Iluminación exterior": "Sin impacto operativo",
+  "Agua y sanitario": "Operación detenida",
+  "Accesos y seguridad": "Seguridad de personas",
+  "Ascensores": "Operación detenida",
+  "Obra civil": "Operación afectada",
+  "Climatización": "Operación afectada",
+  "Incendio y emergencias": "Seguridad de personas",
+  "Áreas comunes y aseo": "Sin impacto operativo",
+  "Plagas": "Operación afectada",
+  "Solicitud de servicio": "Sin impacto operativo",
+  "Reclamo de convivencia": "Sin impacto operativo",
+};
+const CATEGORIA_IMPACTO_DEFAULT = "Operación afectada";
 
 // Matriz impacto x urgencia -> prioridad (seccion 7.1 del spec).
 const MATRIZ_PRIORIDAD = {
@@ -204,7 +224,7 @@ export default async function handler(req, res) {
           db.from("unidad").select("*, edificio!inner(sitio!inner(empresa_id))").eq("edificio.sitio.empresa_id", empresaId).order("codigo"),
           db.from("area_comun").select("*").order("codigo"),
           db.from("cliente_operaciones").select("*").order("razon_social"),
-          db.from("contrato_operaciones").select("*, cliente_operaciones(razon_social)").order("codigo"),
+          db.from("contrato_operaciones").select("*, cliente_operaciones(razon_social), contrato_unidad(unidad_id, desde, hasta)").order("codigo"),
         ]);
         for (const r of [sitios, edificios, unidades, areasComunes, clientes, contratos]) {
           if (r.error) return res.status(500).json({ error: r.error.message });
@@ -377,9 +397,10 @@ export default async function handler(req, res) {
       if (!empresaId) return res.status(400).json({ error: "empresa_id es obligatorio" });
       if (!body.titulo) return res.status(400).json({ error: "El título (qué pasa) es obligatorio" });
       if (!body.ubicacion_tipo || !body.ubicacion_id) return res.status(400).json({ error: "La ubicación es obligatoria" });
-      if (!body.impacto || !body.urgencia) return res.status(400).json({ error: "Impacto y urgencia son obligatorios" });
+      if (!body.urgencia) return res.status(400).json({ error: "La urgencia es obligatoria" });
 
-      const prioridad = calcularPrioridad(body.impacto, body.urgencia);
+      const impacto = body.impacto || CATEGORIA_IMPACTO[body.categoria] || CATEGORIA_IMPACTO_DEFAULT;
+      const prioridad = calcularPrioridad(impacto, body.urgencia);
       if (!prioridad) return res.status(400).json({ error: "Combinación de impacto/urgencia no válida" });
       const fechaReporte = body.fecha_reporte || new Date().toISOString();
       const { clienteIds, contratoIds, vacante } = await resolverClientesContratos(db, body.ubicacion_tipo, body.ubicacion_id, fechaReporte);
@@ -396,7 +417,7 @@ export default async function handler(req, res) {
         ubicacion_tipo: body.ubicacion_tipo, ubicacion_id: body.ubicacion_id,
         ubicaciones_adicionales: Array.isArray(body.ubicaciones_adicionales) ? body.ubicaciones_adicionales : [],
         clientes_afectados: clienteIds, contratos_afectados: contratoIds,
-        impacto: body.impacto, urgencia: body.urgencia, prioridad,
+        impacto, urgencia: body.urgencia, prioridad,
         estado: "Nueva", centro_costo_codigo: vacioANull(body.centro_costo_codigo),
         cargo: vacante ? "Arrendador" : (cat ? cat.cargo : "Por definir"),
         ...fechas,

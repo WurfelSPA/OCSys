@@ -3420,9 +3420,8 @@ function ProyectosPage({ empresaId, proveedores, notify }) {
 const OT_CATEGORIAS = [
   "Techumbre y filtraciones", "Eléctrico", "Iluminación exterior", "Agua y sanitario",
   "Accesos y seguridad", "Ascensores", "Obra civil", "Climatización",
-  "Incendio y emergencias", "Áreas comunes y aseo", "Plagas", "Solicitud de servicio", "Reclamo de convivencia",
+  "Incendio y emergencias", "Áreas comunes y aseo", "Plagas", "Solicitud de servicio", "Reclamo de convivencia", "Otro",
 ];
-const OT_IMPACTOS = ["Seguridad de personas", "Operación detenida", "Operación afectada", "Sin impacto operativo"];
 const OT_URGENCIAS = ["En curso", "Estable"];
 const OT_PRIORIDAD_COLOR = { P1: "var(--red)", P2: "var(--amber)", P3: "var(--acc)", P4: "var(--txd)" };
 const OT_TRANSICIONES = {
@@ -3451,13 +3450,29 @@ function fmtFechaHora(iso) {
   return new Date(iso).toLocaleString("es-CL", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
 
-function NuevaOtModal({ empresaId, catalogo, notify, onClose, onCreated }) {
+function NuevaOtModal({ empresaId, catalogo, currentUser, notify, onClose, onCreated }) {
   const [form, setForm] = useState({
-    titulo: "", categoria: "", elemento_afectado: "", ubicacion_tipo: "unidad", ubicacion_id: "",
-    impacto: "", urgencia: "", reportado_por: "",
+    titulo: "", categoria: "", elemento_afectado: "", cliente_id: "", ubicacion_tipo: "unidad", ubicacion_id: "",
+    urgencia: "", reportado_por: (currentUser && (currentUser.nombre ? (currentUser.nombre + " " + (currentUser.apellido || "")).trim() : currentUser.usuario)) || "",
   });
   const [saving, setSaving] = useState(false);
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  // Unidades vigentes del cliente elegido (via contrato_unidad), para acotar
+  // el selector de ubicación cuando el cliente tiene más de una.
+  const unidadIdsCliente = useMemo(() => {
+    if (!form.cliente_id) return null;
+    const hoy = new Date().toISOString().slice(0, 10);
+    const ids = new Set();
+    for (const c of catalogo.contratos || []) {
+      if (c.cliente_id !== form.cliente_id) continue;
+      for (const cu of c.contrato_unidad || []) {
+        if (cu.hasta && cu.hasta < hoy) continue;
+        ids.add(cu.unidad_id);
+      }
+    }
+    return ids;
+  }, [form.cliente_id, catalogo.contratos]);
 
   const opcionesUbicacion = useMemo(() => {
     const mapa = {
@@ -3466,18 +3481,41 @@ function NuevaOtModal({ empresaId, catalogo, notify, onClose, onCreated }) {
       sitio: (catalogo.sitios || []).map((s) => ({ value: s.id, label: s.codigo + " — " + s.nombre })),
       area_comun: (catalogo.areas_comunes || []).map((a) => ({ value: a.id, label: a.codigo + " — " + a.nombre })),
     };
-    return mapa[form.ubicacion_tipo] || [];
-  }, [form.ubicacion_tipo, catalogo]);
+    const opciones = mapa[form.ubicacion_tipo] || [];
+    if (form.ubicacion_tipo === "unidad" && unidadIdsCliente) {
+      return opciones.filter((o) => unidadIdsCliente.has(o.value));
+    }
+    return opciones;
+  }, [form.ubicacion_tipo, catalogo, unidadIdsCliente]);
+
+  const seleccionarCliente = (e) => {
+    const clienteId = e.target.value;
+    if (!clienteId) { setForm((f) => ({ ...f, cliente_id: "" })); return; }
+    const hoy = new Date().toISOString().slice(0, 10);
+    const ids = [];
+    for (const c of catalogo.contratos || []) {
+      if (c.cliente_id !== clienteId) continue;
+      for (const cu of c.contrato_unidad || []) {
+        if (cu.hasta && cu.hasta < hoy) continue;
+        ids.push(cu.unidad_id);
+      }
+    }
+    setForm((f) => ({
+      ...f, cliente_id: clienteId, ubicacion_tipo: "unidad",
+      ubicacion_id: ids.length === 1 ? ids[0] : "",
+    }));
+  };
 
   const submit = async () => {
     if (!form.titulo.trim()) return notify("err", "Describe qué pasa");
     if (!form.ubicacion_id) return notify("err", "Selecciona la ubicación");
-    if (!form.impacto || !form.urgencia) return notify("err", "Selecciona impacto y urgencia");
+    if (!form.urgencia) return notify("err", "Selecciona la urgencia");
     setSaving(true);
     try {
+      const { cliente_id, ...resto } = form;
       await api("ot-mantencion", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...form, empresa_id: empresaId }),
+        body: JSON.stringify({ ...resto, empresa_id: empresaId }),
       });
       notify("ok", "OT creada");
       onCreated();
@@ -3493,6 +3531,10 @@ function NuevaOtModal({ empresaId, catalogo, notify, onClose, onCreated }) {
       h("div", { className: "modal-hdr" }, h("h3", null, "Registro rápido"), h("button", { className: "modal-close", onClick: onClose }, "×")),
       h(Field, { label: "¿Qué pasa? *" },
         h("input", { value: form.titulo, onChange: set("titulo"), placeholder: "Ej: Gotera activa sobre bodega" })),
+      h(Field, { label: "Cliente (opcional)" },
+        h("select", { value: form.cliente_id, onChange: seleccionarCliente },
+          h("option", { value: "" }, "— sin especificar —"),
+          (catalogo.clientes || []).map((c) => h("option", { key: c.id, value: c.id }, c.razon_social)))),
       h("div", { className: "grid2" },
         h(Field, { label: "Tipo de ubicación" },
           h("select", { value: form.ubicacion_tipo, onChange: (e) => setForm((f) => ({ ...f, ubicacion_tipo: e.target.value, ubicacion_id: "" })) },
@@ -3502,6 +3544,8 @@ function NuevaOtModal({ empresaId, catalogo, notify, onClose, onCreated }) {
           h("select", { value: form.ubicacion_id, onChange: set("ubicacion_id") },
             h("option", { value: "" }, "Selecciona"),
             opcionesUbicacion.map((o) => h("option", { key: o.value, value: o.value }, o.label))))),
+      form.cliente_id && form.ubicacion_tipo === "unidad" && opcionesUbicacion.length === 0 && h("div", { className: "hint" },
+        "Este cliente no tiene unidades vigentes asociadas"),
       h("div", { className: "grid2" },
         h(Field, { label: "Categoría" },
           h("select", { value: form.categoria, onChange: set("categoria") },
@@ -3509,31 +3553,17 @@ function NuevaOtModal({ empresaId, catalogo, notify, onClose, onCreated }) {
             OT_CATEGORIAS.map((c) => h("option", { key: c, value: c }, c)))),
         h(Field, { label: "Elemento afectado" },
           h("input", { value: form.elemento_afectado, onChange: set("elemento_afectado"), placeholder: "Ej: Canaleta norte" }))),
-      h("div", { className: "grid2" },
-        h(Field, { label: "Impacto *" },
-          h("select", { value: form.impacto, onChange: set("impacto") },
-            h("option", { value: "" }, "Selecciona"),
-            OT_IMPACTOS.map((o) => h("option", { key: o, value: o }, o)))),
-        h(Field, { label: "Urgencia *" },
-          h("select", { value: form.urgencia, onChange: set("urgencia") },
-            h("option", { value: "" }, "Selecciona"),
-            OT_URGENCIAS.map((o) => h("option", { key: o, value: o }, o))))),
-      form.impacto && form.urgencia && h("div", { className: "hint" },
-        "Prioridad resultante: " + ((MATRIZ_PRIORIDAD_FRONT[form.impacto] || {})[form.urgencia] || "—")),
-      h(Field, { label: "Reportado por (opcional)" },
+      h(Field, { label: "Urgencia *" },
+        h("select", { value: form.urgencia, onChange: set("urgencia") },
+          h("option", { value: "" }, "Selecciona"),
+          OT_URGENCIAS.map((o) => h("option", { key: o, value: o }, o)))),
+      h(Field, { label: "Reportado por" },
         h("input", { value: form.reportado_por, onChange: set("reportado_por"), placeholder: "Nombre de quien avisó" })),
       h("div", { style: { display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 16 } },
         h("button", { className: "btn-ghost", onClick: onClose }, "Cancelar"),
         h("button", { className: "btn-primary", onClick: submit, disabled: saving }, saving ? "Creando..." : "Crear OT")),
     ));
 }
-
-const MATRIZ_PRIORIDAD_FRONT = {
-  "Seguridad de personas": { "En curso": "P1", "Estable": "P1" },
-  "Operación detenida": { "En curso": "P1", "Estable": "P2" },
-  "Operación afectada": { "En curso": "P2", "Estable": "P3" },
-  "Sin impacto operativo": { "En curso": "P3", "Estable": "P4" },
-};
 
 function OtDetalleModal({ data, usuariosOps, notify, onClose, onSaved }) {
   const { ot, bitacora, costos } = data;
@@ -3652,7 +3682,38 @@ function OtDetalleModal({ data, usuariosOps, notify, onClose, onSaved }) {
     ));
 }
 
+const MESA_SORT_COLS = [
+  { key: "prioridad", label: "Pri", getVal: (o) => o.prioridad || "" },
+  { key: "codigo", label: "Código", getVal: (o) => o.codigo || "" },
+  { key: "titulo", label: "Título", getVal: (o) => o.titulo || "" },
+  { key: "responsable", label: "Responsable", getVal: (o) => (o.usuarios ? o.usuarios.nombre + " " + o.usuarios.apellido : "") },
+  { key: "estado", label: "Estado", getVal: (o) => o.estado || "" },
+  { key: "fecha_limite_solucion", label: "SLA solución", getVal: (o) => o.fecha_limite_solucion || "" },
+];
+
 function MesaDeControl({ ots, cargando, expandido, setExpandido, onAbrir }) {
+  const [sortKey, setSortKey] = useState(null);
+  const [sortDir, setSortDir] = useState("asc");
+
+  const toggleSort = (key) => {
+    if (sortKey !== key) { setSortKey(key); setSortDir("asc"); }
+    else if (sortDir === "asc") setSortDir("desc");
+    else { setSortKey(null); setSortDir("asc"); }
+  };
+
+  const otsOrdenadas = useMemo(() => {
+    const col = MESA_SORT_COLS.find((c) => c.key === sortKey);
+    if (!col) return ots;
+    const copy = [...ots];
+    copy.sort((a, b) => {
+      const va = String(col.getVal(a)).toLowerCase(), vb = String(col.getVal(b)).toLowerCase();
+      if (va < vb) return sortDir === "asc" ? -1 : 1;
+      if (va > vb) return sortDir === "asc" ? 1 : -1;
+      return 0;
+    });
+    return copy;
+  }, [ots, sortKey, sortDir]);
+
   const indicadores = useMemo(() => {
     const abiertos = ots.filter((o) => !["Resuelta", "Cerrada", "Anulada"].includes(o.estado));
     const hoy = new Date().toISOString().slice(0, 10);
@@ -3678,8 +3739,12 @@ function MesaDeControl({ ots, cargando, expandido, setExpandido, onAbrir }) {
     ),
     h("div", { className: "table-scroll" },
       h("table", null,
-        h("thead", null, h("tr", null, h("th"), h("th", null, "Pri"), h("th", null, "Código"), h("th", null, "Título"), h("th", null, "Responsable"), h("th", null, "Estado"), h("th", null, "SLA solución"))),
-        h("tbody", null, ots.map((o) => h(React.Fragment, { key: o.id },
+        h("thead", null, h("tr", null, h("th"),
+          MESA_SORT_COLS.map((c) => h("th", {
+            key: c.key, onClick: () => toggleSort(c.key), style: { cursor: "pointer", userSelect: "none" },
+          }, c.label + (sortKey === c.key ? (sortDir === "asc" ? " ▲" : " ▼") : ""))),
+        )),
+        h("tbody", null, otsOrdenadas.map((o) => h(React.Fragment, { key: o.id },
           h("tr", { style: { cursor: "pointer", background: o.prioridad === "P1" ? "var(--rbg)" : undefined }, onClick: () => onAbrir(o.id) },
             h("td", { style: { width: 18 }, onClick: (e) => { e.stopPropagation(); setExpandido((x) => ({ ...x, [o.id]: !x[o.id] })); } }, expandido[o.id] ? "▾" : "▸"),
             h("td", null, h("b", { style: { color: OT_PRIORIDAD_COLOR[o.prioridad] } }, o.prioridad || "—")),
@@ -3803,7 +3868,7 @@ function CatalogoOperaciones({ empresaId, catalogo, notify, onChanged }) {
   );
 }
 
-function OtMantencionPage({ empresaId, notify }) {
+function OtMantencionPage({ empresaId, currentUser, notify }) {
   const [vista, setVista] = useState("mesa");
   const [ots, setOts] = useState([]);
   const [catalogo, setCatalogo] = useState({ sitios: [], edificios: [], unidades: [], areas_comunes: [], clientes: [], contratos: [] });
@@ -3832,7 +3897,7 @@ function OtMantencionPage({ empresaId, notify }) {
   };
 
   return h("div", { className: "page fade-up" },
-    nuevaOt && h(NuevaOtModal, { empresaId, catalogo, notify, onClose: () => setNuevaOt(false), onCreated: () => { setNuevaOt(false); cargarTodo(); } }),
+    nuevaOt && h(NuevaOtModal, { empresaId, catalogo, currentUser, notify, onClose: () => setNuevaOt(false), onCreated: () => { setNuevaOt(false); cargarTodo(); } }),
     otSel && h(OtDetalleModal, { data: otSel, usuariosOps, notify, onClose: () => setOtSel(null), onSaved: () => { abrirOt(otSel.ot.id); cargarTodo(); } }),
     h("div", { className: "card" },
       h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 10 } },
@@ -4816,7 +4881,7 @@ function App({ currentUser, onLogout }) {
     tab === "reportes" && esPatagonica && h(ReportesList, { ordenes, proveedores, notify }),
     tab === "administracion" && h(AdministracionList, { usuarios, refreshUsuarios: loadUsuarios, notify, currentUser, refreshOrdenes: loadOrdenes, refreshProveedores: loadProveedores, refreshEmpresas: loadEmpresas, empresaId, empresa: empresaActual, empresas, proyectosTodos, catalogosTodos, proveedores }),
     tab === "proyectos-seguimiento" && esPatagonica && h(ProyectosPage, { empresaId, proveedores, notify }),
-    tab === "ot-mantencion" && esPatagonica && h(OtMantencionPage, { empresaId, proveedores, notify }),
+    tab === "ot-mantencion" && esPatagonica && h(OtMantencionPage, { empresaId, currentUser, proveedores, notify }),
   );
 }
 
