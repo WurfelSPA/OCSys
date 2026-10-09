@@ -798,6 +798,10 @@ async function generarPdfOC(orden, proveedor, cuotas, empresa) {
 
   const pageH = doc.internal.pageSize.getHeight();
   doc.setFontSize(8); doc.setTextColor(150);
+  let yPie = pageH - 12;
+  if (orden.aprobado_por) { yPie -= 5; doc.text("Aprobado por: " + orden.aprobado_por, left, yPie); }
+  if (orden.solicitado_por) { yPie -= 5; doc.text("Solicitado por: " + orden.solicitado_por, left, yPie); }
+  doc.setFontSize(8); doc.setTextColor(150);
   doc.text("OCFast - " + nombreEmpresa + " © Todos los Derechos Reservados", left, pageH - 12);
   doc.text("1/1", right, pageH - 12, { align: "right" });
 
@@ -1323,7 +1327,7 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, proyectos, refres
   );
 }
 
-function OrdenAccionModal({ orden, tipo, onClose, onDone, notify, proveedores, empresa }) {
+function OrdenAccionModal({ orden, tipo, onClose, onDone, notify, proveedores, empresa, currentUser }) {
   const isAprobar = tipo === "aprobar";
   const isFacturar = tipo === "facturar";
   const isPagar = tipo === "pagar";
@@ -1419,6 +1423,10 @@ function OrdenAccionModal({ orden, tipo, onClose, onDone, notify, proveedores, e
     try {
       let payload;
       if (isAprobar) {
+        // El backend graba el aprobado_por real tomandolo de la sesion (ver
+        // api/ordenes.js); aqui solo se necesita el mismo nombre para
+        // imprimirlo en el PDF que se genera y sube ANTES de ese PUT.
+        const aprobadoPor = (currentUser && (currentUser.nombre ? (currentUser.nombre + " " + (currentUser.apellido || "")).trim() : currentUser.usuario)) || "";
         payload = { estado: "Aprobada" };
         // Solo las OC nativas de OCSys (sin numero_oc_acquisys) muestran el
         // HES en el PDF -- se genera aqui mismo, antes de aprobar, para que
@@ -1432,7 +1440,7 @@ function OrdenAccionModal({ orden, tipo, onClose, onDone, notify, proveedores, e
             // Desaprobar), se reutiliza el mismo -- solo se pide uno nuevo
             // la primera vez que se aprueba.
             const numeroHes = orden.numero_hes || (await api("ordenes?siguiente_hes=1&empresa_id=" + orden.empresa_id, { timeoutMs: 15000 })).numero_hes;
-            const pdfBlob = await generarPdfOC({ ...orden, numero_hes: numeroHes }, proveedor, orden.cuotas || [], empresa);
+            const pdfBlob = await generarPdfOC({ ...orden, numero_hes: numeroHes, aprobado_por: aprobadoPor }, proveedor, orden.cuotas || [], empresa);
             const pdfBase64 = await fileToBase64(new File([pdfBlob], "OC.pdf", { type: "application/pdf" }));
             const up = await api("upload", {
               method: "POST", headers: { "Content-Type": "application/json" },
@@ -2299,7 +2307,7 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
 
   return h("div", { className: "page fade-up" },
     accion && h(OrdenAccionModal, {
-      orden: accion.orden, tipo: accion.tipo, notify, proveedores, empresa,
+      orden: accion.orden, tipo: accion.tipo, notify, proveedores, empresa, currentUser,
       onClose: () => setAccion(null),
       onDone: () => { refreshOrdenes(); setAccion(null); },
     }),

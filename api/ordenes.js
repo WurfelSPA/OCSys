@@ -127,6 +127,9 @@ export default async function handler(req, res) {
         if (!session || session.nivel_aprobacion !== 1) {
           return res.status(403).json({ error: "No tienes nivel de aprobación para aprobar órdenes de compra" });
         }
+        // Igual que solicitado_por: se toma de la sesion, no de lo que mande
+        // el cliente -- se imprime en el PDF como pie de nota "Aprobado por".
+        fields.aprobado_por = ((session.nombre || "") + " " + (session.apellido || "")).trim() || session.usuario;
         // El cliente puede generar y enviar su propio numero_hes junto con
         // el PDF ya regenerado con ese mismo HES (para que el correo de
         // aprobacion salga con el PDF correcto desde el primer envio, sin
@@ -357,6 +360,10 @@ export default async function handler(req, res) {
       // bloqueo visual del campo "Proyecto" en Nueva OC (ver index.html).
       proyecto_id: (session && session.proyecto_id) ? session.proyecto_id : (body.proyecto_id || null),
       creado_por_usuario: session ? session.usuario : null,
+      // Igual que creado_por_usuario: se toma de la sesion (nombre y
+      // apellido reales de quien esta logeado), no de lo que mande el
+      // cliente -- se imprime en el PDF como pie de nota "Solicitado por".
+      solicitado_por: session ? ((session.nombre || "") + " " + (session.apellido || "")).trim() || session.usuario : null,
       proveedor_id: proveedorId,
       empresa_id: empresaId,
       fecha: body.fecha || undefined,
