@@ -3570,6 +3570,7 @@ function OtDetalleModal({ data, usuariosOps, notify, onClose, onSaved }) {
   const [costoReal, setCostoReal] = useState(ot.costo_real ?? "");
   const [cargoSel, setCargoSel] = useState(ot.cargo && ot.cargo !== "Por definir" ? ot.cargo : "");
   const [motivoPrioridad, setMotivoPrioridad] = useState("");
+  const [prioridadSel, setPrioridadSel] = useState(ot.prioridad || "");
   const [guardando, setGuardando] = useState(false);
 
   const put = async (campos) => {
@@ -3622,6 +3623,13 @@ function OtDetalleModal({ data, usuariosOps, notify, onClose, onSaved }) {
     }
   };
 
+  const cambiarPrioridad = () => {
+    if (!prioridadSel || prioridadSel === ot.prioridad) return;
+    if (!motivoPrioridad.trim()) return notify("err", "Ingresa el motivo del cambio de prioridad");
+    put({ prioridad: prioridadSel, prioridad_motivo_cambio: motivoPrioridad.trim() });
+    setMotivoPrioridad("");
+  };
+
   const transicionesValidas = OT_TRANSICIONES[ot.estado] || [];
 
   return h("div", { className: "overlay", onClick: (e) => e.target === e.currentTarget && onClose() },
@@ -3635,6 +3643,14 @@ function OtDetalleModal({ data, usuariosOps, notify, onClose, onSaved }) {
         ot.fecha_limite_solucion && h("span", { className: "hint" }, "SLA solución: " + fmtFechaHora(ot.fecha_limite_solucion)),
         ot.contratos_afectados && ot.contratos_afectados.length === 0 && h("span", { className: "hint", style: { color: "var(--amber)" } }, "Vacante / sin cliente"),
       ),
+      h("div", { className: "grid2" },
+        h(Field, { label: "Cambiar prioridad a" },
+          h("select", { value: prioridadSel, onChange: (e) => setPrioridadSel(e.target.value) },
+            ["P1", "P2", "P3", "P4"].map((p) => h("option", { key: p, value: p }, p)))),
+        h(Field, { label: "Motivo del cambio" },
+          h("input", { value: motivoPrioridad, onChange: (e) => setMotivoPrioridad(e.target.value), placeholder: "Por qué cambia la prioridad" }))),
+      prioridadSel !== ot.prioridad && h("div", { style: { display: "flex", justifyContent: "flex-end", marginBottom: 14 } },
+        h("button", { className: "btn-ghost", onClick: cambiarPrioridad, disabled: guardando || !motivoPrioridad.trim() }, "Aplicar cambio de prioridad")),
       h(Field, { label: "Responsable" },
         h("select", {
           value: ot.responsable_id || "",
