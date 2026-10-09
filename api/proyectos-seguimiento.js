@@ -20,7 +20,7 @@ const OC_POR_APROBAR = new Set(["Pendiente aprobación", "Pendiente"]);
 const OC_FACTURADA = new Set(["Facturada", "Factura Pendiente de Aprobación", "Factura Aprobada", "Completada", "Proceso de Pago", "Pagado"]);
 
 const CAMPOS_PROYECTO = [
-  "nombre", "tipo", "prioridad", "descripcion", "ubicacion", "solicitante", "jefe_proyecto",
+  "nombre", "sigla", "tipo", "prioridad", "descripcion", "ubicacion", "solicitante", "jefe_proyecto",
   "ejecutor_tipo", "ejecutor_proveedor_id", "ejecutor_interno", "presupuesto_uf",
   "fecha_inicio_plan", "fecha_termino_plan", "fecha_inicio_real", "fecha_termino_real",
   "estado_proyecto", "avance_pct",
@@ -51,6 +51,7 @@ function limpiarCampos(body, permitidos) {
     let v = vacioANull(typeof body[k] === "string" ? body[k].trim() : body[k]);
     if (k === "presupuesto_uf") v = v === null ? null : Number(v);
     if (k === "avance_pct") v = v === null ? 0 : Math.round(Number(v));
+    if (k === "sigla" && v !== null) v = String(v).toUpperCase();
     out[k] = v;
   }
   // Ejecutor: interno -> sin proveedor; contratista -> sin texto libre.
@@ -66,6 +67,10 @@ function validarCampos(f, estadosValidos, campoEstado) {
   }
   if (f.avance_pct !== undefined && (!isFinite(f.avance_pct) || f.avance_pct < 0 || f.avance_pct > 100)) {
     return "El avance debe estar entre 0 y 100";
+  }
+  // Sigla del codigo de proyecto (OT + sigla + correlativo, ej. OTGL-006).
+  if (f.sigla !== undefined && f.sigla !== null && !/^[A-Z]{2,4}$/.test(f.sigla)) {
+    return "La sigla debe tener entre 2 y 4 letras (sin tildes ni números)";
   }
   if (f[campoEstado] !== undefined && !estadosValidos.includes(f[campoEstado])) {
     return "Estado no válido";
@@ -237,7 +242,7 @@ export default async function handler(req, res) {
           .select(SELECT_OT)
           .single();
         if (error) return res.status(500).json({ error: error.message });
-        await registrarSistema(db, proyecto.id, data.id, "OT " + data.codigo + " creada", usuario);
+        await registrarSistema(db, proyecto.id, data.id, "Tarea " + data.codigo + " creada", usuario);
         return res.status(201).json({ ot: data });
       }
 
@@ -269,9 +274,9 @@ export default async function handler(req, res) {
       // Actualizar una OT; los cambios de estado quedan en la bitacora.
       if (req.query.ot_id) {
         const { data: actual } = await db.from("proyecto_ot").select("*").eq("id", req.query.ot_id).eq("activo", true).maybeSingle();
-        if (!actual) return res.status(404).json({ error: "OT no encontrada" });
+        if (!actual) return res.status(404).json({ error: "Tarea no encontrada" });
         const campos = limpiarCampos(body, CAMPOS_OT);
-        if (campos.descripcion === null) return res.status(400).json({ error: "La descripción es obligatoria" });
+        if (campos.descripcion === null) return res.status(400).json({ error: "La descripción de la tarea es obligatoria" });
         const errVal = validarCampos(campos, ESTADOS_OT, "estado") || await validarContratista(db, campos, actual);
         if (errVal) return res.status(400).json({ error: errVal });
         if (campos.estado === "Terminada" && !actual.fecha_culminacion && campos.fecha_culminacion === undefined) {
@@ -285,7 +290,7 @@ export default async function handler(req, res) {
           .single();
         if (error) return res.status(500).json({ error: error.message });
         if (campos.estado !== undefined && campos.estado !== actual.estado) {
-          await registrarSistema(db, actual.proyecto_id, actual.id, "OT " + actual.codigo + ": " + actual.estado + " → " + campos.estado, usuario);
+          await registrarSistema(db, actual.proyecto_id, actual.id, "Tarea " + actual.codigo + ": " + actual.estado + " → " + campos.estado, usuario);
         }
         return res.status(200).json({ ot: data });
       }
@@ -297,13 +302,16 @@ export default async function handler(req, res) {
       if (!actual) return res.status(404).json({ error: "Proyecto no encontrado" });
       const campos = limpiarCampos(body, CAMPOS_PROYECTO);
       if (actual.es_permanente) {
-        // Mantencion General es permanente: no se renombra ni se cierra.
+        // Mantencion General es permanente: no se renombra ni se cierra, y
+        // su sigla es la de la empresa (OTPA, OTCM, OTEV).
         delete campos.nombre;
+        delete campos.sigla;
         if (campos.estado_proyecto && !["En ejecución", "Pausado"].includes(campos.estado_proyecto)) {
           return res.status(400).json({ error: "Mantención General es permanente: no se puede cerrar ni cancelar" });
         }
       }
       if (campos.nombre === null) return res.status(400).json({ error: "El nombre del proyecto es obligatorio" });
+      if (campos.sigla === null) delete campos.sigla;
       if (campos.nombre && campos.nombre.toLowerCase() === "contenedor") return res.status(400).json({ error: "Ese nombre está reservado" });
       if (campos.estado_proyecto === null) delete campos.estado_proyecto;
       const errVal = validarCampos(campos, ESTADOS_PROYECTO, "estado_proyecto") || await validarContratista(db, campos, actual);
@@ -339,6 +347,10 @@ export default async function handler(req, res) {
       if (campos.nombre && campos.nombre !== actual.nombre) {
         cambios.push("Nombre: " + actual.nombre + " → " + campos.nombre);
       }
+      // El trigger recalcula el codigo (y el de sus tareas) si cambio la sigla.
+      if (data.codigo !== actual.codigo) {
+        cambios.push("Código: " + actual.codigo + " → " + data.codigo);
+      }
       for (const c of cambios) await registrarSistema(db, id, null, c, usuario);
       return res.status(200).json({ proyecto: data });
     }
@@ -347,13 +359,13 @@ export default async function handler(req, res) {
       // Eliminar (soft) una OT.
       if (req.query.ot_id) {
         const { data: actual } = await db.from("proyecto_ot").select("id, proyecto_id, codigo").eq("id", req.query.ot_id).eq("activo", true).maybeSingle();
-        if (!actual) return res.status(404).json({ error: "OT no encontrada" });
+        if (!actual) return res.status(404).json({ error: "Tarea no encontrada" });
         const { error } = await db
           .from("proyecto_ot")
           .update({ activo: false, eliminado_por: usuario, eliminado_en: new Date().toISOString(), updated_at: new Date().toISOString() })
           .eq("id", actual.id);
         if (error) return res.status(500).json({ error: error.message });
-        await registrarSistema(db, actual.proyecto_id, actual.id, "OT " + actual.codigo + " eliminada", usuario);
+        await registrarSistema(db, actual.proyecto_id, actual.id, "Tarea " + actual.codigo + " eliminada", usuario);
         return res.status(200).json({ ok: true });
       }
 
@@ -369,7 +381,7 @@ export default async function handler(req, res) {
         db.from("proyecto_ot").select("id", { count: "exact", head: true }).eq("proyecto_id", id).eq("activo", true),
       ]);
       if (nOc > 0) return res.status(400).json({ error: "El proyecto tiene OC asociadas: ciérralo o cancélalo en vez de eliminarlo" });
-      if (nOt > 0) return res.status(400).json({ error: "El proyecto tiene Órdenes de Trabajo: elimínalas primero o cancela el proyecto" });
+      if (nOt > 0) return res.status(400).json({ error: "El proyecto tiene tareas: elimínalas primero o cancela el proyecto" });
       const { error } = await db.from("proyectos").update({ activo: false, updated_at: new Date().toISOString() }).eq("id", id);
       if (error) return res.status(500).json({ error: error.message });
       return res.status(200).json({ ok: true });

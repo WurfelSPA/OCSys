@@ -41,17 +41,24 @@ bitácora se absorbe como Órdenes de Trabajo dentro de los proyectos.
 
 ## Códigos
 
-Correlativo por empresa, generado en la base (atómico, igual que OC/HES):
+**Actualizado 2026-10-09** (pedido del usuario): el proyecto ES la Orden de
+Trabajo. Las sub-órdenes pasan a llamarse "Tareas" en la interfaz.
 
 | Qué | Formato | Ejemplo |
 |---|---|---|
-| Proyecto | `{codigo_empresa}-PRY-{nnn}` | `PA-PRY-001` |
-| Orden de Trabajo | `{codigo_empresa}-OT-{nnnnn}` | `PA-OT-00001` |
+| Proyecto (OT) | `OT{sigla}-{nnn}` — correlativo **único global** (todas las empresas) | `OTGL-006` Glamping Refugio |
+| Tarea | `{codigo proyecto}-{nn}` — correlativo dentro del proyecto | `OTPA-001-02` |
 
-Se asignan por trigger `before insert` cuando `codigo` viene nulo, así un
-proyecto creado desde Nueva OC (api/proyectos.js, que no se toca) también
-recibe su código. "Contenedor" no recibe código (no es un proyecto real) y
-no se muestra en el menú Proyectos.
+- `sigla`: 2–4 letras. Se sugiere desde el nombre (2 primeras letras de la
+  primera palabra distintiva: Glamping → GL, Remodelación El Cortijo → CO) y
+  es editable; al cambiarla el código conserva su número y las tareas se
+  recodifican solas (triggers). Mantención General usa la sigla de la
+  empresa (OTPA, OTCM, OTEV) y no se edita.
+- Contador global en `contador_proyectos_ot`; triggers en
+  docs/migrations/2026-10-09-codigo-ot-sigla.sql. Un proyecto creado desde
+  Nueva OC (api/proyectos.js, que no se toca) también recibe sigla y código.
+- "Contenedor" no recibe código (no es un proyecto real) y no se muestra en
+  el menú Proyectos.
 
 ## Modelo de datos
 

@@ -2769,7 +2769,8 @@ function ConfiguracionCorreos({ empresa, notify, refreshEmpresas }) {
 
 // ===== Menú Proyectos (Fase 1) =====
 // Ficha de proyecto sobre el catálogo `proyectos` (el mismo de Nueva OC) +
-// Órdenes de Trabajo + bitácora. Sin aprobaciones propias: el gasto sale de
+// tareas + bitácora. El proyecto ES la Orden de Trabajo (OTGL-006) y sus
+// tareas cuelgan de él (OTGL-006-01). Sin aprobaciones propias: el gasto sale de
 // las OC del proyecto, convertido a UF (neto). Ver
 // docs/superpowers/specs/2026-10-08-proyectos-fase1-design.md.
 const ESTADOS_PROYECTO = ["Planificado", "En ejecución", "Pausado", "En recepción", "Cerrado", "Cancelado"];
@@ -2789,6 +2790,19 @@ function proyectoPill(estado) {
 function fmtUF(v, decimales) {
   if (v === null || v === undefined || v === "" || isNaN(Number(v))) return "—";
   return "UF " + Number(v).toLocaleString("es-CL", { maximumFractionDigits: decimales === undefined ? 2 : decimales });
+}
+
+// Misma regla que la función sugerir_sigla_proyecto de la BD: 2 primeras
+// letras de la primera palabra distintiva (Glamping -> GL, Remodelación El
+// Cortijo -> CO, Habilitación Edificio 57 -> ED).
+const SIGLA_STOP = ["EL", "LA", "LOS", "LAS", "DE", "DEL", "Y", "EN", "AL", "UN", "UNA", "PROYECTO", "OBRA", "OBRAS",
+  "REMODELACION", "HABILITACION", "MANTENCION", "CONSTRUCCION", "INSTALACION", "AMPLIACION", "REPARACION", "MEJORAMIENTO"];
+function sugerirSiglaProyecto(nombre) {
+  const v = (nombre || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
+  const w = v.split(/[^A-Z0-9]+/).find((x) => x.length >= 2 && /^[A-Z]/.test(x) && !SIGLA_STOP.includes(x));
+  if (w) return w.slice(0, 2);
+  const letras = v.replace(/[^A-Z]/g, "");
+  return letras.length >= 2 ? letras.slice(0, 2) : "";
 }
 
 function hoyISO() {
@@ -2834,7 +2848,7 @@ function nombreUsuario(usuarios, correo) {
 function proyectoFormDesde(p) {
   const v = (k) => (p && p[k] !== null && p[k] !== undefined ? p[k] : "");
   return {
-    nombre: v("nombre"), tipo: v("tipo"), prioridad: v("prioridad"), descripcion: v("descripcion"),
+    nombre: v("nombre"), sigla: v("sigla"), tipo: v("tipo"), prioridad: v("prioridad"), descripcion: v("descripcion"),
     ubicacion: v("ubicacion"), solicitante: v("solicitante"), jefe_proyecto: v("jefe_proyecto"),
     ejecutor_tipo: v("ejecutor_tipo"), ejecutor_proveedor_id: v("ejecutor_proveedor_id"), ejecutor_interno: v("ejecutor_interno"),
     presupuesto_uf: v("presupuesto_uf"),
@@ -2845,7 +2859,7 @@ function proyectoFormDesde(p) {
 }
 
 // Selector de ejecutor: interno (texto libre) o contratista (obligatorio
-// desde el catálogo de proveedores). Lo usan la ficha del proyecto y la OT.
+// desde el catálogo de proveedores). Lo usan la ficha del proyecto y la tarea.
 function EjecutorFields({ form, set, setForm, proveedores }) {
   return h(React.Fragment, null,
     h(Field, { label: "Ejecutor" },
@@ -2869,13 +2883,32 @@ function EjecutorFields({ form, set, setForm, proveedores }) {
   );
 }
 
-function ProyectoForm({ form, setForm, proveedores, usuarios, esPermanente, ufHoy }) {
+function ProyectoForm({ form, setForm, proveedores, usuarios, esPermanente, ufHoy, sugerirSigla, codigoActual }) {
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  const [siglaManual, setSiglaManual] = useState(false);
   const estados = esPermanente ? ["En ejecución", "Pausado"] : ESTADOS_PROYECTO;
   return h("div", null,
     h("div", { className: "section-lbl" }, "Identificación"),
-    h(Field, { label: "Nombre del proyecto *" },
-      h("input", { value: form.nombre, onChange: set("nombre"), disabled: esPermanente, placeholder: "Ej: Remodelación oficinas piso 2" })),
+    h("div", { className: "grid3" },
+      h("div", { style: { gridColumn: "span 2" } },
+        h(Field, { label: "Nombre del proyecto *" },
+          h("input", {
+            value: form.nombre, disabled: esPermanente, placeholder: "Ej: Remodelación oficinas piso 2",
+            // Al crear, la sigla se sugiere sola desde el nombre hasta que se edite a mano.
+            onChange: (e) => {
+              const nombre = e.target.value;
+              setForm((f) => ({ ...f, nombre, sigla: sugerirSigla && !siglaManual ? sugerirSiglaProyecto(nombre) : f.sigla }));
+            },
+          }))),
+      h(Field, { label: "Sigla (código OT)" },
+        h("input", {
+          value: form.sigla, disabled: esPermanente, maxLength: 4, placeholder: "Ej: GL",
+          onChange: (e) => { setSiglaManual(true); setForm((f) => ({ ...f, sigla: e.target.value.toUpperCase().replace(/[^A-Z]/g, "") })); },
+        }),
+        h("div", { className: "hint" }, codigoActual
+          ? (form.sigla && !esPermanente && codigoActual.indexOf("OT" + form.sigla + "-") !== 0 ? "Cambiará a OT" + form.sigla + codigoActual.slice(codigoActual.indexOf("-")) : "Código: " + codigoActual)
+          : "Código: OT" + (form.sigla || "??") + "-### (correlativo)")),
+    ),
     h("div", { className: "grid3" },
       h(Field, { label: "Tipo" },
         h("select", { value: form.tipo, onChange: set("tipo") },
@@ -2923,6 +2956,10 @@ function ProyectoForm({ form, setForm, proveedores, usuarios, esPermanente, ufHo
 }
 
 function validarEjecutor(form, notify) {
+  if (form.sigla && !/^[A-Z]{2,4}$/.test(form.sigla)) {
+    notify("err", "La sigla debe tener entre 2 y 4 letras");
+    return false;
+  }
   if (form.ejecutor_tipo === "contratista" && !form.ejecutor_proveedor_id) {
     notify("err", "Selecciona el contratista desde el catálogo de proveedores");
     return false;
@@ -2956,8 +2993,8 @@ function NuevoProyectoModal({ empresaId, proveedores, usuarios, ufHoy, notify, o
         h("h3", null, "Nuevo Proyecto"),
         h("button", { className: "modal-close", onClick: onClose }, "×")),
       h("div", { className: "hint", style: { marginBottom: 12, fontSize: 11.5 } },
-        "El código (ej. PA-PRY-004) se asigna solo. El proyecto quedará disponible también en el campo \"Proyecto\" de Nueva OC."),
-      h(ProyectoForm, { form, setForm, proveedores, usuarios, esPermanente: false, ufHoy }),
+        "El código de la Orden de Trabajo (OT + sigla + correlativo, ej. OTGL-006) se asigna solo al crear. El proyecto quedará disponible también en el campo \"Proyecto\" de Nueva OC."),
+      h(ProyectoForm, { form, setForm, proveedores, usuarios, esPermanente: false, ufHoy, sugerirSigla: true }),
       h("div", { style: { display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 8 } },
         h("button", { className: "btn-ghost", onClick: onClose }, "Cancelar"),
         h("button", { className: "btn-primary", onClick: guardar, disabled: saving }, saving ? "Guardando..." : "Crear proyecto")),
@@ -2976,7 +3013,7 @@ function otFormDesde(ot) {
 
 // Hilo de bitácora (comentarios + eventos automáticos del sistema).
 function BitacoraHilo({ entradas, ots, alto }) {
-  const codigoOt = (id) => { const o = (ots || []).find((x) => x.id === id); return o ? o.codigo : "OT"; };
+  const codigoOt = (id) => { const o = (ots || []).find((x) => x.id === id); return o ? o.codigo : "Tarea"; };
   return h("div", { style: { maxHeight: alto || 360, overflowY: "auto", border: "1px solid var(--bdr)", borderRadius: 8, padding: "10px 12px", marginBottom: 10, background: "var(--surf)" } },
     entradas.length === 0
       ? h("div", { className: "hint" }, "Todavía no hay registros.")
@@ -3025,7 +3062,7 @@ function OtModal({ ot, proyectoId, proveedores, bitacora, notify, onClose, onSav
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
   const guardar = async () => {
-    if (!form.descripcion.trim()) return notify("err", "Ingresa la descripción de la OT");
+    if (!form.descripcion.trim()) return notify("err", "Ingresa la descripción de la tarea");
     if (!validarEjecutor(form, notify)) return;
     setSaving(true);
     try {
@@ -3033,13 +3070,13 @@ function OtModal({ ot, proyectoId, proveedores, bitacora, notify, onClose, onSav
         await api("proyectos-seguimiento?ot_id=" + ot.id, {
           method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form),
         });
-        notify("ok", "OT " + ot.codigo + " actualizada");
+        notify("ok", "Tarea " + ot.codigo + " actualizada");
       } else {
         const { ot: nueva } = await api("proyectos-seguimiento?ot=1", {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ ...form, proyecto_id: proyectoId }),
         });
-        notify("ok", "OT " + nueva.codigo + " creada");
+        notify("ok", "Tarea " + nueva.codigo + " creada");
       }
       onSaved();
     } catch (e) {
@@ -3050,10 +3087,10 @@ function OtModal({ ot, proyectoId, proveedores, bitacora, notify, onClose, onSav
   };
 
   const eliminar = async () => {
-    if (!window.confirm("¿Eliminar la OT " + ot.codigo + "? Dejará de verse en el proyecto.")) return;
+    if (!window.confirm("¿Eliminar la tarea " + ot.codigo + "? Dejará de verse en el proyecto.")) return;
     try {
       await api("proyectos-seguimiento?ot_id=" + ot.id, { method: "DELETE" });
-      notify("ok", "OT eliminada");
+      notify("ok", "Tarea eliminada");
       onSaved();
     } catch (e) {
       notify("err", e.message);
@@ -3063,7 +3100,7 @@ function OtModal({ ot, proyectoId, proveedores, bitacora, notify, onClose, onSav
   return h("div", { className: "overlay", onClick: (e) => e.target === e.currentTarget && onClose() },
     h("div", { className: "modal", style: { width: 640 } },
       h("div", { className: "modal-hdr" },
-        h("h3", null, isEdit ? "Orden de Trabajo " + ot.codigo : "Nueva Orden de Trabajo"),
+        h("h3", null, isEdit ? "Tarea " + ot.codigo : "Nueva tarea"),
         h("button", { className: "modal-close", onClick: onClose }, "×")),
       h(Field, { label: "Descripción del trabajo *" },
         h("textarea", { rows: 2, value: form.descripcion, onChange: set("descripcion") })),
@@ -3086,12 +3123,12 @@ function OtModal({ ot, proyectoId, proveedores, bitacora, notify, onClose, onSav
         h(Field, { label: "Fecha culminación" }, h("input", { type: "date", value: form.fecha_culminacion, onChange: set("fecha_culminacion") })),
       ),
       h("div", { style: { display: "flex", justifyContent: "space-between", gap: 10, marginTop: 8 } },
-        isEdit ? h("button", { className: "btn-ghost", onClick: eliminar, style: { color: "var(--red)" } }, "Eliminar OT") : h("div"),
+        isEdit ? h("button", { className: "btn-ghost", onClick: eliminar, style: { color: "var(--red)" } }, "Eliminar tarea") : h("div"),
         h("div", { style: { display: "flex", gap: 10 } },
           h("button", { className: "btn-ghost", onClick: onClose }, "Cancelar"),
           h("button", { className: "btn-primary", onClick: guardar, disabled: saving }, saving ? "Guardando..." : "Guardar"))),
       isEdit && h(React.Fragment, null,
-        h("div", { className: "section-lbl" }, "Bitácora de la OT"),
+        h("div", { className: "section-lbl" }, "Bitácora de la tarea"),
         h(BitacoraHilo, { entradas, alto: 220 }),
         h(AgregarComentario, {
           proyectoId, otId: ot.id, notify,
@@ -3228,14 +3265,14 @@ function ProyectoFicha({ id, proveedores, usuarios, notify, onVolver }) {
     ),
     h("div", { style: { display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" } },
       tabBtn("resumen", "Resumen"),
-      tabBtn("ot", "Órdenes de Trabajo (" + data.ots.length + ")"),
+      tabBtn("ot", "Tareas (" + data.ots.length + ")"),
       tabBtn("oc", "OC vinculadas (" + data.ordenes.length + ")"),
       tabBtn("bitacora", "Bitácora (" + data.bitacora.length + ")"),
     ),
     tabFicha === "resumen" && h("div", { className: "card" },
       p.es_permanente && h("div", { className: "hint", style: { marginBottom: 10, fontSize: 11.5 } },
-        "Proyecto permanente: agrupa las OT operativas que no pertenecen a un proyecto específico. No se puede renombrar, cerrar ni eliminar."),
-      h(ProyectoForm, { form, setForm, proveedores, usuarios, esPermanente: p.es_permanente, ufHoy: data.uf_hoy }),
+        "Proyecto permanente: agrupa las tareas operativas que no pertenecen a un proyecto específico. No se puede renombrar, cerrar ni eliminar."),
+      h(ProyectoForm, { form, setForm, proveedores, usuarios, esPermanente: p.es_permanente, ufHoy: data.uf_hoy, codigoActual: p.codigo }),
       h("div", { style: { display: "flex", justifyContent: "space-between", gap: 10, marginTop: 8 } },
         !p.es_permanente ? h("button", { className: "btn-ghost", onClick: eliminar, style: { color: "var(--red)" } }, "Eliminar proyecto") : h("div"),
         h("div", { style: { display: "flex", gap: 10 } },
@@ -3244,14 +3281,14 @@ function ProyectoFicha({ id, proveedores, usuarios, notify, onVolver }) {
     ),
     tabFicha === "ot" && h("div", { className: "card" },
       h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 } },
-        h("h2", { style: { marginBottom: 0 } }, "Órdenes de Trabajo"),
-        h("button", { className: "btn-primary", style: { padding: "8px 18px" }, onClick: () => setOtNueva(true) }, "+ Nueva OT")),
+        h("h2", { style: { marginBottom: 0 } }, "Tareas"),
+        h("button", { className: "btn-primary", style: { padding: "8px 18px" }, onClick: () => setOtNueva(true) }, "+ Nueva tarea")),
       h(DataTable, {
         columns: otColumns, rows: data.ots, rowKey: (o) => o.id,
         onRowClick: (o) => setOtEditando(o),
         searchFields: ["codigo", "descripcion", "responsable", "ejecutor_interno"],
         searchPlaceholder: "Buscar por código, descripción o responsable",
-        emptyText: "Este proyecto aún no tiene Órdenes de Trabajo",
+        emptyText: "Este proyecto aún no tiene tareas",
       }),
     ),
     tabFicha === "oc" && h("div", { className: "card" },
@@ -3326,7 +3363,7 @@ function ProyectosPage({ empresaId, proveedores, notify }) {
       },
     },
     { key: "estado_proyecto", label: "Estado", render: (p) => proyectoPill(p.estado_proyecto) },
-    { key: "ot_abiertas", label: "OT abiertas", sortValue: (p) => p.ot_abiertas, render: (p) => p.ot_abiertas + " / " + p.ot_total },
+    { key: "ot_abiertas", label: "Tareas abiertas", sortValue: (p) => p.ot_abiertas, render: (p) => p.ot_abiertas + " / " + p.ot_total },
   ];
 
   const filtroBtn = (key, label) => h("button", {
@@ -3349,7 +3386,7 @@ function ProyectosPage({ empresaId, proveedores, notify }) {
         h(KpiProyecto, { label: "Proyectos activos", valor: activos.length }),
         h(KpiProyecto, { label: "Presupuesto activos", valor: fmtUF(sum(activos, "presupuesto_uf"), 0) }),
         h(KpiProyecto, { label: "Comprometido activos", valor: fmtUF(sum(activos, "comprometido_uf"), 0) }),
-        h(KpiProyecto, { label: "OT abiertas", valor: sum(todos, "ot_abiertas") }),
+        h(KpiProyecto, { label: "Tareas abiertas", valor: sum(todos, "ot_abiertas") }),
       ),
     ),
     h("div", { className: "card" },
