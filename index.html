@@ -3430,7 +3430,6 @@ const OT_CATEGORIAS = [
   "Accesos y seguridad", "Ascensores", "Obra civil", "Climatización",
   "Incendio y emergencias", "Áreas comunes y aseo", "Plagas", "Solicitud de servicio", "Reclamo de convivencia", "Otro",
 ];
-const OT_URGENCIAS = ["En curso", "Estable"];
 const OT_PRIORIDAD_COLOR = { P1: "var(--red)", P2: "var(--amber)", P3: "var(--acc)", P4: "var(--txd)" };
 const OT_TRANSICIONES = {
   "Nueva": ["Asignada", "Anulada"],
@@ -3460,14 +3459,15 @@ function fmtFechaHora(iso) {
 
 function NuevaOtModal({ empresaId, catalogo, currentUser, notify, onClose, onCreated }) {
   const [form, setForm] = useState({
-    titulo: "", categoria: "", elemento_afectado: "", cliente_id: "", ubicacion_tipo: "unidad", ubicacion_id: "",
-    urgencia: "", reportado_por: (currentUser && (currentUser.nombre ? (currentUser.nombre + " " + (currentUser.apellido || "")).trim() : currentUser.usuario)) || "",
+    titulo: "", categoria: "", elemento_afectado: "", cliente_id: "", ubicacion_id: "",
+    reportado_por: (currentUser && (currentUser.nombre ? (currentUser.nombre + " " + (currentUser.apellido || "")).trim() : currentUser.usuario)) || "",
   });
   const [saving, setSaving] = useState(false);
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
   // Unidades vigentes del cliente elegido (via contrato_unidad), para acotar
-  // el selector de ubicación cuando el cliente tiene más de una.
+  // el selector de ubicación cuando el cliente tiene más de una. El Registro
+  // rápido siempre reporta a nivel Unidad (sin selector de "tipo").
   const unidadIdsCliente = useMemo(() => {
     if (!form.cliente_id) return null;
     const hoy = new Date().toISOString().slice(0, 10);
@@ -3483,18 +3483,10 @@ function NuevaOtModal({ empresaId, catalogo, currentUser, notify, onClose, onCre
   }, [form.cliente_id, catalogo.contratos]);
 
   const opcionesUbicacion = useMemo(() => {
-    const mapa = {
-      unidad: (catalogo.unidades || []).map((u) => ({ value: u.id, label: u.codigo + (u.nombre ? " — " + u.nombre : "") })),
-      edificio: (catalogo.edificios || []).map((e) => ({ value: e.id, label: e.codigo + " — " + e.nombre })),
-      sitio: (catalogo.sitios || []).map((s) => ({ value: s.id, label: s.codigo + " — " + s.nombre })),
-      area_comun: (catalogo.areas_comunes || []).map((a) => ({ value: a.id, label: a.codigo + " — " + a.nombre })),
-    };
-    const opciones = mapa[form.ubicacion_tipo] || [];
-    if (form.ubicacion_tipo === "unidad" && unidadIdsCliente) {
-      return opciones.filter((o) => unidadIdsCliente.has(o.value));
-    }
+    const opciones = (catalogo.unidades || []).map((u) => ({ value: u.id, label: u.codigo + (u.nombre ? " — " + u.nombre : "") }));
+    if (unidadIdsCliente) return opciones.filter((o) => unidadIdsCliente.has(o.value));
     return opciones;
-  }, [form.ubicacion_tipo, catalogo, unidadIdsCliente]);
+  }, [catalogo, unidadIdsCliente]);
 
   const seleccionarCliente = (e) => {
     const clienteId = e.target.value;
@@ -3508,22 +3500,18 @@ function NuevaOtModal({ empresaId, catalogo, currentUser, notify, onClose, onCre
         ids.push(cu.unidad_id);
       }
     }
-    setForm((f) => ({
-      ...f, cliente_id: clienteId, ubicacion_tipo: "unidad",
-      ubicacion_id: ids.length === 1 ? ids[0] : "",
-    }));
+    setForm((f) => ({ ...f, cliente_id: clienteId, ubicacion_id: ids.length === 1 ? ids[0] : "" }));
   };
 
   const submit = async () => {
     if (!form.titulo.trim()) return notify("err", "Describe qué pasa");
     if (!form.ubicacion_id) return notify("err", "Selecciona la ubicación");
-    if (!form.urgencia) return notify("err", "Selecciona la urgencia");
     setSaving(true);
     try {
       const { cliente_id, ...resto } = form;
       await api("ot-mantencion", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...resto, empresa_id: empresaId }),
+        body: JSON.stringify({ ...resto, ubicacion_tipo: "unidad", empresa_id: empresaId }),
       });
       notify("ok", "OT creada");
       onCreated();
@@ -3547,32 +3535,18 @@ function NuevaOtModal({ empresaId, catalogo, currentUser, notify, onClose, onCre
           h("option", { value: "" }, "— sin especificar —"),
           (catalogo.clientes || []).map((c) => h("option", { key: c.id, value: c.id }, c.razon_social)))),
       h("div", { className: "grid2" },
-        h(Field, { label: "Tipo de ubicación" },
-          h("select", {
-            value: form.ubicacion_tipo, disabled: !!form.cliente_id,
-            onChange: (e) => setForm((f) => ({ ...f, ubicacion_tipo: e.target.value, ubicacion_id: "" })),
-          },
-            h("option", { value: "unidad" }, "Unidad"), h("option", { value: "edificio" }, "Edificio"),
-            h("option", { value: "sitio" }, "Sitio"), h("option", { value: "area_comun" }, "Área común"))),
         h(Field, { label: "Ubicación *" },
           h("select", { value: form.ubicacion_id, onChange: set("ubicacion_id") },
             h("option", { value: "" }, "Selecciona"),
-            opcionesUbicacion.map((o) => h("option", { key: o.value, value: o.value }, o.label))))),
+            opcionesUbicacion.map((o) => h("option", { key: o.value, value: o.value }, o.label)))),
+        h(Field, { label: "Categoría" },
+          h("select", { value: form.categoria, onChange: set("categoria") },
+            h("option", { value: "" }, "Selecciona"),
+            OT_CATEGORIAS.map((c) => h("option", { key: c, value: c }, c))))),
       form.cliente_id && opcionesUbicacion.length === 0 && h("div", { className: "hint" },
         "Este cliente no tiene unidades vigentes asociadas"),
       form.cliente_id && opcionesUbicacion.length > 1 && h("div", { className: "hint" },
         "Este cliente tiene " + opcionesUbicacion.length + " unidades vigentes — selecciona la correcta"),
-
-      h("div", { className: "section-lbl" }, "Clasificación"),
-      h("div", { className: "grid2" },
-        h(Field, { label: "Categoría" },
-          h("select", { value: form.categoria, onChange: set("categoria") },
-            h("option", { value: "" }, "Selecciona"),
-            OT_CATEGORIAS.map((c) => h("option", { key: c, value: c }, c)))),
-        h(Field, { label: "Urgencia *" },
-          h("select", { value: form.urgencia, onChange: set("urgencia") },
-            h("option", { value: "" }, "Selecciona"),
-            OT_URGENCIAS.map((o) => h("option", { key: o, value: o }, o))))),
       h(Field, { label: "Elemento afectado" },
         h("input", { value: form.elemento_afectado, onChange: set("elemento_afectado"), placeholder: "Ej: Canaleta norte" })),
 

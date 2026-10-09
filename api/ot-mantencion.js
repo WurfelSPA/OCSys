@@ -397,10 +397,13 @@ export default async function handler(req, res) {
       if (!empresaId) return res.status(400).json({ error: "empresa_id es obligatorio" });
       if (!body.titulo) return res.status(400).json({ error: "El título (qué pasa) es obligatorio" });
       if (!body.ubicacion_tipo || !body.ubicacion_id) return res.status(400).json({ error: "La ubicación es obligatoria" });
-      if (!body.urgencia) return res.status(400).json({ error: "La urgencia es obligatoria" });
 
+      // El Registro rápido ya no pide Impacto/Urgencia -- la prioridad inicial
+      // se infiere de la categoría con un supuesto conservador (no urgente) y
+      // se termina de ajustar despues a mano (P1-P4) desde la ficha de la OT.
       const impacto = body.impacto || CATEGORIA_IMPACTO[body.categoria] || CATEGORIA_IMPACTO_DEFAULT;
-      const prioridad = calcularPrioridad(impacto, body.urgencia);
+      const urgencia = body.urgencia || "Estable";
+      const prioridad = calcularPrioridad(impacto, urgencia);
       if (!prioridad) return res.status(400).json({ error: "Combinación de impacto/urgencia no válida" });
       const fechaReporte = body.fecha_reporte || new Date().toISOString();
       const { clienteIds, contratoIds, vacante } = await resolverClientesContratos(db, body.ubicacion_tipo, body.ubicacion_id, fechaReporte);
@@ -417,7 +420,7 @@ export default async function handler(req, res) {
         ubicacion_tipo: body.ubicacion_tipo, ubicacion_id: body.ubicacion_id,
         ubicaciones_adicionales: Array.isArray(body.ubicaciones_adicionales) ? body.ubicaciones_adicionales : [],
         clientes_afectados: clienteIds, contratos_afectados: contratoIds,
-        impacto, urgencia: body.urgencia, prioridad,
+        impacto, urgencia, prioridad,
         estado: "Nueva", centro_costo_codigo: vacioANull(body.centro_costo_codigo),
         cargo: vacante ? "Arrendador" : (cat ? cat.cargo : "Por definir"),
         ...fechas,
