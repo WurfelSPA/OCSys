@@ -1954,7 +1954,7 @@ function EditarGrupoModal({ grupo, proveedores, catalogos, proyectos, refreshPro
   );
 }
 
-function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores, catalogos, proyectos, refreshProyectos, refreshProyectosTodos, empresaId, empresa, filtroEstadoCategoria, onLimpiarFiltroEstado }) {
+function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores, catalogos, proyectos, refreshProyectos, refreshProyectosTodos, empresaId, empresa, filtroEstadoCategoria, onLimpiarFiltroEstado, usuarios }) {
   const [accion, setAccion] = useState(null);
   const [editando, setEditando] = useState(null);
   const [editandoGrupo, setEditandoGrupo] = useState(null);
@@ -2230,7 +2230,11 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
       key: "estado", label: "Estado",
       render: (o) => o._esGrupo ? h("span", { className: "hint" }, o._indicadorEstados) : estadoPill(o.estado),
     },
-    { key: "creado_por_usuario", label: "Usuario", render: (o) => o.creado_por_usuario || "—" },
+    {
+      key: "creado_por_usuario", label: "Usuario",
+      sortValue: (o) => nombreUsuario(usuarios, o.creado_por_usuario),
+      render: (o) => nombreUsuario(usuarios, o.creado_por_usuario),
+    },
     {
       key: "accion", label: "Acción", sortable: false,
       render: (o) => o._esGrupo ? h("span", { className: "hint" }, "Expandir para gestionar") : o.estado === "Pendiente aprobación"
@@ -2283,7 +2287,7 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
         }, texto);
       },
     },
-  ], [puedeAprobar, gruposExpandidos, catalogos]);
+  ], [puedeAprobar, gruposExpandidos, catalogos, usuarios]);
 
   // Mientras se agrupa (sin busqueda/filtro activos), el orden queda fijo
   // por N° de OC -- se deshabilita el sort por columna para no romper el
@@ -4805,7 +4809,7 @@ function App({ currentUser, onLogout }) {
     tab === "nueva" && h(NuevaOC, { proveedores, catalogos, refreshProveedores: loadProveedores, proyectos, refreshProyectos: loadProyectos, refreshProyectosTodos: loadProyectosTodos, notify, onCreated: loadOrdenes, currentUser, empresaId, empresa: empresaActual }),
     tab === "ordenes" && h(OrdenesList, {
       ordenes, refreshOrdenes: loadOrdenes, notify, currentUser, proveedores, catalogos, proyectos, refreshProyectos: loadProyectos, refreshProyectosTodos: loadProyectosTodos, empresaId, empresa: empresaActual,
-      filtroEstadoCategoria: filtroEstadoOrdenes, onLimpiarFiltroEstado: () => setFiltroEstadoOrdenes(null),
+      filtroEstadoCategoria: filtroEstadoOrdenes, onLimpiarFiltroEstado: () => setFiltroEstadoOrdenes(null), usuarios,
     }),
     tab === "rendiciones" && esPatagonica && h(RendicionGastosPage, { rendiciones, refreshRendiciones: loadRendiciones, catalogos, notify, currentUser, empresaId }),
     tab === "proveedores" && esPatagonica && h(ProveedoresList, { proveedores, catalogos, refreshProveedores: loadProveedores, notify, currentUser }),
