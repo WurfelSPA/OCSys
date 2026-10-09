@@ -3407,6 +3407,444 @@ function ProyectosPage({ empresaId, proveedores, notify }) {
   );
 }
 
+// ===== OT Mantención (Fase A) =====
+// Ver docs/superpowers/specs/2026-10-09-ot-mantencion-fase-a-design.md.
+// Tickets de mantencion reactiva de arriendo -- no confundir con "Proyectos"
+// (capital/remodelacion). Sin correo/IA todavia: el ingreso es manual via
+// Registro rapido.
+
+const OT_CATEGORIAS = [
+  "Techumbre y filtraciones", "Eléctrico", "Iluminación exterior", "Agua y sanitario",
+  "Accesos y seguridad", "Ascensores", "Obra civil", "Climatización",
+  "Incendio y emergencias", "Áreas comunes y aseo", "Plagas", "Solicitud de servicio", "Reclamo de convivencia",
+];
+const OT_IMPACTOS = ["Seguridad de personas", "Operación detenida", "Operación afectada", "Sin impacto operativo"];
+const OT_URGENCIAS = ["En curso", "Estable"];
+const OT_PRIORIDAD_COLOR = { P1: "var(--red)", P2: "var(--amber)", P3: "var(--acc)", P4: "var(--txd)" };
+const OT_TRANSICIONES = {
+  "Nueva": ["Asignada", "Anulada"],
+  "Asignada": ["En curso", "En espera", "Anulada"],
+  "En curso": ["En espera", "Resuelta", "Anulada"],
+  "En espera": ["En curso", "Anulada"],
+  "Resuelta": ["En curso", "Cerrada"],
+  "Cerrada": ["En curso"],
+  "Anulada": [],
+};
+
+function otEstadoPill(estado) {
+  const colores = {
+    "Nueva": ["var(--accbg)", "var(--acc)"], "Asignada": ["var(--accbg)", "var(--acc)"],
+    "En curso": ["var(--abg)", "var(--amber)"], "En espera": ["var(--surf3)", "var(--txm)"],
+    "Resuelta": ["var(--gbg)", "var(--green)"], "Cerrada": ["var(--gbg)", "var(--green)"],
+    "Anulada": ["var(--surf3)", "var(--txd)"],
+  };
+  const [bg, col] = colores[estado] || ["var(--surf3)", "var(--txm)"];
+  return h("span", { className: "pill", style: { background: bg, color: col } }, estado);
+}
+
+function fmtFechaHora(iso) {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleString("es-CL", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+}
+
+function NuevaOtModal({ empresaId, catalogo, notify, onClose, onCreated }) {
+  const [form, setForm] = useState({
+    titulo: "", categoria: "", elemento_afectado: "", ubicacion_tipo: "unidad", ubicacion_id: "",
+    impacto: "", urgencia: "", reportado_por: "",
+  });
+  const [saving, setSaving] = useState(false);
+  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  const opcionesUbicacion = useMemo(() => {
+    const mapa = {
+      unidad: (catalogo.unidades || []).map((u) => ({ value: u.id, label: u.codigo + (u.nombre ? " — " + u.nombre : "") })),
+      edificio: (catalogo.edificios || []).map((e) => ({ value: e.id, label: e.codigo + " — " + e.nombre })),
+      sitio: (catalogo.sitios || []).map((s) => ({ value: s.id, label: s.codigo + " — " + s.nombre })),
+      area_comun: (catalogo.areas_comunes || []).map((a) => ({ value: a.id, label: a.codigo + " — " + a.nombre })),
+    };
+    return mapa[form.ubicacion_tipo] || [];
+  }, [form.ubicacion_tipo, catalogo]);
+
+  const submit = async () => {
+    if (!form.titulo.trim()) return notify("err", "Describe qué pasa");
+    if (!form.ubicacion_id) return notify("err", "Selecciona la ubicación");
+    if (!form.impacto || !form.urgencia) return notify("err", "Selecciona impacto y urgencia");
+    setSaving(true);
+    try {
+      await api("ot-mantencion", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...form, empresa_id: empresaId }),
+      });
+      notify("ok", "OT creada");
+      onCreated();
+    } catch (e) {
+      notify("err", e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return h("div", { className: "overlay", onClick: (e) => e.target === e.currentTarget && onClose() },
+    h("div", { className: "modal", style: { width: 520 } },
+      h("div", { className: "modal-hdr" }, h("h3", null, "Registro rápido"), h("button", { className: "modal-close", onClick: onClose }, "×")),
+      h(Field, { label: "¿Qué pasa? *" },
+        h("input", { value: form.titulo, onChange: set("titulo"), placeholder: "Ej: Gotera activa sobre bodega" })),
+      h("div", { className: "grid2" },
+        h(Field, { label: "Tipo de ubicación" },
+          h("select", { value: form.ubicacion_tipo, onChange: (e) => setForm((f) => ({ ...f, ubicacion_tipo: e.target.value, ubicacion_id: "" })) },
+            h("option", { value: "unidad" }, "Unidad"), h("option", { value: "edificio" }, "Edificio"),
+            h("option", { value: "sitio" }, "Sitio"), h("option", { value: "area_comun" }, "Área común"))),
+        h(Field, { label: "Ubicación *" },
+          h("select", { value: form.ubicacion_id, onChange: set("ubicacion_id") },
+            h("option", { value: "" }, "Selecciona"),
+            opcionesUbicacion.map((o) => h("option", { key: o.value, value: o.value }, o.label))))),
+      h("div", { className: "grid2" },
+        h(Field, { label: "Categoría" },
+          h("select", { value: form.categoria, onChange: set("categoria") },
+            h("option", { value: "" }, "Selecciona"),
+            OT_CATEGORIAS.map((c) => h("option", { key: c, value: c }, c)))),
+        h(Field, { label: "Elemento afectado" },
+          h("input", { value: form.elemento_afectado, onChange: set("elemento_afectado"), placeholder: "Ej: Canaleta norte" }))),
+      h("div", { className: "grid2" },
+        h(Field, { label: "Impacto *" },
+          h("select", { value: form.impacto, onChange: set("impacto") },
+            h("option", { value: "" }, "Selecciona"),
+            OT_IMPACTOS.map((o) => h("option", { key: o, value: o }, o)))),
+        h(Field, { label: "Urgencia *" },
+          h("select", { value: form.urgencia, onChange: set("urgencia") },
+            h("option", { value: "" }, "Selecciona"),
+            OT_URGENCIAS.map((o) => h("option", { key: o, value: o }, o))))),
+      form.impacto && form.urgencia && h("div", { className: "hint" },
+        "Prioridad resultante: " + ((MATRIZ_PRIORIDAD_FRONT[form.impacto] || {})[form.urgencia] || "—")),
+      h(Field, { label: "Reportado por (opcional)" },
+        h("input", { value: form.reportado_por, onChange: set("reportado_por"), placeholder: "Nombre de quien avisó" })),
+      h("div", { style: { display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 16 } },
+        h("button", { className: "btn-ghost", onClick: onClose }, "Cancelar"),
+        h("button", { className: "btn-primary", onClick: submit, disabled: saving }, saving ? "Creando..." : "Crear OT")),
+    ));
+}
+
+const MATRIZ_PRIORIDAD_FRONT = {
+  "Seguridad de personas": { "En curso": "P1", "Estable": "P1" },
+  "Operación detenida": { "En curso": "P1", "Estable": "P2" },
+  "Operación afectada": { "En curso": "P2", "Estable": "P3" },
+  "Sin impacto operativo": { "En curso": "P3", "Estable": "P4" },
+};
+
+function OtDetalleModal({ data, usuariosOps, notify, onClose, onSaved }) {
+  const { ot, bitacora, costos } = data;
+  const [comentario, setComentario] = useState("");
+  const [montoCosto, setMontoCosto] = useState("");
+  const [conceptoCosto, setConceptoCosto] = useState("materiales");
+  const [estadoDestino, setEstadoDestino] = useState("");
+  const [solucionTxt, setSolucionTxt] = useState(ot.solucion || "");
+  const [costoReal, setCostoReal] = useState(ot.costo_real ?? "");
+  const [cargoSel, setCargoSel] = useState(ot.cargo && ot.cargo !== "Por definir" ? ot.cargo : "");
+  const [motivoPrioridad, setMotivoPrioridad] = useState("");
+  const [guardando, setGuardando] = useState(false);
+
+  const put = async (campos) => {
+    setGuardando(true);
+    try {
+      await api("ot-mantencion?id=" + ot.id, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(campos) });
+      onSaved();
+    } catch (e) {
+      notify("err", e.message);
+    } finally {
+      setGuardando(false);
+    }
+  };
+
+  const aplicarTransicion = () => {
+    if (!estadoDestino) return;
+    const campos = { estado: estadoDestino };
+    if (estadoDestino === "Resuelta") {
+      if (!solucionTxt.trim()) return notify("err", "Describe la solución");
+      campos.solucion = solucionTxt;
+    }
+    if (estadoDestino === "Cerrada") {
+      if (costoReal === "" || costoReal === null) return notify("err", "Ingresa el costo real (puede ser 0)");
+      if (!cargoSel) return notify("err", "Selecciona el cargo");
+      campos.costo_real = Number(costoReal);
+      campos.cargo = cargoSel;
+    }
+    put(campos);
+  };
+
+  const enviarComentario = async () => {
+    if (!comentario.trim()) return;
+    try {
+      await api("ot-mantencion?bitacora=1", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ot_id: ot.id, texto: comentario }) });
+      setComentario("");
+      onSaved();
+    } catch (e) {
+      notify("err", e.message);
+    }
+  };
+
+  const agregarCosto = async () => {
+    if (!montoCosto) return;
+    try {
+      await api("ot-mantencion?costo=1", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ot_id: ot.id, monto_clp: Number(montoCosto), concepto: conceptoCosto }) });
+      setMontoCosto("");
+      onSaved();
+    } catch (e) {
+      notify("err", e.message);
+    }
+  };
+
+  const transicionesValidas = OT_TRANSICIONES[ot.estado] || [];
+
+  return h("div", { className: "overlay", onClick: (e) => e.target === e.currentTarget && onClose() },
+    h("div", { className: "modal", style: { width: 640, maxHeight: "90vh", overflowY: "auto" } },
+      h("div", { className: "modal-hdr" },
+        h("h3", null, ot.codigo + " — " + ot.titulo),
+        h("button", { className: "modal-close", onClick: onClose }, "×")),
+      h("div", { style: { display: "flex", gap: 10, marginBottom: 12, flexWrap: "wrap", alignItems: "center" } },
+        h("b", { style: { color: OT_PRIORIDAD_COLOR[ot.prioridad], fontSize: 16 } }, ot.prioridad),
+        otEstadoPill(ot.estado),
+        ot.fecha_limite_solucion && h("span", { className: "hint" }, "SLA solución: " + fmtFechaHora(ot.fecha_limite_solucion)),
+        ot.contratos_afectados && ot.contratos_afectados.length === 0 && h("span", { className: "hint", style: { color: "var(--amber)" } }, "Vacante / sin cliente"),
+      ),
+      h(Field, { label: "Responsable" },
+        h("select", {
+          value: ot.responsable_id || "",
+          onChange: (e) => put({ responsable_id: e.target.value || null }),
+        },
+          h("option", { value: "" }, "Sin asignar"),
+          usuariosOps.map((u) => h("option", { key: u.id, value: u.id }, u.nombre + " " + u.apellido)))),
+      h("div", { className: "grid2" },
+        h(Field, { label: "Cambiar estado a" },
+          h("select", { value: estadoDestino, onChange: (e) => setEstadoDestino(e.target.value), disabled: !transicionesValidas.length },
+            h("option", { value: "" }, "— sin cambio —"),
+            transicionesValidas.map((e) => h("option", { key: e, value: e }, e)))),
+        h("div", { style: { display: "flex", alignItems: "flex-end" } },
+          h("button", { className: "btn-primary", onClick: aplicarTransicion, disabled: !estadoDestino || guardando }, "Aplicar")),
+      ),
+      estadoDestino === "Resuelta" && h(Field, { label: "Solución *" },
+        h("textarea", { rows: 2, value: solucionTxt, onChange: (e) => setSolucionTxt(e.target.value) })),
+      estadoDestino === "Cerrada" && h("div", { className: "grid2" },
+        h(Field, { label: "Costo real *" }, h("input", { type: "number", value: costoReal, onChange: (e) => setCostoReal(e.target.value) })),
+        h(Field, { label: "Cargo *" },
+          h("select", { value: cargoSel, onChange: (e) => setCargoSel(e.target.value) },
+            h("option", { value: "" }, "Selecciona"),
+            ["Arrendador", "Arrendatario", "Compartido", "Seguro", "Garantía"].map((c) => h("option", { key: c, value: c }, c))))),
+      h("div", { className: "section-lbl", style: { marginTop: 14 } }, "Costos"),
+      (costos || []).map((c) => h("div", { key: c.id, className: "hint" }, fmtDate(c.fecha) + " — " + c.concepto + ": $" + Number(c.monto_clp).toLocaleString("es-CL"))),
+      h("div", { style: { display: "flex", gap: 8, marginTop: 6 } },
+        h("select", { value: conceptoCosto, onChange: (e) => setConceptoCosto(e.target.value), style: { width: 140 } },
+          ["materiales", "mano de obra", "proveedor", "otro"].map((c) => h("option", { key: c, value: c }, c))),
+        h("input", { type: "number", placeholder: "Monto CLP", value: montoCosto, onChange: (e) => setMontoCosto(e.target.value), style: { width: 140 } }),
+        h("button", { className: "btn-ghost", onClick: agregarCosto }, "+ Agregar costo")),
+      h("div", { className: "section-lbl", style: { marginTop: 14 } }, "Bitácora"),
+      h("div", { style: { maxHeight: 180, overflowY: "auto", display: "flex", flexDirection: "column", gap: 4, marginBottom: 8 } },
+        (bitacora || []).map((b) => h("div", { key: b.id, style: { fontSize: 12 } },
+          h("span", { style: { color: "var(--txd)", fontFamily: "monospace" } }, fmtFechaHora(b.created_at) + " · "),
+          b.tipo === "sistema" ? h("b", null, b.texto) : b.texto,
+          " ", h("i", { style: { color: "var(--txd)" } }, "— " + (b.usuario || "—"))))),
+      h("div", { style: { display: "flex", gap: 8 } },
+        h("input", { value: comentario, onChange: (e) => setComentario(e.target.value), placeholder: "Agregar comentario..." }),
+        h("button", { className: "btn-ghost", onClick: enviarComentario }, "Enviar")),
+    ));
+}
+
+function MesaDeControl({ ots, cargando, expandido, setExpandido, onAbrir }) {
+  const indicadores = useMemo(() => {
+    const abiertos = ots.filter((o) => !["Resuelta", "Cerrada", "Anulada"].includes(o.estado));
+    const hoy = new Date().toISOString().slice(0, 10);
+    return {
+      p1: abiertos.filter((o) => o.prioridad === "P1").length,
+      p2: abiertos.filter((o) => o.prioridad === "P2").length,
+      sinAsignar: abiertos.filter((o) => !o.responsable_id).length,
+      vencidas: abiertos.filter((o) => o.fecha_limite_solucion && new Date(o.fecha_limite_solucion) < new Date()).length,
+      resueltasHoy: ots.filter((o) => o.fecha_resolucion && o.fecha_resolucion.slice(0, 10) === hoy).length,
+    };
+  }, [ots]);
+
+  if (cargando) return h("div", { className: "empty" }, "Cargando...");
+  if (!ots.length) return h("div", { className: "empty" }, "Sin OT registradas. Usa \"+ Registro rápido\" para crear la primera.");
+
+  return h("div", null,
+    h("div", { style: { display: "flex", gap: 10, marginBottom: 14, flexWrap: "wrap" } },
+      h("div", { className: "pill", style: { background: "var(--rbg)", color: "var(--red)" } }, "P1 · " + indicadores.p1),
+      h("div", { className: "pill", style: { background: "var(--abg)", color: "var(--amber)" } }, "P2 · " + indicadores.p2),
+      h("div", { className: "pill", style: { background: "var(--surf3)", color: "var(--txm)" } }, "Sin asignar · " + indicadores.sinAsignar),
+      h("div", { className: "pill", style: { background: "var(--rbg)", color: "var(--red)" } }, "SLA vencido · " + indicadores.vencidas),
+      h("div", { className: "pill", style: { background: "var(--gbg)", color: "var(--green)" } }, "Resueltas hoy · " + indicadores.resueltasHoy),
+    ),
+    h("div", { className: "table-scroll" },
+      h("table", null,
+        h("thead", null, h("tr", null, h("th"), h("th", null, "Pri"), h("th", null, "Código"), h("th", null, "Título"), h("th", null, "Responsable"), h("th", null, "Estado"), h("th", null, "SLA solución"))),
+        h("tbody", null, ots.map((o) => h(React.Fragment, { key: o.id },
+          h("tr", { style: { cursor: "pointer", background: o.prioridad === "P1" ? "var(--rbg)" : undefined }, onClick: () => onAbrir(o.id) },
+            h("td", { style: { width: 18 }, onClick: (e) => { e.stopPropagation(); setExpandido((x) => ({ ...x, [o.id]: !x[o.id] })); } }, expandido[o.id] ? "▾" : "▸"),
+            h("td", null, h("b", { style: { color: OT_PRIORIDAD_COLOR[o.prioridad] } }, o.prioridad || "—")),
+            h("td", null, o.codigo),
+            h("td", null, truncar(o.titulo, 260)),
+            h("td", null, o.usuarios ? (o.usuarios.nombre + " " + o.usuarios.apellido) : "—"),
+            h("td", null, otEstadoPill(o.estado)),
+            h("td", { style: { color: o.fecha_limite_solucion && new Date(o.fecha_limite_solucion) < new Date() ? "var(--red)" : undefined } },
+              fmtFechaHora(o.fecha_limite_solucion)),
+          ),
+          expandido[o.id] && h("tr", null,
+            h("td", { colSpan: 7, style: { background: "var(--surf2)" } },
+              h("div", { style: { maxHeight: 160, overflowY: "auto", padding: "8px 8px 8px 28px", fontSize: 12 } },
+                (o.bitacora || []).length ? o.bitacora.map((b) => h("div", { key: b.id, style: { marginBottom: 4 } },
+                  h("span", { style: { color: "var(--txd)", fontFamily: "monospace" } }, fmtFechaHora(b.created_at) + " · "),
+                  b.tipo === "sistema" ? h("b", null, b.texto) : b.texto,
+                  " ", h("i", { style: { color: "var(--txd)" } }, "— " + (b.usuario || "—")),
+                )) : h("span", { className: "hint" }, "Sin comentarios todavía"),
+              ),
+            ),
+          ),
+        ))),
+      ),
+    ),
+  );
+}
+
+function CatalogoOperaciones({ empresaId, catalogo, notify, onChanged }) {
+  const [sub, setSub] = useState("sitios");
+  const [form, setForm] = useState({});
+  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  const crear = async (query, campos) => {
+    try {
+      await api("ot-mantencion?" + query + "=1", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(campos) });
+      notify("ok", "Creado");
+      setForm({});
+      onChanged();
+    } catch (e) {
+      notify("err", e.message);
+    }
+  };
+
+  const SUBTABS = [
+    { key: "sitios", label: "Sitios" }, { key: "edificios", label: "Edificios" }, { key: "unidades", label: "Unidades" },
+    { key: "areas", label: "Áreas comunes" }, { key: "clientes", label: "Clientes" }, { key: "contratos", label: "Contratos" },
+  ];
+
+  return h("div", null,
+    h("div", { style: { display: "flex", gap: 6, marginBottom: 14, flexWrap: "wrap" } },
+      SUBTABS.map((t) => h("button", { key: t.key, className: "nav-btn" + (sub === t.key ? " active" : ""), onClick: () => setSub(t.key) }, t.label))),
+
+    sub === "sitios" && h("div", null,
+      h("div", { className: "grid3", style: { marginBottom: 10 } },
+        h(Field, { label: "Código" }, h("input", { value: form.codigo || "", onChange: set("codigo"), placeholder: "Ej: 5-A" })),
+        h(Field, { label: "Nombre" }, h("input", { value: form.nombre || "", onChange: set("nombre") })),
+        h(Field, { label: "Dirección" }, h("input", { value: form.direccion || "", onChange: set("direccion") }))),
+      h("button", { className: "btn-primary", onClick: () => crear("sitio", { empresa_id: empresaId, codigo: form.codigo, nombre: form.nombre, direccion: form.direccion }) }, "+ Agregar sitio"),
+      h(DataTable, { columns: [{ key: "codigo", label: "Código" }, { key: "nombre", label: "Nombre" }, { key: "direccion", label: "Dirección" }], rows: catalogo.sitios, rowKey: (s) => s.id, emptyText: "Sin sitios" })),
+
+    sub === "edificios" && h("div", null,
+      h("div", { className: "grid3", style: { marginBottom: 10 } },
+        h(Field, { label: "Sitio" }, h("select", { value: form.sitio_id || "", onChange: set("sitio_id") }, h("option", { value: "" }, "Selecciona"), catalogo.sitios.map((s) => h("option", { key: s.id, value: s.id }, s.codigo + " — " + s.nombre)))),
+        h(Field, { label: "Código" }, h("input", { value: form.codigo || "", onChange: set("codigo"), placeholder: "Ej: E68" })),
+        h(Field, { label: "Nombre" }, h("input", { value: form.nombre || "", onChange: set("nombre") }))),
+      h("button", { className: "btn-primary", onClick: () => crear("edificio", { sitio_id: form.sitio_id, codigo: form.codigo, nombre: form.nombre }) }, "+ Agregar edificio"),
+      h(DataTable, { columns: [{ key: "codigo", label: "Código" }, { key: "nombre", label: "Nombre" }], rows: catalogo.edificios, rowKey: (e) => e.id, emptyText: "Sin edificios" })),
+
+    sub === "unidades" && h("div", null,
+      h("div", { className: "grid3", style: { marginBottom: 10 } },
+        h(Field, { label: "Edificio" }, h("select", {
+          value: form.edificio_id || "",
+          onChange: (e) => {
+            const edif = catalogo.edificios.find((x) => x.id === e.target.value);
+            setForm((f) => ({ ...f, edificio_id: e.target.value, sitio_id: edif ? edif.sitio_id : "" }));
+          },
+        }, h("option", { value: "" }, "Selecciona"), catalogo.edificios.map((e) => h("option", { key: e.id, value: e.id }, e.codigo + " — " + e.nombre)))),
+        h(Field, { label: "Código" }, h("input", { value: form.codigo || "", onChange: set("codigo"), placeholder: "Ej: A2-T2680-P04-OF44" })),
+        h(Field, { label: "Tipo" }, h("select", { value: form.tipo || "", onChange: set("tipo") }, h("option", { value: "" }, "Selecciona"), ["Bodega", "Oficina", "Local comercial", "Espacio-terreno", "Estacionamiento", "Antena-uso técnico"].map((t) => h("option", { key: t, value: t }, t))))),
+      h("button", {
+        className: "btn-primary",
+        onClick: () => crear("unidad", { sitio_id: form.sitio_id, edificio_id: form.edificio_id, codigo: form.codigo, tipo: form.tipo, nombre: form.nombre_unidad }),
+      }, "+ Agregar unidad"),
+      h(DataTable, { columns: [{ key: "codigo", label: "Código" }, { key: "tipo", label: "Tipo" }, { key: "estado", label: "Estado" }], rows: catalogo.unidades, rowKey: (u) => u.id, emptyText: "Sin unidades" })),
+
+    sub === "areas" && h("div", null,
+      h("div", { className: "grid3", style: { marginBottom: 10 } },
+        h(Field, { label: "Código" }, h("input", { value: form.codigo || "", onChange: set("codigo"), placeholder: "Ej: 5A-AC-CALLE" })),
+        h(Field, { label: "Nombre" }, h("input", { value: form.nombre || "", onChange: set("nombre") })),
+        h(Field, { label: "Sitio (opcional)" }, h("select", { value: form.sitio_id || "", onChange: set("sitio_id") }, h("option", { value: "" }, "—"), catalogo.sitios.map((s) => h("option", { key: s.id, value: s.id }, s.codigo))))),
+      h("button", { className: "btn-primary", onClick: () => crear("area_comun", { codigo: form.codigo, nombre: form.nombre, sitio_id: form.sitio_id || null }) }, "+ Agregar área común"),
+      h(DataTable, { columns: [{ key: "codigo", label: "Código" }, { key: "nombre", label: "Nombre" }], rows: catalogo.areas_comunes, rowKey: (a) => a.id, emptyText: "Sin áreas comunes" })),
+
+    sub === "clientes" && h("div", null,
+      h("div", { className: "grid3", style: { marginBottom: 10 } },
+        h(Field, { label: "RUT" }, h("input", { value: form.rut || "", onChange: set("rut"), placeholder: "76.123.456-7" })),
+        h(Field, { label: "Razón Social" }, h("input", { value: form.razon_social || "", onChange: set("razon_social") })),
+        h(Field, { label: "Dominio de correo (opcional)" }, h("input", { value: form.dominio || "", onChange: set("dominio"), placeholder: "empresa.cl" }))),
+      h("button", {
+        className: "btn-primary",
+        onClick: () => crear("cliente", { rut: form.rut, razon_social: form.razon_social, dominios_correo: form.dominio ? [form.dominio] : [] }),
+      }, "+ Agregar cliente"),
+      h(DataTable, { columns: [{ key: "rut", label: "RUT" }, { key: "razon_social", label: "Razón Social" }, { key: "estado", label: "Estado" }], rows: catalogo.clientes, rowKey: (c) => c.id, emptyText: "Sin clientes" })),
+
+    sub === "contratos" && h("div", null,
+      h("div", { className: "grid3", style: { marginBottom: 10 } },
+        h(Field, { label: "Código" }, h("input", { value: form.codigo || "", onChange: set("codigo"), placeholder: "CT-0001" })),
+        h(Field, { label: "Cliente" }, h("select", { value: form.cliente_id || "", onChange: set("cliente_id") }, h("option", { value: "" }, "Selecciona"), catalogo.clientes.map((c) => h("option", { key: c.id, value: c.id }, c.razon_social)))),
+        h(Field, { label: "Fecha inicio" }, h("input", { type: "date", value: form.fecha_inicio || "", onChange: set("fecha_inicio") }))),
+      h(Field, { label: "Unidad(es) que cubre" },
+        h("select", {
+          multiple: true, size: 4, style: { height: "auto" },
+          value: form.unidad_ids || [],
+          onChange: (e) => setForm((f) => ({ ...f, unidad_ids: Array.from(e.target.selectedOptions).map((o) => o.value) })),
+        }, catalogo.unidades.map((u) => h("option", { key: u.id, value: u.id }, u.codigo)))),
+      h("button", {
+        className: "btn-primary",
+        onClick: () => crear("contrato", { codigo: form.codigo, cliente_id: form.cliente_id, fecha_inicio: form.fecha_inicio, unidad_ids: form.unidad_ids || [] }),
+      }, "+ Agregar contrato"),
+      h(DataTable, { columns: [{ key: "codigo", label: "Código" }, { key: "fecha_inicio", label: "Inicio", render: (c) => fmtDate(c.fecha_inicio) }], rows: catalogo.contratos, rowKey: (c) => c.id, emptyText: "Sin contratos" })),
+  );
+}
+
+function OtMantencionPage({ empresaId, notify }) {
+  const [vista, setVista] = useState("mesa");
+  const [ots, setOts] = useState([]);
+  const [catalogo, setCatalogo] = useState({ sitios: [], edificios: [], unidades: [], areas_comunes: [], clientes: [], contratos: [] });
+  const [usuariosOps, setUsuariosOps] = useState([]);
+  const [cargando, setCargando] = useState(true);
+  const [nuevaOt, setNuevaOt] = useState(false);
+  const [otSel, setOtSel] = useState(null);
+  const [expandido, setExpandido] = useState({});
+
+  const cargarTodo = () => {
+    setCargando(true);
+    Promise.all([
+      api("ot-mantencion?empresa_id=" + empresaId),
+      api("ot-mantencion?catalogo=1&empresa_id=" + empresaId),
+      api("ot-mantencion?usuarios=1"),
+    ]).then(([a, b, c]) => {
+      setOts(a.ots);
+      setCatalogo(b);
+      setUsuariosOps(c.usuarios);
+    }).catch((e) => notify("err", e.message)).finally(() => setCargando(false));
+  };
+  useEffect(cargarTodo, [empresaId]);
+
+  const abrirOt = (id) => {
+    api("ot-mantencion?id=" + id).then((d) => setOtSel(d)).catch((e) => notify("err", e.message));
+  };
+
+  return h("div", { className: "page fade-up" },
+    nuevaOt && h(NuevaOtModal, { empresaId, catalogo, notify, onClose: () => setNuevaOt(false), onCreated: () => { setNuevaOt(false); cargarTodo(); } }),
+    otSel && h(OtDetalleModal, { data: otSel, usuariosOps, notify, onClose: () => setOtSel(null), onSaved: () => { abrirOt(otSel.ot.id); cargarTodo(); } }),
+    h("div", { className: "card" },
+      h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 10 } },
+        h("div", { style: { display: "flex", gap: 8 } },
+          h("button", { className: "nav-btn" + (vista === "mesa" ? " active" : ""), onClick: () => setVista("mesa") }, "Mesa de control"),
+          h("button", { className: "nav-btn" + (vista === "catalogo" ? " active" : ""), onClick: () => setVista("catalogo") }, "Catálogo"),
+        ),
+        vista === "mesa" && h("button", { className: "btn-primary", onClick: () => setNuevaOt(true) }, "+ Registro rápido"),
+      ),
+      vista === "mesa"
+        ? h(MesaDeControl, { ots, cargando, expandido, setExpandido, onAbrir: abrirOt })
+        : h(CatalogoOperaciones, { empresaId, catalogo, notify, onChanged: cargarTodo }),
+    ),
+  );
+}
+
 function AdministracionList({ usuarios, refreshUsuarios, notify, currentUser, refreshOrdenes, refreshProveedores, refreshEmpresas, empresaId, empresa, empresas, proyectosTodos, catalogosTodos, proveedores }) {
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState(null);
@@ -4358,6 +4796,7 @@ function App({ currentUser, onLogout }) {
       esPatagonica && h("button", { className: "nav-btn" + (tab === "reportes" ? " active" : ""), onClick: () => setTab("reportes") }, "Reportes"),
       h("button", { className: "nav-btn" + (tab === "administracion" ? " active" : ""), onClick: () => setTab("administracion") }, "Administración"),
       esPatagonica && h("button", { className: "nav-btn" + (tab === "proyectos-seguimiento" ? " active" : ""), onClick: () => setTab("proyectos-seguimiento") }, "Proyectos"),
+      esPatagonica && h("button", { className: "nav-btn" + (tab === "ot-mantencion" ? " active" : ""), onClick: () => setTab("ot-mantencion") }, "OT Mantención"),
     ),
     tab === "dashboard" && h(Dashboard, {
       ordenes,
@@ -4373,6 +4812,7 @@ function App({ currentUser, onLogout }) {
     tab === "reportes" && esPatagonica && h(ReportesList, { ordenes, proveedores, notify }),
     tab === "administracion" && h(AdministracionList, { usuarios, refreshUsuarios: loadUsuarios, notify, currentUser, refreshOrdenes: loadOrdenes, refreshProveedores: loadProveedores, refreshEmpresas: loadEmpresas, empresaId, empresa: empresaActual, empresas, proyectosTodos, catalogosTodos, proveedores }),
     tab === "proyectos-seguimiento" && esPatagonica && h(ProyectosPage, { empresaId, proveedores, notify }),
+    tab === "ot-mantencion" && esPatagonica && h(OtMantencionPage, { empresaId, proveedores, notify }),
   );
 }
 
