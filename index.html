@@ -3505,6 +3505,7 @@ function NuevaOtModal({ empresaId, catalogo, currentUser, notify, onClose, onCre
 
   const submit = async () => {
     if (!form.titulo.trim()) return notify("err", "Describe qué pasa");
+    if (!form.cliente_id) return notify("err", "Selecciona el cliente");
     if (!form.ubicacion_id) return notify("err", "Selecciona la ubicación");
     setSaving(true);
     try {
@@ -3530,9 +3531,9 @@ function NuevaOtModal({ empresaId, catalogo, currentUser, notify, onClose, onCre
         h("input", { value: form.titulo, onChange: set("titulo"), placeholder: "Ej: Gotera activa sobre bodega" })),
 
       h("div", { className: "section-lbl" }, "Ubicación"),
-      h(Field, { label: "Cliente (opcional)" },
+      h(Field, { label: "Cliente *" },
         h("select", { value: form.cliente_id, onChange: seleccionarCliente },
-          h("option", { value: "" }, "— sin especificar —"),
+          h("option", { value: "" }, "Selecciona"),
           (catalogo.clientes || []).map((c) => h("option", { key: c.id, value: c.id }, c.razon_social)))),
       h("div", { className: "grid2" },
         h(Field, { label: "Ubicación *" },
