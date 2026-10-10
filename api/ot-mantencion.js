@@ -64,32 +64,74 @@ const SLA_ESTANDAR = {
 };
 
 const HORARIO_INICIO = 8.5, HORARIO_FIN = 18;
+const SANTIAGO_TZ = "America/Santiago";
 
-function esHabil(fecha) {
-  const dow = fecha.getDay();
-  return dow !== 0 && dow !== 6; // feriados de Chile no se consideran en esta fase
+// Vercel corre las funciones en UTC -- "horario habil" (8:30-18:00) tiene que
+// calcularse en la hora de pared de Santiago, no en la del servidor, o el
+// SLA queda corrido varias horas (y con el cambio de horario de verano
+// chileno, un offset fijo tampoco sirve). Estas 3 funciones traducen entre
+// un instante real (Date/UTC) y sus "partes" en zona Santiago.
+function offsetMinutosSantiago(fechaUtc) {
+  const parte = new Intl.DateTimeFormat("en-US", { timeZone: SANTIAGO_TZ, timeZoneName: "longOffset" })
+    .formatToParts(fechaUtc).find((p) => p.type === "timeZoneName").value; // "GMT-03:00" o "GMT-04:00"
+  const m = parte.match(/GMT([+-])(\d+)(?::(\d+))?/);
+  if (!m) return -180;
+  const signo = m[1] === "-" ? -1 : 1;
+  return signo * (Number(m[2]) * 60 + Number(m[3] || 0));
 }
 
-// Avanza `minutos` minutos en horario habil (lun-vie 8:30-18:00).
+function aPartesSantiago(fechaUtc) {
+  const partes = {};
+  new Intl.DateTimeFormat("en-US", {
+    timeZone: SANTIAGO_TZ, year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", hour12: false, weekday: "short",
+  }).formatToParts(fechaUtc).forEach((p) => { partes[p.type] = p.value; });
+  return {
+    year: Number(partes.year), month: Number(partes.month), day: Number(partes.day),
+    hour: partes.hour === "24" ? 0 : Number(partes.hour), minute: Number(partes.minute),
+    weekday: partes.weekday,
+  };
+}
+
+function desdePartesSantiago(p) {
+  const comoSiFueraUtc = Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute);
+  const offset = offsetMinutosSantiago(new Date(comoSiFueraUtc));
+  return new Date(comoSiFueraUtc - offset * 60000);
+}
+
+// Dia siguiente a las partes dadas, a las 08:30 -- usa Date.UTC solo como
+// calendario (mediodia arbitrario) para resolver fin de mes/año, y vuelve a
+// leer el resultado en zona Santiago.
+function diaSiguienteSantiago(p) {
+  const instanteAux = new Date(Date.UTC(p.year, p.month - 1, p.day + 1, 12, 0));
+  const pAux = aPartesSantiago(instanteAux);
+  return { ...pAux, hour: 8, minute: 30 };
+}
+
+function esHabilSantiago(partes) {
+  return partes.weekday !== "Sun" && partes.weekday !== "Sat"; // feriados de Chile no se consideran en esta fase
+}
+
+// Avanza `minutos` minutos en horario habil (lun-vie 8:30-18:00, hora Chile).
 function agregarMinutosHabiles(desde, minutos) {
-  let d = new Date(desde);
+  let actual = new Date(desde);
   let restante = minutos;
   while (restante > 0) {
-    if (esHabil(d)) {
-      const horaDecimal = d.getHours() + d.getMinutes() / 60;
-      if (horaDecimal < HORARIO_INICIO) { d.setHours(8, 30, 0, 0); continue; }
-      if (horaDecimal >= HORARIO_FIN) { d.setDate(d.getDate() + 1); d.setHours(8, 30, 0, 0); continue; }
+    const p = aPartesSantiago(actual);
+    if (esHabilSantiago(p)) {
+      const horaDecimal = p.hour + p.minute / 60;
+      if (horaDecimal < HORARIO_INICIO) { actual = desdePartesSantiago({ ...p, hour: 8, minute: 30 }); continue; }
+      if (horaDecimal >= HORARIO_FIN) { actual = desdePartesSantiago(diaSiguienteSantiago(p)); continue; }
       const minutosHastaFin = Math.round((HORARIO_FIN - horaDecimal) * 60);
       const avance = Math.min(restante, minutosHastaFin);
-      d = new Date(d.getTime() + avance * 60000);
+      actual = new Date(actual.getTime() + avance * 60000);
       restante -= avance;
-      if (restante > 0) { d.setDate(d.getDate() + 1); d.setHours(8, 30, 0, 0); }
+      if (restante > 0) { actual = desdePartesSantiago(diaSiguienteSantiago(aPartesSantiago(actual))); }
     } else {
-      d.setDate(d.getDate() + 1);
-      d.setHours(8, 30, 0, 0);
+      actual = desdePartesSantiago(diaSiguienteSantiago(p));
     }
   }
-  return d;
+  return actual;
 }
 
 function agregarHoras(desde, horas, habil) {
