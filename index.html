@@ -3878,6 +3878,12 @@ function CatalogoOperaciones({ empresaId, catalogo, notify, onChanged }) {
   );
 }
 
+function OtMantencionEnConstruccion() {
+  return h("div", { className: "page fade-up" },
+    h("div", { className: "card" },
+      h("div", { className: "empty" }, "EN CONSTRUCCIÓN — esta sección está en pruebas internas.")));
+}
+
 function OtMantencionPage({ empresaId, currentUser, notify }) {
   const [vista, setVista] = useState("mesa");
   const [ots, setOts] = useState([]);
@@ -4847,6 +4853,9 @@ function App({ currentUser, onLogout }) {
   // importar su nivel de aprobación o si está atado a una empresa/proyecto.
   const esPatagonica = (currentUser.usuario || "").toLowerCase().endsWith("@patagonica.cl");
   const esGestionObras = (currentUser.usuario || "").toLowerCase().endsWith("@gestionobras.cl");
+  // OT Mantención sigue en pruebas -- solo amelendez tiene acceso real
+  // mientras se valida el flujo; el resto del equipo ve "En construcción".
+  const puedeVerOtMantencion = (currentUser.usuario || "").toLowerCase() === "amelendez@patagonica.cl";
 
   return h("div", null,
     notif && h("div", { className: "notif notif-" + (notif.type === "ok" ? "ok" : notif.type === "warn" ? "warn" : "err") }, notif.msg),
@@ -4891,7 +4900,9 @@ function App({ currentUser, onLogout }) {
     tab === "reportes" && esPatagonica && h(ReportesList, { ordenes, proveedores, notify }),
     tab === "administracion" && h(AdministracionList, { usuarios, refreshUsuarios: loadUsuarios, notify, currentUser, refreshOrdenes: loadOrdenes, refreshProveedores: loadProveedores, refreshEmpresas: loadEmpresas, empresaId, empresa: empresaActual, empresas, proyectosTodos, catalogosTodos, proveedores }),
     tab === "proyectos-seguimiento" && esPatagonica && h(ProyectosPage, { empresaId, proveedores, notify }),
-    tab === "ot-mantencion" && esPatagonica && h(OtMantencionPage, { empresaId, currentUser, proveedores, notify }),
+    tab === "ot-mantencion" && esPatagonica && (puedeVerOtMantencion
+      ? h(OtMantencionPage, { empresaId, currentUser, proveedores, notify })
+      : h(OtMantencionEnConstruccion)),
   );
 }
 
