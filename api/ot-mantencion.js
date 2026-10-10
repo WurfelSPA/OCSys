@@ -197,8 +197,90 @@ function vacioANull(v) {
   return v === "" || v === undefined ? null : v;
 }
 
+function normalizarRut(r) {
+  return (r || "").toUpperCase().replace(/[^0-9K]/g, "");
+}
+
+// Portal de solicitudes (piloto): busca el cliente por RUT y devuelve sus
+// unidades vigentes hoy. null si el RUT no existe o no tiene ninguna unidad
+// vigente -- ambos casos se tratan igual de cara al arrendatario ("RUT no
+// encontrado"), ver docs/superpowers/specs/2026-10-09-portal-solicitud-cliente-design.md.
+async function resolverUnidadPorRut(db, rut, fecha) {
+  const rutNorm = normalizarRut(rut);
+  if (!rutNorm) return null;
+  const { data: clientes } = await db.from("cliente_operaciones").select("id, rut");
+  const cliente = (clientes || []).find((c) => normalizarRut(c.rut) === rutNorm);
+  if (!cliente) return null;
+
+  const f = (fecha || new Date().toISOString()).slice(0, 10);
+  const { data: vigentes } = await db
+    .from("contrato_unidad")
+    .select("unidad_id, contrato_operaciones!inner(cliente_id)")
+    .eq("contrato_operaciones.cliente_id", cliente.id)
+    .lte("desde", f)
+    .or("hasta.is.null,hasta.gte." + f);
+
+  const unidadIds = [...new Set((vigentes || []).map((v) => v.unidad_id))];
+  if (!unidadIds.length) return null;
+  return { clienteId: cliente.id, unidadIds };
+}
+
 export default async function handler(req, res) {
   const db = supabase();
+
+  // Portal publico de solicitudes para arrendatarios (piloto, sin login) --
+  // llamado por el Apps Script del formulario, no por un usuario de OCFast,
+  // asi que se autentica con un token fijo en vez del cookie de sesion. Va
+  // ANTES del gate @patagonica.cl de mas abajo.
+  if (req.method === "POST" && req.query.solicitud) {
+    const token = req.headers["x-portal-token"];
+    if (!token || token !== process.env.PORTAL_CLIENTE_TOKEN) {
+      return res.status(401).json({ error: "No autorizado" });
+    }
+    const body = await readJsonBody(req);
+    if (!body.rut) return res.status(400).json({ error: "rut es obligatorio" });
+    if (!body.titulo) return res.status(400).json({ error: "titulo es obligatorio" });
+
+    const fechaReporte = new Date().toISOString();
+    const match = await resolverUnidadPorRut(db, body.rut, fechaReporte);
+    if (!match) return res.status(404).json({ error: "rut_no_encontrado" });
+
+    const { data: unidad, error: eUnidad } = await db.from("unidad").select("id, sitio(empresa_id)").eq("id", match.unidadIds[0]).maybeSingle();
+    const empresaId = unidad && unidad.sitio && unidad.sitio.empresa_id;
+    if (eUnidad || !empresaId) return res.status(500).json({ error: eUnidad ? eUnidad.message : "No se pudo determinar la empresa de la unidad" });
+
+    const impacto = CATEGORIA_IMPACTO[body.categoria] || CATEGORIA_IMPACTO_DEFAULT;
+    const urgencia = "Estable";
+    const prioridad = calcularPrioridad(impacto, urgencia);
+    const { clienteIds, contratoIds } = await resolverClientesContratos(db, "unidad", unidad.id, fechaReporte);
+    const fechas = await calcularFechasLimite(db, prioridad, fechaReporte, contratoIds);
+    const cat = CATEGORIAS[body.categoria];
+    const { data: numero, error: eNum } = await db.rpc("siguiente_numero_ot");
+    if (eNum) return res.status(500).json({ error: eNum.message });
+
+    const { data, error } = await db.from("ot_mantencion").insert({
+      codigo: "OT-" + String(numero).padStart(4, "0"),
+      empresa_id: empresaId, titulo: body.titulo, resumen: body.titulo,
+      categoria: vacioANull(body.categoria),
+      ubicacion_tipo: "unidad", ubicacion_id: unidad.id,
+      clientes_afectados: clienteIds, contratos_afectados: contratoIds,
+      impacto, urgencia, prioridad,
+      estado: "Nueva",
+      cargo: cat ? cat.cargo : "Por definir",
+      ...fechas,
+      reportado_por: vacioANull(body.reportado_por), fecha_reporte: fechaReporte,
+      descripcion_original: body.titulo,
+      creado_por_usuario: "amelendez@patagonica.cl",
+      origen: "portal_cliente",
+    }).select().single();
+    if (error) return res.status(500).json({ error: error.message });
+    await registrarBitacora(db, data.id, data.resumen || data.titulo, body.reportado_por || "Arrendatario (portal)");
+    if (match.unidadIds.length > 1) {
+      await registrarBitacora(db, data.id, "Cliente tiene " + match.unidadIds.length + " unidades vigentes -- confirmar cuál corresponde con el contacto", "sistema");
+    }
+    return res.status(201).json({ ok: true, codigo: data.codigo });
+  }
+
   const session = verifyToken(parseCookie(req.headers.cookie, "ocsys_token"), process.env.SESSION_SECRET || "");
   if (!session || !(session.usuario || "").toLowerCase().endsWith("@patagonica.cl")) {
     return res.status(403).json({ error: "Esta función es solo para personal de Patagónica" });
