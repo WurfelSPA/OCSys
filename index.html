@@ -2078,8 +2078,13 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
     });
 
     return conDerivados.sort((a, b) => {
-      // Orden por N° de OC (mas nuevo primero); si comparten N° base (varias
-      // cuotas de una misma OC), quedan juntas y en orden de cuota (1, 2, 3...).
+      // Orden por fecha (mas reciente primero) -- el N° de OC no sirve como
+      // proxy de fecha cuando se mezclan codigos de Acquisys (otro prefijo)
+      // o una OC se renumero/corrigio a mano. Si comparten fecha, quedan
+      // agrupadas por N° base (varias cuotas de una misma OC) y en orden de
+      // cuota (1, 2, 3...).
+      const fechaCmp = (b.fecha || "").localeCompare(a.fecha || "");
+      if (fechaCmp !== 0) return fechaCmp;
       const baseCmp = b.numero_oc_base.localeCompare(a.numero_oc_base);
       if (baseCmp !== 0) return baseCmp;
       return (a.cuota_numero || 0) - (b.cuota_numero || 0);
