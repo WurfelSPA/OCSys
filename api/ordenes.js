@@ -184,6 +184,7 @@ export default async function handler(req, res) {
     if (body.archivo_nombre !== undefined) fields.archivo_nombre = body.archivo_nombre;
     if (body.archivo_comprobante_url !== undefined) fields.archivo_comprobante_url = body.archivo_comprobante_url;
     if (body.archivo_comprobante_nombre !== undefined) fields.archivo_comprobante_nombre = body.archivo_comprobante_nombre;
+    if (body.numero_egreso !== undefined) fields.numero_egreso = body.numero_egreso || null;
     // Correccion manual de historicos migrados (no genera HES nuevo, a diferencia
     // de la transicion a "Aprobada" mas arriba, que sí lo asigna automaticamente).
     if (body.numero_hes !== undefined && body.estado === undefined) fields.numero_hes = body.numero_hes;
