@@ -826,7 +826,19 @@ async function generarYAdjuntarPdf(ordenFila, proveedor, empresa) {
 }
 
 function CuotasEditor({ cuotas, setCuotas, montoNeto, moneda }) {
-  const setCuota = (i, k, v) => setCuotas((cs) => cs.map((c, idx) => idx === i ? { ...c, [k]: v, porcentaje: k === "monto" ? (montoNeto ? Math.round((Number(v) / Number(montoNeto)) * 100) : 0) : c.porcentaje } : c));
+  // Si al editar el monto de una cuota unica queda igual al Monto Neto total
+  // (100%), la Observacion se fuerza a "1/1" de inmediato -- evita que quede
+  // en 0% o con una observacion vieja/inconsistente (ej. si el usuario
+  // corrige el monto a mano despues de que la IA extrajo un Monto Neto
+  // equivocado, como paso en la PA-OC-00343).
+  const setCuota = (i, k, v) => setCuotas((cs) => cs.map((c, idx) => {
+    if (idx !== i) return c;
+    if (k !== "monto") return { ...c, [k]: v };
+    const neto = Number(montoNeto) || 0;
+    const porcentaje = neto ? Math.round((Number(v) / neto) * 100) : 0;
+    const esUnicaY100 = cs.length === 1 && neto && Math.abs(Number(v) - neto) < 0.01;
+    return { ...c, monto: v, porcentaje, observacion: esUnicaY100 ? "1/1" : c.observacion };
+  }));
 
   // El monto de una cuota en UF puede traer decimales (ej. 5536.9) -- a
   // diferencia de CLP/USD, que se redondean a entero.
