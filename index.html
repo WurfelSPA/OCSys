@@ -2232,7 +2232,10 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
     },
     {
       key: "monto_cuota", label: "Monto Cuota", sortable: false,
-      render: (o) => (!o._esGrupo && o.cuota_total) ? fmtMontoMoneda(o.monto_neto, o.moneda || "CLP") : "—",
+      // Una OC que nunca se dividio en cuotas igual es, en los hechos, "1/1"
+      // -- su unico pago es el 100% del Monto Neto. Antes se mostraba vacio
+      // y solo se llenaba para OC formalmente divididas.
+      render: (o) => !o._esGrupo ? fmtMontoMoneda(o.monto_neto, o.moneda || "CLP") : "—",
     },
     {
       key: "numero_factura", label: "N° Factura",
