@@ -1,0 +1,14 @@
+-- Conciliacion automatica de pagos Banco de Chile (rutina diaria en la nube,
+-- trigger "OCFast - Conciliar pagos Banco de Chile" en claude.ai/code/routines).
+--
+-- El sandbox de la rutina no tiene salida a internet general (solo a los
+-- conectores MCP de Gmail/Supabase), asi que no puede llamar directo a
+-- ocfast.vercel.app para subir el PDF del comprobante. Se resuelve con
+-- pg_net: la rutina solo ejecuta SQL (via el conector Supabase, que si
+-- funciona), y es POSTGRES quien hace la llamada HTTP de verdad, desde la
+-- red de Supabase -- la Edge Function "procesar-comprobante" (deploy
+-- separado, ver supabase/functions o el dashboard) genera el PDF y lo sube
+-- al bucket ocsys-archivos, y actualiza ordenes_compra.archivo_comprobante_url.
+--
+-- Aplicado directo en Supabase.
+create extension if not exists pg_net;
