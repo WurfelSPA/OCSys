@@ -1,5 +1,33 @@
 import { supabase } from "./_supabase.js";
 
+// Lista de "a que cliente/ubicacion va dirigida esta OC" para el desplegable
+// Cliente de Nueva OC -- independiente del catalogo de Centro de Costo/Cuenta
+// Contable/Proyecto. Reusa el mismo catastro de sitio/edificio/unidad +
+// contrato vigente cargado para OT Mantencion (ver Planilla de Facturacion),
+// una fila por unidad con su cliente vigente hoy (o "VACANTE" si no tiene).
+async function construirClientesOc(db, empresaId) {
+  const hoy = new Date().toISOString().slice(0, 10);
+  const { data, error } = await db
+    .from("unidad")
+    .select("id, codigo, edificio!inner(nombre, sitio!inner(codigo, empresa_id)), contrato_unidad(desde, hasta, contrato_operaciones(cliente_operaciones(rut, razon_social)))")
+    .eq("edificio.sitio.empresa_id", empresaId)
+    .order("codigo");
+  if (error) return { data: null, error };
+
+  const etiquetas = (data || []).map((u) => {
+    const vigente = (u.contrato_unidad || []).find((cu) => cu.desde <= hoy && (!cu.hasta || cu.hasta >= hoy));
+    const cliente = vigente?.contrato_operaciones?.cliente_operaciones;
+    const sitioCod = u.edificio?.sitio?.codigo || "";
+    const edifNom = u.edificio?.nombre || u.codigo;
+    return cliente
+      ? [sitioCod, edifNom, cliente.rut, cliente.razon_social].filter(Boolean).join(" — ")
+      : [sitioCod, edifNom, "VACANTE"].filter(Boolean).join(" — ");
+  });
+  // Mismo sitio/edificio puede repetirse si tiene mas de una unidad con el
+  // mismo cliente -- sin duplicados en el desplegable.
+  return { data: [...new Set(etiquetas)].sort(), error: null };
+}
+
 export default async function handler(req, res) {
   if (req.method !== "GET") {
     res.setHeader("Allow", "GET");
@@ -17,14 +45,15 @@ export default async function handler(req, res) {
     cuentasContablesQuery = cuentasContablesQuery.eq("empresa_id", empresaId);
   }
 
-  const [centrosCosto, cuentasContables, regiones, ciudades] = await Promise.all([
+  const [centrosCosto, cuentasContables, regiones, ciudades, clientesOc] = await Promise.all([
     centrosCostoQuery,
     cuentasContablesQuery,
     db.from("regiones").select("id, nombre").order("nombre"),
     db.from("ciudades").select("id, region_id, nombre").order("nombre"),
+    construirClientesOc(db, empresaId),
   ]);
 
-  const err = centrosCosto.error || cuentasContables.error || regiones.error || ciudades.error;
+  const err = centrosCosto.error || cuentasContables.error || regiones.error || ciudades.error || clientesOc.error;
   if (err) return res.status(500).json({ error: err.message });
 
   return res.status(200).json({
@@ -32,5 +61,6 @@ export default async function handler(req, res) {
     cuentasContables: cuentasContables.data,
     regiones: regiones.data,
     ciudades: ciudades.data,
+    clientesOc: clientesOc.data,
   });
 }

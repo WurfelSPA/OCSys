@@ -42,6 +42,7 @@ async function dividirEnCuotasPUT(db, id, body, res) {
     proveedor_id: campo("proveedor_id"),
     centro_costo_codigo: campo("centro_costo_codigo", (v) => v || null),
     cuenta_contable_codigo: campo("cuenta_contable_codigo", (v) => v || null),
+    cliente_destino: campo("cliente_destino", (v) => v || null),
     tipo_orden: campo("tipo_orden"),
     tipo_compra: campo("tipo_compra"),
     moneda: campo("moneda"),
@@ -105,7 +106,7 @@ export default async function handler(req, res) {
     // corregirlos ahi generaria una OC inconsistente con lo ya enviado.
     const CAMPOS_SOLO_ANTES_DE_APROBAR = [
       "proveedor_id", "numero_cotizacion", "proyecto_id", "titulo", "descripcion", "condiciones", "motivo",
-      "creado_por", "centro_costo_codigo", "cuenta_contable_codigo", "tipo_orden", "tipo_compra",
+      "creado_por", "centro_costo_codigo", "cuenta_contable_codigo", "cliente_destino", "tipo_orden", "tipo_compra",
       "moneda", "monto_neto", "monto_iva", "monto_total", "fecha", "cuotas",
     ];
     if (CAMPOS_SOLO_ANTES_DE_APROBAR.some((k) => body[k] !== undefined)) {
@@ -199,6 +200,7 @@ export default async function handler(req, res) {
     if (body.creado_por !== undefined) fields.creado_por = body.creado_por;
     if (body.centro_costo_codigo !== undefined) fields.centro_costo_codigo = body.centro_costo_codigo || null;
     if (body.cuenta_contable_codigo !== undefined) fields.cuenta_contable_codigo = body.cuenta_contable_codigo || null;
+    if (body.cliente_destino !== undefined) fields.cliente_destino = body.cliente_destino || null;
     if (body.tipo_orden !== undefined) fields.tipo_orden = body.tipo_orden;
     if (body.tipo_compra !== undefined) fields.tipo_compra = body.tipo_compra;
     if (body.moneda !== undefined) fields.moneda = body.moneda;
@@ -348,6 +350,17 @@ export default async function handler(req, res) {
     const estado = ESTADOS_OCSYS.includes(body.estado) ? body.estado : "Borrador";
     const cuotas = Array.isArray(body.cuotas) ? body.cuotas : [];
 
+    // Centro de Costo/Cuenta Contable/Proyecto/Cliente son obligatorios --
+    // se valida el valor EFECTIVO (el de la sesion, si viene fijo, o si no
+    // el del body), igual que se arma mas abajo en camposBase.
+    const centroCostoEfectivo = (session && session.centro_costo_codigo) ? session.centro_costo_codigo : (body.centro_costo_codigo || null);
+    const cuentaContableEfectiva = (session && session.cuenta_contable_codigo) ? session.cuenta_contable_codigo : (body.cuenta_contable_codigo || null);
+    const proyectoEfectivo = (session && session.proyecto_id) ? session.proyecto_id : (body.proyecto_id || null);
+    if (!centroCostoEfectivo) return res.status(400).json({ error: "centro_costo_codigo es obligatorio" });
+    if (!cuentaContableEfectiva) return res.status(400).json({ error: "cuenta_contable_codigo es obligatorio" });
+    if (!proyectoEfectivo) return res.status(400).json({ error: "proyecto_id es obligatorio" });
+    if (!body.cliente_destino) return res.status(400).json({ error: "cliente_destino es obligatorio" });
+
     const { data: empresa, error: empresaError } = await db.from("empresas").select("codigo").eq("id", empresaId).maybeSingle();
     if (empresaError) return res.status(500).json({ error: empresaError.message });
     const { data: siguiente, error: seqError } = await db.rpc("siguiente_numero_oc", { p_empresa_id: empresaId });
@@ -359,7 +372,7 @@ export default async function handler(req, res) {
       // Si la sesion tiene un proyecto fijo asignado, se ignora cualquier
       // proyecto_id que mande el body -- refuerza del lado del servidor el
       // bloqueo visual del campo "Proyecto" en Nueva OC (ver index.html).
-      proyecto_id: (session && session.proyecto_id) ? session.proyecto_id : (body.proyecto_id || null),
+      proyecto_id: proyectoEfectivo,
       creado_por_usuario: session ? session.usuario : null,
       // Igual que creado_por_usuario: se toma de la sesion (nombre y
       // apellido reales de quien esta logeado), no de lo que mande el
@@ -376,8 +389,9 @@ export default async function handler(req, res) {
       // Mismo refuerzo que proyecto_id -- si la sesion trae Centro de
       // Costo/Cuenta Contable fijos (ej. proveedores en autogestion), se
       // ignora lo que mande el body.
-      centro_costo_codigo: (session && session.centro_costo_codigo) ? session.centro_costo_codigo : (body.centro_costo_codigo || null),
-      cuenta_contable_codigo: (session && session.cuenta_contable_codigo) ? session.cuenta_contable_codigo : (body.cuenta_contable_codigo || null),
+      centro_costo_codigo: centroCostoEfectivo,
+      cuenta_contable_codigo: cuentaContableEfectiva,
+      cliente_destino: body.cliente_destino,
       tipo_orden: body.tipo_orden || null,
       tipo_compra: body.tipo_compra || null,
       moneda: body.moneda || "CLP",

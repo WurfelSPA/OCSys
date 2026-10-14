@@ -72,6 +72,7 @@ button{font-family:'Inter',sans-serif;cursor:pointer;transition:all 0.15s}
 .section-lbl:first-child{margin-top:0;padding-top:0;border-top:none}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+.grid4{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px}
 .field{display:flex;flex-direction:column;gap:5px;margin-bottom:12px}
 .field label{font-size:11px;font-weight:600;color:var(--txm)}
 .row-inline{display:flex;gap:8px;align-items:flex-end}
@@ -134,7 +135,7 @@ tr:hover td{background:var(--surf2)}
 .ac-item:last-child{border-bottom:none}
 .ac-item:hover{background:var(--surf2)}
 .ac-empty{padding:12px;font-size:12px;color:var(--txd)}
-@media (max-width:720px){.grid2,.grid3{grid-template-columns:1fr}.modal{padding:20px}}
+@media (max-width:720px){.grid2,.grid3,.grid4{grid-template-columns:1fr}.modal{padding:20px}}
 </style>
 </head>
 <body>
@@ -966,6 +967,7 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, proyectos, refres
     proyecto_id: currentUser.proyecto_id || "",
     centro_costo_codigo: currentUser.centro_costo_codigo || "",
     cuenta_contable_codigo: currentUser.cuenta_contable_codigo || "",
+    cliente_destino: "",
   }));
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
@@ -1106,6 +1108,10 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, proyectos, refres
 
   const submit = async (estado) => {
     if (!form.proveedor_id) return notify("err", "Selecciona un proveedor");
+    if (!form.centro_costo_codigo) return notify("err", "Selecciona el Centro de Costo");
+    if (!form.cuenta_contable_codigo) return notify("err", "Selecciona la Cuenta Contable");
+    if (!form.proyecto_id) return notify("err", "Selecciona el Proyecto");
+    if (!form.cliente_destino) return notify("err", "Selecciona el Cliente");
     if (estado === "Pendiente aprobación") {
       // Solo avisa, no bloquea -- la ficha puede completarse despues (ej.
       // datos bancarios), no tiene por que detener la generacion de la OC.
@@ -1258,8 +1264,8 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, proyectos, refres
           placeholder: "Plazos de entrega, condiciones de pago, etc. Se completa automáticamente al leer con IA, o ingrésalo a mano",
         })),
 
-      h("div", { className: "grid3" },
-        h(Field, { label: "Centro de Costo" },
+      h("div", { className: "grid4" },
+        h(Field, { label: "Centro de Costo *" },
           h("select", {
             value: form.centro_costo_codigo, disabled: !catalogos.listos || !!currentUser.centro_costo_codigo,
             onChange: (e) => setForm((f) => ({ ...f, centro_costo_codigo: e.target.value, cuenta_contable_codigo: "" })),
@@ -1267,7 +1273,7 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, proyectos, refres
             h("option", { value: "" }, catalogos.listos ? "Selecciona" : "Cargando..."),
             catalogos.centrosCosto.map((c) => h("option", { key: c.codigo, value: c.codigo }, c.codigo + " — " + c.descripcion)),
           )),
-        h(Field, { label: "Cuenta Contable" },
+        h(Field, { label: "Cuenta Contable *" },
           !form.centro_costo_codigo
             ? h("input", { disabled: true, placeholder: "Primero selecciona un Centro de Costo" })
             : h(SearchSelect, {
@@ -1280,7 +1286,7 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, proyectos, refres
                 disabled: !!currentUser.cuenta_contable_codigo,
               })
         ),
-        h(Field, { label: "Proyectos" },
+        h(Field, { label: "Proyectos *" },
           h("div", { className: "row-inline" },
             h("select", {
               value: form.proyecto_id, disabled: !!currentUser.proyecto_id,
@@ -1291,6 +1297,16 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, proyectos, refres
             ),
             !currentUser.proyecto_id && h("button", { className: "btn-add", title: "Agregar proyecto", type: "button", onClick: agregarProyecto }, "+"),
           )),
+        // A que cliente/ubicacion va dirigida esta OC -- independiente del
+        // Centro de Costo/Cuenta Contable/Proyecto de arriba. "Otro" primero
+        // porque no todas las OC son para un cliente puntual del catastro.
+        h(Field, { label: "Cliente *" },
+          h(SearchSelect, {
+            options: [{ value: "Otro", label: "Otro" }, ...((catalogos.clientesOc || []).map((c) => ({ value: c, label: c })))],
+            value: form.cliente_destino,
+            onChange: (v) => setForm((f) => ({ ...f, cliente_destino: v })),
+            placeholder: "Escribe para buscar cliente...",
+          })),
       ),
 
       h("div", { className: "grid3" },
@@ -1597,6 +1613,7 @@ function EditarOrdenModal({ orden, proveedores, catalogos, proyectos, refreshPro
     fecha: orden.fecha || "",
     centro_costo_codigo: orden.centro_costo_codigo || "",
     cuenta_contable_codigo: orden.cuenta_contable_codigo || "",
+    cliente_destino: orden.cliente_destino || "",
     tipo_orden: orden.tipo_orden || "Afecto",
     tipo_compra: orden.tipo_compra || "Servicios",
     moneda: orden.moneda || "CLP",
@@ -1773,8 +1790,8 @@ function EditarOrdenModal({ orden, proveedores, catalogos, proyectos, refreshPro
             h("option", { value: "UF" }, "UF"),
           )),
       ),
-      h("div", { className: "grid3" },
-        h(Field, { label: "Centro de Costo" },
+      h("div", { className: "grid4" },
+        h(Field, { label: "Centro de Costo *" },
           h("select", {
             value: form.centro_costo_codigo, disabled: !catalogos.listos,
             onChange: (e) => setForm((f) => ({ ...f, centro_costo_codigo: e.target.value, cuenta_contable_codigo: "" })),
@@ -1782,7 +1799,7 @@ function EditarOrdenModal({ orden, proveedores, catalogos, proyectos, refreshPro
             h("option", { value: "" }, catalogos.listos ? "Selecciona" : "Cargando..."),
             catalogos.centrosCosto.map((c) => h("option", { key: c.codigo, value: c.codigo }, c.codigo + " — " + c.descripcion)),
           )),
-        h(Field, { label: "Cuenta Contable" },
+        h(Field, { label: "Cuenta Contable *" },
           !form.centro_costo_codigo
             ? h("input", { disabled: true, placeholder: "Primero selecciona un Centro de Costo" })
             : h(SearchSelect, {
@@ -1793,7 +1810,7 @@ function EditarOrdenModal({ orden, proveedores, catalogos, proyectos, refreshPro
                 onChange: (v) => setForm((f) => ({ ...f, cuenta_contable_codigo: v })),
                 placeholder: "Escribe para buscar cuenta contable...",
               })),
-        h(Field, { label: "Proyectos" },
+        h(Field, { label: "Proyectos *" },
           h("div", { className: "row-inline" },
             h("select", {
               value: form.proyecto_id, onChange: (e) => setForm((f) => ({ ...f, proyecto_id: e.target.value })),
@@ -1803,6 +1820,13 @@ function EditarOrdenModal({ orden, proveedores, catalogos, proyectos, refreshPro
             ),
             h("button", { className: "btn-add", title: "Agregar proyecto", type: "button", onClick: agregarProyecto }, "+"),
           )),
+        h(Field, { label: "Cliente *" },
+          h(SearchSelect, {
+            options: [{ value: "Otro", label: "Otro" }, ...((catalogos.clientesOc || []).map((c) => ({ value: c, label: c })))],
+            value: form.cliente_destino,
+            onChange: (v) => setForm((f) => ({ ...f, cliente_destino: v })),
+            placeholder: "Escribe para buscar cliente...",
+          })),
       ),
       h("div", { style: { display: "flex", gap: 32, flexWrap: "wrap", alignItems: "flex-start" } },
         h("div", { style: { flex: "1 1 340px" } },
@@ -1850,6 +1874,7 @@ function EditarGrupoModal({ grupo, proveedores, catalogos, proyectos, refreshPro
     fecha: grupo.fecha || "",
     centro_costo_codigo: grupo.centro_costo_codigo || "",
     cuenta_contable_codigo: grupo.cuenta_contable_codigo || "",
+    cliente_destino: grupo.cliente_destino || "",
     tipo_orden: grupo.tipo_orden || "Afecto",
     tipo_compra: grupo.tipo_compra || "Servicios",
     moneda: grupo.moneda || "CLP",
@@ -1935,8 +1960,8 @@ function EditarGrupoModal({ grupo, proveedores, catalogos, proyectos, refreshPro
             h("option", { value: "UF" }, "UF"),
           )),
       ),
-      h("div", { className: "grid3" },
-        h(Field, { label: "Centro de Costo" },
+      h("div", { className: "grid4" },
+        h(Field, { label: "Centro de Costo *" },
           h("select", {
             value: form.centro_costo_codigo, disabled: !catalogos.listos,
             onChange: (e) => setForm((f) => ({ ...f, centro_costo_codigo: e.target.value, cuenta_contable_codigo: "" })),
@@ -1944,7 +1969,7 @@ function EditarGrupoModal({ grupo, proveedores, catalogos, proyectos, refreshPro
             h("option", { value: "" }, catalogos.listos ? "Selecciona" : "Cargando..."),
             catalogos.centrosCosto.map((c) => h("option", { key: c.codigo, value: c.codigo }, c.codigo + " — " + c.descripcion)),
           )),
-        h(Field, { label: "Cuenta Contable" },
+        h(Field, { label: "Cuenta Contable *" },
           !form.centro_costo_codigo
             ? h("input", { disabled: true, placeholder: "Primero selecciona un Centro de Costo" })
             : h(SearchSelect, {
@@ -1955,7 +1980,7 @@ function EditarGrupoModal({ grupo, proveedores, catalogos, proyectos, refreshPro
                 onChange: (v) => setForm((f) => ({ ...f, cuenta_contable_codigo: v })),
                 placeholder: "Escribe para buscar cuenta contable...",
               })),
-        h(Field, { label: "Proyectos" },
+        h(Field, { label: "Proyectos *" },
           h("div", { className: "row-inline" },
             h("select", {
               value: form.proyecto_id, onChange: (e) => setForm((f) => ({ ...f, proyecto_id: e.target.value })),
@@ -1965,6 +1990,13 @@ function EditarGrupoModal({ grupo, proveedores, catalogos, proyectos, refreshPro
             ),
             h("button", { className: "btn-add", title: "Agregar proyecto", type: "button", onClick: agregarProyecto }, "+"),
           )),
+        h(Field, { label: "Cliente *" },
+          h(SearchSelect, {
+            options: [{ value: "Otro", label: "Otro" }, ...((catalogos.clientesOc || []).map((c) => ({ value: c, label: c })))],
+            value: form.cliente_destino,
+            onChange: (v) => setForm((f) => ({ ...f, cliente_destino: v })),
+            placeholder: "Escribe para buscar cliente...",
+          })),
       ),
       h("div", { style: { display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 16 } },
         h("button", { className: "btn-ghost", onClick: onClose }, "Cancelar"),
