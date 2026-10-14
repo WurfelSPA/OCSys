@@ -3821,6 +3821,7 @@ function CatalogoOperaciones({ empresaId, catalogo, notify, onChanged }) {
   const SUBTABS = [
     { key: "sitios", label: "Sitios" }, { key: "edificios", label: "Edificios" }, { key: "unidades", label: "Unidades" },
     { key: "areas", label: "Áreas comunes" }, { key: "clientes", label: "Clientes" }, { key: "contratos", label: "Contratos" },
+    { key: "contactos", label: "Contactos" },
   ];
 
   return h("div", null,
@@ -3895,6 +3896,27 @@ function CatalogoOperaciones({ empresaId, catalogo, notify, onChanged }) {
         onClick: () => crear("contrato", { codigo: form.codigo, cliente_id: form.cliente_id, fecha_inicio: form.fecha_inicio, unidad_ids: form.unidad_ids || [] }),
       }, "+ Agregar contrato"),
       h(DataTable, { columns: [{ key: "codigo", label: "Código" }, { key: "fecha_inicio", label: "Inicio", render: (c) => fmtDate(c.fecha_inicio) }], rows: catalogo.contratos, rowKey: (c) => c.id, emptyText: "Sin contratos" })),
+
+    // Telefonos de contacto por cliente -- el bot de solicitudes (Telegram)
+    // los usa para identificar quien escribe y saludarlo por nombre, ademas
+    // del RUT. Un cliente puede tener varios (ej. hasta 5).
+    sub === "contactos" && h("div", null,
+      h("div", { className: "grid3", style: { marginBottom: 10 } },
+        h(Field, { label: "Cliente" }, h("select", { value: form.cliente_id || "", onChange: set("cliente_id") }, h("option", { value: "" }, "Selecciona"), catalogo.clientes.map((c) => h("option", { key: c.id, value: c.id }, c.razon_social)))),
+        h(Field, { label: "Nombre" }, h("input", { value: form.nombre || "", onChange: set("nombre"), placeholder: "Ej: Juan Pérez" })),
+        h(Field, { label: "Teléfono" }, h("input", { value: form.telefono || "", onChange: set("telefono"), placeholder: "+56 9 1234 5678" }))),
+      h(Field, { label: "Cargo (opcional)" }, h("input", { value: form.cargo || "", onChange: set("cargo") })),
+      h("button", {
+        className: "btn-primary",
+        onClick: () => crear("contacto", { cliente_id: form.cliente_id, nombre: form.nombre, telefono: form.telefono, cargo: form.cargo }),
+      }, "+ Agregar contacto"),
+      h(DataTable, {
+        columns: [
+          { key: "cliente", label: "Cliente", sortValue: (c) => c.cliente_operaciones ? c.cliente_operaciones.razon_social : "", render: (c) => c.cliente_operaciones ? c.cliente_operaciones.razon_social : "—" },
+          { key: "nombre", label: "Nombre" }, { key: "telefono", label: "Teléfono" }, { key: "cargo", label: "Cargo", render: (c) => c.cargo || "—" },
+        ],
+        rows: catalogo.contactos || [], rowKey: (c) => c.id, emptyText: "Sin contactos",
+      })),
   );
 }
 
@@ -3907,7 +3929,7 @@ function OtMantencionEnConstruccion() {
 function OtMantencionPage({ empresaId, currentUser, notify }) {
   const [vista, setVista] = useState("mesa");
   const [ots, setOts] = useState([]);
-  const [catalogo, setCatalogo] = useState({ sitios: [], edificios: [], unidades: [], areas_comunes: [], clientes: [], contratos: [] });
+  const [catalogo, setCatalogo] = useState({ sitios: [], edificios: [], unidades: [], areas_comunes: [], clientes: [], contratos: [], contactos: [] });
   const [usuariosOps, setUsuariosOps] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [nuevaOt, setNuevaOt] = useState(false);

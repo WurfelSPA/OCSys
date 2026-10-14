@@ -243,48 +243,86 @@ function normalizarRut(r) {
   return (r || "").toUpperCase().replace(/[^0-9K]/g, "");
 }
 
-// Portal de solicitudes (piloto): busca el cliente por RUT y devuelve sus
-// unidades vigentes hoy. null si el RUT no existe o no tiene ninguna unidad
-// vigente -- ambos casos se tratan igual de cara al arrendatario ("RUT no
-// encontrado").
-async function resolverUnidadPorRut(db, rut, fecha) {
+// Compara solo los ultimos 9 digitos -- asi da lo mismo si el contacto quedo
+// guardado como "+56 9 1234 5678", "56912345678" o "912345678".
+function normalizarTelefono(t) {
+  const digitos = (t || "").replace(/\D/g, "");
+  return digitos.slice(-9);
+}
+
+// Busca el cliente por RUT (o, si no hay rut, por telefono contra
+// contacto_operaciones) y devuelve sus unidades vigentes hoy + su razon
+// social (para poder saludar por nombre antes de pedir el detalle). null si
+// no se encuentra el cliente o no tiene ninguna unidad vigente -- ambos
+// casos se tratan igual de cara al arrendatario ("RUT no encontrado").
+async function resolverUnidadPorIdentificador(db, { rut, telefono }, fecha) {
+  let clienteId = null, razonSocial = null;
+
   const rutNorm = normalizarRut(rut);
-  if (!rutNorm) return null;
-  const { data: clientes } = await db.from("cliente_operaciones").select("id, rut");
-  const cliente = (clientes || []).find((c) => normalizarRut(c.rut) === rutNorm);
-  if (!cliente) return null;
+  if (rutNorm) {
+    const { data: clientes } = await db.from("cliente_operaciones").select("id, rut, razon_social");
+    const cliente = (clientes || []).find((c) => normalizarRut(c.rut) === rutNorm);
+    if (cliente) { clienteId = cliente.id; razonSocial = cliente.razon_social; }
+  }
+
+  if (!clienteId) {
+    const telNorm = normalizarTelefono(telefono);
+    if (telNorm) {
+      const { data: contactos } = await db.from("contacto_operaciones").select("cliente_id, telefono, cliente_operaciones(razon_social)");
+      const contacto = (contactos || []).find((c) => normalizarTelefono(c.telefono) === telNorm);
+      if (contacto) { clienteId = contacto.cliente_id; razonSocial = contacto.cliente_operaciones?.razon_social; }
+    }
+  }
+
+  if (!clienteId) return null;
 
   const f = (fecha || new Date().toISOString()).slice(0, 10);
   const { data: vigentes } = await db
     .from("contrato_unidad")
     .select("unidad_id, contrato_operaciones!inner(cliente_id)")
-    .eq("contrato_operaciones.cliente_id", cliente.id)
+    .eq("contrato_operaciones.cliente_id", clienteId)
     .lte("desde", f)
     .or("hasta.is.null,hasta.gte." + f);
 
   const unidadIds = [...new Set((vigentes || []).map((v) => v.unidad_id))];
   if (!unidadIds.length) return null;
-  return { clienteId: cliente.id, unidadIds };
+  return { clienteId, razonSocial, unidadIds };
 }
 
 export default async function handler(req, res) {
   const db = supabase();
 
   // Portal publico de solicitudes para arrendatarios (piloto, sin login) --
-  // llamado por un canal externo (ej. un bot de WhatsApp via n8n), no por un
-  // usuario de OCFast, asi que se autentica con un token fijo en vez del
-  // cookie de sesion. Va ANTES del gate @patagonica.cl de mas abajo.
+  // llamado por un canal externo (ej. un bot de Telegram/WhatsApp via n8n),
+  // no por un usuario de OCFast, asi que se autentica con un token fijo en
+  // vez del cookie de sesion. Va ANTES del gate @patagonica.cl de mas abajo.
+
+  // Paso previo del bot: identificar al cliente por RUT o telefono para
+  // poder saludarlo por nombre ("Hola Neva") antes de pedirle el detalle de
+  // la incidencia -- no crea nada todavia.
+  if (req.method === "POST" && req.query.identificar) {
+    const token = req.headers["x-portal-token"];
+    if (!token || token !== process.env.PORTAL_CLIENTE_TOKEN) {
+      return res.status(401).json({ error: "No autorizado" });
+    }
+    const body = await readJsonBody(req);
+    if (!body.rut && !body.telefono) return res.status(400).json({ error: "rut o telefono es obligatorio" });
+    const match = await resolverUnidadPorIdentificador(db, { rut: body.rut, telefono: body.telefono }, new Date().toISOString());
+    if (!match) return res.status(404).json({ error: "no_encontrado" });
+    return res.status(200).json({ ok: true, razon_social: match.razonSocial });
+  }
+
   if (req.method === "POST" && req.query.solicitud) {
     const token = req.headers["x-portal-token"];
     if (!token || token !== process.env.PORTAL_CLIENTE_TOKEN) {
       return res.status(401).json({ error: "No autorizado" });
     }
     const body = await readJsonBody(req);
-    if (!body.rut) return res.status(400).json({ error: "rut es obligatorio" });
+    if (!body.rut && !body.telefono) return res.status(400).json({ error: "rut o telefono es obligatorio" });
     if (!body.titulo) return res.status(400).json({ error: "titulo es obligatorio" });
 
     const fechaReporte = new Date().toISOString();
-    const match = await resolverUnidadPorRut(db, body.rut, fechaReporte);
+    const match = await resolverUnidadPorIdentificador(db, { rut: body.rut, telefono: body.telefono }, fechaReporte);
     if (!match) return res.status(404).json({ error: "rut_no_encontrado" });
 
     const { data: unidad, error: eUnidad } = await db.from("unidad").select("id, sitio(empresa_id)").eq("id", match.unidadIds[0]).maybeSingle();
@@ -342,20 +380,22 @@ export default async function handler(req, res) {
 
       if (req.query.catalogo) {
         const empresaId = Number(req.query.empresa_id) || 1;
-        const [sitios, edificios, unidades, areasComunes, clientes, contratos] = await Promise.all([
+        const [sitios, edificios, unidades, areasComunes, clientes, contratos, contactos] = await Promise.all([
           db.from("sitio").select("*").eq("empresa_id", empresaId).eq("activo", true).order("codigo"),
           db.from("edificio").select("*, sitio!inner(empresa_id)").eq("sitio.empresa_id", empresaId).eq("activo", true).order("codigo"),
           db.from("unidad").select("*, edificio!inner(sitio!inner(empresa_id))").eq("edificio.sitio.empresa_id", empresaId).order("codigo"),
           db.from("area_comun").select("*").order("codigo"),
           db.from("cliente_operaciones").select("*").order("razon_social"),
           db.from("contrato_operaciones").select("*, cliente_operaciones(razon_social), contrato_unidad(unidad_id, desde, hasta)").order("codigo"),
+          db.from("contacto_operaciones").select("*, cliente_operaciones(razon_social)").order("nombre"),
         ]);
-        for (const r of [sitios, edificios, unidades, areasComunes, clientes, contratos]) {
+        for (const r of [sitios, edificios, unidades, areasComunes, clientes, contratos, contactos]) {
           if (r.error) return res.status(500).json({ error: r.error.message });
         }
         return res.status(200).json({
           sitios: sitios.data, edificios: edificios.data, unidades: unidades.data,
           areas_comunes: areasComunes.data, clientes: clientes.data, contratos: contratos.data,
+          contactos: contactos.data,
         });
       }
 
