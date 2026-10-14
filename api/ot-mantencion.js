@@ -246,7 +246,7 @@ function normalizarRut(r) {
 // Portal de solicitudes (piloto): busca el cliente por RUT y devuelve sus
 // unidades vigentes hoy. null si el RUT no existe o no tiene ninguna unidad
 // vigente -- ambos casos se tratan igual de cara al arrendatario ("RUT no
-// encontrado"), ver docs/superpowers/specs/2026-10-09-portal-solicitud-cliente-design.md.
+// encontrado").
 async function resolverUnidadPorRut(db, rut, fecha) {
   const rutNorm = normalizarRut(rut);
   if (!rutNorm) return null;
@@ -271,9 +271,9 @@ export default async function handler(req, res) {
   const db = supabase();
 
   // Portal publico de solicitudes para arrendatarios (piloto, sin login) --
-  // llamado por el Apps Script del formulario, no por un usuario de OCFast,
-  // asi que se autentica con un token fijo en vez del cookie de sesion. Va
-  // ANTES del gate @patagonica.cl de mas abajo.
+  // llamado por un canal externo (ej. un bot de WhatsApp via n8n), no por un
+  // usuario de OCFast, asi que se autentica con un token fijo en vez del
+  // cookie de sesion. Va ANTES del gate @patagonica.cl de mas abajo.
   if (req.method === "POST" && req.query.solicitud) {
     const token = req.headers["x-portal-token"];
     if (!token || token !== process.env.PORTAL_CLIENTE_TOKEN) {
