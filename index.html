@@ -11,6 +11,7 @@
 <script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://unpkg.com/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 <script src="https://unpkg.com/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
+<script src="https://unpkg.com/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 /* Tokens del Sistema Visual Patagónica (subconjunto 02/03/04/05/07 — ver
@@ -281,6 +282,31 @@ function fileToBase64(file) {
     reader.onerror = reject;
     reader.readAsDataURL(file);
   });
+}
+
+// Clave publica (anon) de Supabase -- segura de exponer en el navegador, es
+// para lo que existe (las tablas no tienen politicas RLS asi que no sirve
+// para leer/escribir datos; solo se usa aqui para subir a Storage con una
+// URL ya firmada por el backend, ver subirArchivo).
+const SUPABASE_URL = "https://kvzcmmcbzlcrvtvfjxaj.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt2emNtbWNiemxjcnZ0dmZqeGFqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODkzNDQzOTgsImV4cCI6MjEwNDkyMDM5OH0.jJuLdAcVjRxIwNMdsltGR4FnYOieFr92Ih1z8y3HVPI";
+let _supabaseClient = null;
+function supabaseClient() {
+  if (!_supabaseClient) _supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  return _supabaseClient;
+}
+
+// Sube un archivo directo del navegador a Supabase Storage (sin pasar por
+// nuestra funcion serverless) -- Vercel limita a ~4.5MB el body de una
+// funcion, asi que un PDF/foto grande en base64 lo superaba y fallaba con
+// un error generico ("Error de servidor") sin llegar siquiera a ejecutar
+// api/upload.js. El backend solo firma la URL (api/upload.js?firmar=1); el
+// archivo en si viaja directo al Storage, sin ese limite.
+async function subirArchivo(file) {
+  const firma = await api("upload?firmar=1&filename=" + encodeURIComponent(file.name));
+  const { error } = await supabaseClient().storage.from("ocsys-archivos").uploadToSignedUrl(firma.path, firma.token, file);
+  if (error) throw new Error(error.message || "No se pudo subir el archivo");
+  return { url: firma.url };
 }
 
 const ALLOWED_IA_EXT = ["pdf", "jpg", "jpeg", "png"];
@@ -942,11 +968,7 @@ function DocumentosRespaldoEditor({ documentos, setDocumentos, notify, ordenId }
     if (!file) return;
     setSubiendo(true);
     try {
-      const base64 = await fileToBase64(file);
-      const up = await api("upload", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ filename: file.name, base64 }),
-      });
+      const up = await subirArchivo(file);
       const nuevos = [...(documentos || []), { url: up.url, nombre: file.name, subido_en: new Date().toISOString() }];
       await persistir(nuevos);
       setDocumentos(nuevos);
@@ -1170,13 +1192,7 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, proyectos, refres
     try {
       let archivo_url = null, archivo_nombre = null;
       if (file) {
-        const base64 = await fileToBase64(file);
-        const up = await api("upload", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ filename: file.name, base64 }),
-          timeoutMs: 25000,
-        });
+        const up = await subirArchivo(file);
         archivo_url = up.url;
         archivo_nombre = file.name;
       }
@@ -1536,20 +1552,12 @@ function OrdenAccionModal({ orden, tipo, onClose, onDone, notify, proveedores, e
           monto_facturado_uf: orden.moneda === "UF" ? (montoUfFactura || null) : null,
         };
         if (file) {
-          const base64 = await fileToBase64(file);
-          const up = await api("upload", {
-            method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ filename: file.name, base64 }),
-          });
+          const up = await subirArchivo(file);
           payload.archivo_factura_url = up.url;
           payload.archivo_factura_nombre = file.name;
         }
       } else {
-        const base64 = await fileToBase64(file);
-        const up = await api("upload", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ filename: file.name, base64 }),
-        });
+        const up = await subirArchivo(file);
         payload = { estado: "Completada", archivo_comprobante_url: up.url, archivo_comprobante_nombre: file.name };
       }
 
@@ -4721,11 +4729,7 @@ function RendicionComprobanteModal({ rendicion, onClose, onDone, notify }) {
     if (!file) return notify("err", "Selecciona el comprobante de pago");
     setSaving(true);
     try {
-      const base64 = await fileToBase64(file);
-      const up = await api("upload", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ filename: file.name, base64 }),
-      });
+      const up = await subirArchivo(file);
       await api("rendiciones?id=" + rendicion.id, {
         method: "PUT", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ archivo_comprobante_url: up.url, archivo_comprobante_nombre: file.name }),
@@ -4783,11 +4787,7 @@ function RendicionGastosPage({ rendiciones, refreshRendiciones, catalogos, notif
     try {
       let archivo_boleta_url = null, archivo_boleta_nombre = null;
       if (file) {
-        const base64 = await fileToBase64(file);
-        const up = await api("upload", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ filename: file.name, base64 }),
-        });
+        const up = await subirArchivo(file);
         archivo_boleta_url = up.url;
         archivo_boleta_nombre = file.name;
       }

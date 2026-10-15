@@ -17,8 +17,29 @@ const EXT_TYPES = {
 };
 
 export default async function handler(req, res) {
+  // Subida directa navegador -> Storage (sin pasar el archivo por esta
+  // funcion): Vercel limita a ~4.5MB el body de una funcion serverless, asi
+  // que un PDF/foto grande codificado en base64 superaba ese limite y la
+  // plataforma rechazaba la request antes de llegar aqui (error generico,
+  // sin detalle). Esta funcion solo firma una URL de subida de Supabase
+  // Storage; el archivo en si viaja directo del navegador al Storage.
+  if (req.method === "GET" && req.query.firmar) {
+    const filename = req.query.filename || "";
+    const ext = filename.split(".").pop().toLowerCase();
+    const contentType = EXT_TYPES[ext];
+    if (!contentType) {
+      return res.status(400).json({ error: "Formato no permitido. Usa PDF, Word, Excel, JPG o PNG" });
+    }
+    const path = `${Date.now()}-${filename.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+    const db = supabase();
+    const { data, error } = await db.storage.from("ocsys-archivos").createSignedUploadUrl(path);
+    if (error) return res.status(500).json({ error: error.message });
+    const { data: pub } = db.storage.from("ocsys-archivos").getPublicUrl(path);
+    return res.status(200).json({ signedUrl: data.signedUrl, token: data.token, path: data.path, url: pub.publicUrl });
+  }
+
   if (req.method !== "POST") {
-    res.setHeader("Allow", "POST");
+    res.setHeader("Allow", "GET, POST");
     return res.status(405).json({ error: "Método no permitido" });
   }
 
