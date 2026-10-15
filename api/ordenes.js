@@ -287,6 +287,22 @@ export default async function handler(req, res) {
       return res.status(200).json({ numero_hes: String(siguienteHes).padStart(8, "0") });
     }
 
+    // Tras eliminar una OC no aprobada se conserva una fila minima (ver
+    // bloque DELETE) para no dejar un hueco en la numeracion -- el listado
+    // normal no las trae; OrdenesList las pide aparte con este flag y las
+    // muestra en su puesto marcadas como ELIMINADA.
+    if (req.query.eliminadas) {
+      let queryElim = db
+        .from("ordenes_compra")
+        .select("id, numero_oc, numero_oc_acquisys, fecha, monto_neto, moneda, estado, creado_por_usuario, cuota_total, cuota_numero, activo, proveedores(razon_social, rut)")
+        .eq("activo", false)
+        .eq("empresa_id", empresaId)
+        .order("created_at", { ascending: false });
+      const { data: elim, error: elimError } = await queryElim;
+      if (elimError) return res.status(500).json({ error: elimError.message });
+      return res.status(200).json({ ordenes: elim });
+    }
+
     let query = db
       .from("ordenes_compra")
       .select("*, proveedores(razon_social, rut), proyectos(nombre)")
@@ -312,6 +328,33 @@ export default async function handler(req, res) {
     if (session.nivel_aprobacion !== 1) {
       return res.status(403).json({ error: "No tienes nivel de aprobación para eliminar órdenes de compra" });
     }
+
+    // Se conserva la fila (en vez de borrarla) para no dejar un hueco en la
+    // numeracion de OC, pero los archivos adjuntos no hacen falta -- ocupan
+    // espacio de Storage sin necesidad una vez que la OC quedo eliminada.
+    const { data: actual, error: eActual } = await db
+      .from("ordenes_compra")
+      .select("archivo_url, archivo_oc_url, archivo_factura_url, archivo_comprobante_url, documentos_respaldo")
+      .eq("id", id)
+      .maybeSingle();
+    if (eActual) return res.status(500).json({ error: eActual.message });
+
+    const rutaDeUrl = (url) => {
+      const marcador = "/ocsys-archivos/";
+      const i = (url || "").indexOf(marcador);
+      return i === -1 ? null : url.slice(i + marcador.length);
+    };
+    const rutas = [
+      rutaDeUrl(actual?.archivo_url),
+      rutaDeUrl(actual?.archivo_oc_url),
+      rutaDeUrl(actual?.archivo_factura_url),
+      rutaDeUrl(actual?.archivo_comprobante_url),
+      ...(Array.isArray(actual?.documentos_respaldo) ? actual.documentos_respaldo.map((d) => rutaDeUrl(d.url)) : []),
+    ].filter(Boolean);
+    if (rutas.length) {
+      await db.storage.from("ocsys-archivos").remove(rutas);
+    }
+
     const { error } = await db
       .from("ordenes_compra")
       .update({
@@ -319,6 +362,11 @@ export default async function handler(req, res) {
         eliminado_por: session.usuario,
         eliminado_en: new Date().toISOString(),
         updated_at: new Date().toISOString(),
+        archivo_url: null, archivo_nombre: null,
+        archivo_oc_url: null, archivo_oc_nombre: null,
+        archivo_factura_url: null, archivo_factura_nombre: null,
+        archivo_comprobante_url: null, archivo_comprobante_nombre: null,
+        documentos_respaldo: [],
       })
       .eq("id", id);
     if (error) return res.status(500).json({ error: error.message });
