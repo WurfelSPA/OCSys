@@ -922,6 +922,7 @@ function DocumentosRespaldoEditor({ documentos, setDocumentos, notify }) {
         body: JSON.stringify({ filename: file.name, base64 }),
       });
       setDocumentos([...(documentos || []), { url: up.url, nombre: file.name, subido_en: new Date().toISOString() }]);
+      notify("ok", "Documento agregado: " + file.name);
     } catch (e) {
       notify("err", e.message);
     } finally {
