@@ -889,7 +889,12 @@ function CuotasEditor({ cuotas, setCuotas, montoNeto, moneda }) {
       )),
       h("tbody", null, cuotas.map((c, i) => h("tr", { key: i },
         h("td", null, h("input", { type: "number", value: c.dias, onChange: (e) => setCuota(i, "dias", e.target.value), style: { width: 70 } })),
-        h("td", null, h("input", { value: c.observacion, onChange: (e) => setCuota(i, "observacion", e.target.value), style: { width: 90 } })),
+        h("td", null, h("input", {
+          value: c.observacion, onChange: (e) => setCuota(i, "observacion", e.target.value),
+          // Ancho base mas generoso que antes (90px cortaba el texto a la
+          // mitad) y que ademas crece con lo escrito, en vez de quedar fijo.
+          style: { width: Math.max(140, (c.observacion || "").length * 8 + 24) },
+        })),
         h("td", null, h("input", { type: "number", value: c.monto, onChange: (e) => setCuota(i, "monto", e.target.value), style: { width: 110 } })),
         h("td", null, h("input", { type: "number", value: c.porcentaje || 0, onChange: (e) => setPorcentaje(i, e.target.value), style: { width: 60 } }), " %"),
       ))),
@@ -1306,7 +1311,7 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, proyectos, refres
         // porque no todas las OC son para un cliente puntual del catastro.
         h(Field, { label: "Cliente *" },
           h(SearchSelect, {
-            options: [{ value: "Otro", label: "Otro" }, ...((catalogos.clientesOc || []).map((c) => ({ value: c, label: c })))],
+            options: [{ value: "Otro", label: "Otro" }, { value: "El Cortijo", label: "El Cortijo" }, ...((catalogos.clientesOc || []).map((c) => ({ value: c, label: c })))],
             value: form.cliente_destino,
             onChange: (v) => setForm((f) => ({ ...f, cliente_destino: v })),
             placeholder: "Escribe para buscar cliente...",
@@ -1826,7 +1831,7 @@ function EditarOrdenModal({ orden, proveedores, catalogos, proyectos, refreshPro
           )),
         h(Field, { label: "Cliente *" },
           h(SearchSelect, {
-            options: [{ value: "Otro", label: "Otro" }, ...((catalogos.clientesOc || []).map((c) => ({ value: c, label: c })))],
+            options: [{ value: "Otro", label: "Otro" }, { value: "El Cortijo", label: "El Cortijo" }, ...((catalogos.clientesOc || []).map((c) => ({ value: c, label: c })))],
             value: form.cliente_destino,
             onChange: (v) => setForm((f) => ({ ...f, cliente_destino: v })),
             placeholder: "Escribe para buscar cliente...",
@@ -1996,7 +2001,7 @@ function EditarGrupoModal({ grupo, proveedores, catalogos, proyectos, refreshPro
           )),
         h(Field, { label: "Cliente *" },
           h(SearchSelect, {
-            options: [{ value: "Otro", label: "Otro" }, ...((catalogos.clientesOc || []).map((c) => ({ value: c, label: c })))],
+            options: [{ value: "Otro", label: "Otro" }, { value: "El Cortijo", label: "El Cortijo" }, ...((catalogos.clientesOc || []).map((c) => ({ value: c, label: c })))],
             value: form.cliente_destino,
             onChange: (v) => setForm((f) => ({ ...f, cliente_destino: v })),
             placeholder: "Escribe para buscar cliente...",
