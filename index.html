@@ -163,6 +163,20 @@ function fmtDate(d) {
   return new Date(d + "T00:00:00").toLocaleDateString("es-CL");
 }
 
+// Los navegadores no tienen visor nativo para Word/Excel (a diferencia de
+// PDF/imagen, que abren inline en una pestaña) -- un link directo a un .doc
+// o .xlsx simplemente los descarga sin mostrar nada. Para esos formatos se
+// enruta por el visor de Google Docs, que los muestra embebidos; PDF/imagen
+// siguen yendo directo (ya se ven bien tal cual).
+function urlParaVer(url) {
+  if (!url) return url;
+  const ext = url.split(".").pop().split("?")[0].toLowerCase();
+  if (["doc", "docx", "xls", "xlsx"].includes(ext)) {
+    return "https://docs.google.com/viewer?url=" + encodeURIComponent(url) + "&embedded=true";
+  }
+  return url;
+}
+
 function estadoPill(estado) {
   const map = {
     "Borrador": "pill-draft",
@@ -908,9 +922,21 @@ function CuotasEditor({ cuotas, setCuotas, montoNeto, moneda }) {
 // cada uno queda disponible para ver en cualquier momento. `documentos` es
 // un array [{url, nombre, subido_en}]; `setDocumentos` recibe el array
 // completo nuevo (mismo patron que los demas campos del formulario).
-function DocumentosRespaldoEditor({ documentos, setDocumentos, notify }) {
+function DocumentosRespaldoEditor({ documentos, setDocumentos, notify, ordenId }) {
   const [subiendo, setSubiendo] = useState(false);
   const inputId = "documento-respaldo-" + useMemo(() => Math.random().toString(36).slice(2), []);
+
+  // Si se esta editando una OC que ya existe (ordenId viene), se guarda de
+  // inmediato en la base de datos -- antes quedaba solo en el estado local
+  // del formulario hasta hacer clic en "Guardar cambios", y si el usuario
+  // cerraba el modal antes de eso, el documento se perdia sin ningun aviso.
+  const persistir = async (nuevos) => {
+    if (!ordenId) return;
+    await api("ordenes?id=" + ordenId, {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ documentos_respaldo: nuevos }),
+    });
+  };
 
   const agregar = async (file) => {
     if (!file) return;
@@ -921,8 +947,10 @@ function DocumentosRespaldoEditor({ documentos, setDocumentos, notify }) {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ filename: file.name, base64 }),
       });
-      setDocumentos([...(documentos || []), { url: up.url, nombre: file.name, subido_en: new Date().toISOString() }]);
-      notify("ok", "Documento agregado: " + file.name);
+      const nuevos = [...(documentos || []), { url: up.url, nombre: file.name, subido_en: new Date().toISOString() }];
+      await persistir(nuevos);
+      setDocumentos(nuevos);
+      notify("ok", ordenId ? ("Documento agregado y guardado: " + file.name) : ("Documento agregado: " + file.name));
     } catch (e) {
       notify("err", e.message);
     } finally {
@@ -930,12 +958,20 @@ function DocumentosRespaldoEditor({ documentos, setDocumentos, notify }) {
     }
   };
 
-  const quitar = (i) => setDocumentos((documentos || []).filter((_, idx) => idx !== i));
+  const quitar = async (i) => {
+    const nuevos = (documentos || []).filter((_, idx) => idx !== i);
+    try {
+      await persistir(nuevos);
+      setDocumentos(nuevos);
+    } catch (e) {
+      notify("err", e.message);
+    }
+  };
 
   return h("div", null,
     (documentos || []).length > 0 && h("div", { style: { display: "flex", flexDirection: "column", gap: 6, marginBottom: 8 } },
       documentos.map((d, i) => h("div", { key: i, style: { display: "flex", alignItems: "center", gap: 8 } },
-        h("a", { className: "link", href: d.url, target: "_blank", rel: "noreferrer", style: { flex: 1 } }, truncar(d.nombre, 280)),
+        h("a", { className: "link", href: urlParaVer(d.url), target: "_blank", rel: "noreferrer", style: { flex: 1 } }, truncar(d.nombre, 280)),
         h("button", {
           type: "button", className: "btn-ghost", style: { padding: "2px 8px", fontSize: 11 },
           onClick: () => quitar(i),
@@ -1776,7 +1812,7 @@ function EditarOrdenModal({ orden, proveedores, catalogos, proyectos, refreshPro
         h(DocumentosRespaldoEditor, {
           documentos: form.documentos_respaldo,
           setDocumentos: (docs) => setForm((f) => ({ ...f, documentos_respaldo: docs })),
-          notify,
+          notify, ordenId: orden.id,
         })),
       h(Field, { label: "Título" }, h("input", { value: form.titulo, onChange: set("titulo") })),
       h(Field, { label: "Descripción" }, h("textarea", { rows: 2, value: form.descripcion, onChange: set("descripcion") })),
@@ -2234,7 +2270,7 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
     {
       key: "archivo", label: "Cotiz.", sortable: false,
       render: (o) => (o.activo !== false && o.archivo_url)
-        ? h("a", { className: "link", href: o.archivo_url, target: "_blank", rel: "noreferrer", title: o.archivo_nombre || "Ver cotización" }, o.numero_cotizacion || "Ver")
+        ? h("a", { className: "link", href: urlParaVer(o.archivo_url), target: "_blank", rel: "noreferrer", title: o.archivo_nombre || "Ver cotización" }, o.numero_cotizacion || "Ver")
         : "—",
     },
     {
@@ -2307,13 +2343,13 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
     {
       key: "numero_factura", label: "N° Factura",
       render: (o) => (o._esGrupo || o.activo === false) ? "—" : o.archivo_factura_url
-        ? h("a", { className: "link", href: o.archivo_factura_url, target: "_blank", rel: "noreferrer", title: "Ver factura" }, o.numero_factura)
+        ? h("a", { className: "link", href: urlParaVer(o.archivo_factura_url), target: "_blank", rel: "noreferrer", title: "Ver factura" }, o.numero_factura)
         : (o.numero_factura || "—"),
     },
     {
       key: "comprobante", label: "Comprobante", sortable: false,
       render: (o) => (!o._esGrupo && o.activo !== false && o.archivo_comprobante_url)
-        ? h("a", { className: "link", href: o.archivo_comprobante_url, target: "_blank", rel: "noreferrer", title: o.archivo_comprobante_nombre || "Ver comprobante de pago" }, "Ver")
+        ? h("a", { className: "link", href: urlParaVer(o.archivo_comprobante_url), target: "_blank", rel: "noreferrer", title: o.archivo_comprobante_nombre || "Ver comprobante de pago" }, "Ver")
         : "—",
     },
     {
