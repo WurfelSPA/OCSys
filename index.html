@@ -270,6 +270,10 @@ function fileToBase64(file) {
 }
 
 const ALLOWED_IA_EXT = ["pdf", "jpg", "jpeg", "png"];
+// La cotizacion (Nueva OC) ademas soporta Word (.doc/.docx) -- la factura
+// (verificarFactura) no, porque una factura electronica chilena (SII)
+// siempre se emite en PDF, nunca en Word.
+const ALLOWED_IA_EXT_COTIZACION = [...ALLOWED_IA_EXT, "doc", "docx"];
 
 function fileDropHandlers(setFile, setDragOver) {
   return {
@@ -1102,7 +1106,7 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, proyectos, refres
     setFile(f);
     if (f) {
       const ext = f.name.split(".").pop().toLowerCase();
-      if (ALLOWED_IA_EXT.includes(ext)) leerConIA(f);
+      if (ALLOWED_IA_EXT_COTIZACION.includes(ext)) leerConIA(f);
     }
   };
 
@@ -1215,13 +1219,13 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, proyectos, refres
       ),
       h("div", { className: "row-inline", style: { marginTop: 10 } },
         h("button", {
-          className: "btn-ghost", disabled: !file || leyendoIA || !ALLOWED_IA_EXT.includes((file && file.name.split(".").pop().toLowerCase()) || ""),
+          className: "btn-ghost", disabled: !file || leyendoIA || !ALLOWED_IA_EXT_COTIZACION.includes((file && file.name.split(".").pop().toLowerCase()) || ""),
           onClick: () => leerConIA(), style: { display: "flex", alignItems: "center", gap: 8 },
         },
           leyendoIA && h("span", { className: "spinner" }),
           leyendoIA ? `Leyendo con IA (${motorIA})...` : "Volver a leer con IA",
         ),
-        h("div", { className: "hint" }, "Al subir o arrastrar un PDF/JPG/PNG se lee automáticamente con IA y completa el formulario (incluido el proveedor). Word/Excel se completan a mano."),
+        h("div", { className: "hint" }, "Al subir o arrastrar un PDF/Word/JPG/PNG se lee automáticamente con IA y completa el formulario (incluido el proveedor). Excel se completa a mano."),
       ),
       leyendoIA && h("div", { className: "pbar" }, h("div", { className: "pbar-fill" })),
       h("div", { className: "hint", style: { marginTop: 4 } }, "Formatos permitidos para subir: PDF, Word, Excel, JPG, PNG"),

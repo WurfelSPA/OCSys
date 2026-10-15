@@ -1,5 +1,5 @@
 import { readJsonBody } from "./_supabase.js";
-import { leerDocumentoConFallback } from "./_ia-lectura.js";
+import { leerDocumentoConFallback, extraerTextoWord } from "./_ia-lectura.js";
 
 const RESPONSE_SCHEMA = {
   type: "object",
@@ -66,8 +66,15 @@ export default async function handler(req, res) {
 
   const ext = filename.split(".").pop().toLowerCase();
   const mimeType = EXT_MIME[ext];
-  if (!mimeType) {
-    return res.status(400).json({ error: "La lectura con IA solo funciona con PDF, JPG o PNG. Word/Excel debes completarlos manualmente." });
+  let texto;
+  if (!mimeType && (ext === "docx" || ext === "doc")) {
+    try {
+      texto = await extraerTextoWord(base64, ext === "docx");
+    } catch (e) {
+      return res.status(400).json({ error: "No se pudo leer el Word: " + e.message });
+    }
+  } else if (!mimeType) {
+    return res.status(400).json({ error: "La lectura con IA solo funciona con PDF, Word (.doc/.docx), JPG o PNG. Excel debes completarlo manualmente." });
   }
 
   res.statusCode = 200;
@@ -81,6 +88,7 @@ export default async function handler(req, res) {
       promptGenerico: PROMPT_GENERICO,
       mimeType,
       base64,
+      texto,
       geminiSchema: RESPONSE_SCHEMA,
       geminiModel: "gemini-3.6-flash",
       onProgress: (motorCorto) => emitir({ tipo: "progreso", motor: motorCorto }),

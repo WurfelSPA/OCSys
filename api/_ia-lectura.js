@@ -1,5 +1,7 @@
 import { GoogleGenAI } from "@google/genai";
 import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
+import mammoth from "mammoth";
+import WordExtractor from "word-extractor";
 import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 
@@ -27,15 +29,20 @@ function esErrorSaturacionGemini(e) {
   return /UNAVAILABLE|"code":503|high demand|overloaded/i.test(e.message || "");
 }
 
-async function leerConGemini({ prompt, mimeType, base64, schema, model }) {
+async function leerConGemini({ prompt, mimeType, base64, texto, schema, model }) {
   if (!process.env.GEMINI_API_KEY) throw new Error("GEMINI_API_KEY no configurada");
   const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+  // Si ya viene texto extraido (Word), se manda como texto plano -- Gemini
+  // no lee .doc/.docx de forma nativa como PDF/imagen via inlineData.
+  const parts = texto
+    ? [{ text: prompt + "\n\n--- Contenido extraído del documento ---\n" + texto.slice(0, 15000) }]
+    : [{ text: prompt }, { inlineData: { mimeType, data: base64 } }];
   let ultimoError;
   for (let intento = 1; intento <= 3; intento++) {
     try {
       const response = await ai.models.generateContent({
         model: model || "gemini-3.6-flash",
-        contents: [{ role: "user", parts: [{ text: prompt }, { inlineData: { mimeType, data: base64 } }] }],
+        contents: [{ role: "user", parts }],
         config: { responseMimeType: "application/json", responseSchema: schema },
       });
       return JSON.parse(response.text);
@@ -49,6 +56,30 @@ async function leerConGemini({ prompt, mimeType, base64, schema, model }) {
     }
   }
   throw ultimoError;
+}
+
+// Extrae el texto de un Word moderno (.docx, formato zip+XML).
+async function extraerTextoDocx(base64Docx) {
+  const buffer = Buffer.from(base64Docx, "base64");
+  const { value: texto } = await mammoth.extractRawText({ buffer });
+  const limpio = (texto || "").trim();
+  if (!limpio) throw new Error("No se pudo extraer texto del Word (¿está vacío o es una imagen escaneada?)");
+  return limpio;
+}
+
+// Extrae el texto de un Word antiguo (.doc, formato binario OLE) -- libreria
+// distinta porque mammoth solo entiende el formato .docx (zip+XML).
+async function extraerTextoDoc(base64Doc) {
+  const buffer = Buffer.from(base64Doc, "base64");
+  const extractor = new WordExtractor();
+  const documento = await extractor.extract(buffer);
+  const texto = (documento.getBody() || "").trim();
+  if (!texto) throw new Error("No se pudo extraer texto del Word (¿está vacío o es una imagen escaneada?)");
+  return texto;
+}
+
+export async function extraerTextoWord(base64, esDocxModerno) {
+  return esDocxModerno ? extraerTextoDocx(base64) : extraerTextoDoc(base64);
 }
 
 // Extrae el texto de un PDF (sin renderizar paginas a imagen) -- suficiente
@@ -67,11 +98,13 @@ async function extraerTextoPdf(base64Pdf) {
   return texto;
 }
 
-async function leerConChatVision({ baseUrl, apiKey, model, prompt, mimeType, base64 }) {
+async function leerConChatVision({ baseUrl, apiKey, model, prompt, mimeType, base64, texto }) {
   let content;
-  if (mimeType === "application/pdf") {
-    const texto = await extraerTextoPdf(base64);
-    content = prompt + "\n\n--- Contenido extraído del PDF ---\n" + texto.slice(0, 15000);
+  if (texto) {
+    content = prompt + "\n\n--- Contenido extraído del documento ---\n" + texto.slice(0, 15000);
+  } else if (mimeType === "application/pdf") {
+    const textoPdf = await extraerTextoPdf(base64);
+    content = prompt + "\n\n--- Contenido extraído del PDF ---\n" + textoPdf.slice(0, 15000);
   } else {
     content = [
       { type: "text", text: prompt },
@@ -118,25 +151,25 @@ async function leerConOpenRouter(args) {
 // promptGemini: prompt + responseSchema para el modo de salida estructurada de Gemini.
 // promptGenerico: mismo pedido pero en texto plano (le pide el JSON explicitamente),
 // para los modelos de respaldo que no tienen "structured output" real.
-export async function leerDocumentoConFallback({ promptGemini, promptGenerico, mimeType, base64, geminiSchema, geminiModel, onProgress }) {
+export async function leerDocumentoConFallback({ promptGemini, promptGenerico, mimeType, base64, texto, geminiSchema, geminiModel, onProgress }) {
   const errores = [];
   const avisar = (motorCorto) => { if (onProgress) onProgress(motorCorto); };
 
   avisar("Gemini");
   try {
-    const datos = await leerConGemini({ prompt: promptGemini, mimeType, base64, schema: geminiSchema, model: geminiModel });
+    const datos = await leerConGemini({ prompt: promptGemini, mimeType, base64, texto, schema: geminiSchema, model: geminiModel });
     return { datos, motor: "Gemini" };
   } catch (e) { errores.push("Gemini: " + e.message); }
 
   avisar("Groq");
   try {
-    const datos = await leerConGroq({ prompt: promptGenerico, mimeType, base64 });
+    const datos = await leerConGroq({ prompt: promptGenerico, mimeType, base64, texto });
     return { datos, motor: "Groq (Llama Vision, respaldo)" };
   } catch (e) { errores.push("Groq: " + e.message); }
 
   avisar("OpenRouter");
   try {
-    const datos = await leerConOpenRouter({ prompt: promptGenerico, mimeType, base64 });
+    const datos = await leerConOpenRouter({ prompt: promptGenerico, mimeType, base64, texto });
     return { datos, motor: "OpenRouter (Qwen-VL, respaldo)" };
   } catch (e) { errores.push("OpenRouter: " + e.message); }
 

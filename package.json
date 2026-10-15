@@ -8,8 +8,10 @@
     "node": ">=22.13.0"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.45.4",
     "@google/genai": "^2.22.0",
-    "pdfjs-dist": "^4.10.38"
+    "@supabase/supabase-js": "^2.45.4",
+    "mammoth": "^1.13.0",
+    "pdfjs-dist": "^4.10.38",
+    "word-extractor": "^1.0.4"
   }
 }
