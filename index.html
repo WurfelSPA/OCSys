@@ -1286,8 +1286,11 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, proyectos, refres
           !form.centro_costo_codigo
             ? h("input", { disabled: true, placeholder: "Primero selecciona un Centro de Costo" })
             : h(SearchSelect, {
+                // Antes se filtraba por el Centro de Costo elegido, pero
+                // algunos (ej. 000004) no tienen ninguna cuenta contable
+                // asociada en el catalogo -- eso dejaba el selector vacio e
+                // inutilizable. Ahora siempre se ofrece el catalogo completo.
                 options: catalogos.cuentasContables
-                  .filter((c) => c.centro_costo_codigo === form.centro_costo_codigo)
                   .map((c) => ({ value: c.codigo, label: c.codigo + " — " + c.descripcion })),
                 value: form.cuenta_contable_codigo,
                 onChange: (v) => setForm((f) => ({ ...f, cuenta_contable_codigo: v })),
@@ -1812,8 +1815,11 @@ function EditarOrdenModal({ orden, proveedores, catalogos, proyectos, refreshPro
           !form.centro_costo_codigo
             ? h("input", { disabled: true, placeholder: "Primero selecciona un Centro de Costo" })
             : h(SearchSelect, {
+                // Antes se filtraba por el Centro de Costo elegido, pero
+                // algunos (ej. 000004) no tienen ninguna cuenta contable
+                // asociada en el catalogo -- eso dejaba el selector vacio e
+                // inutilizable. Ahora siempre se ofrece el catalogo completo.
                 options: catalogos.cuentasContables
-                  .filter((c) => c.centro_costo_codigo === form.centro_costo_codigo)
                   .map((c) => ({ value: c.codigo, label: c.codigo + " — " + c.descripcion })),
                 value: form.cuenta_contable_codigo,
                 onChange: (v) => setForm((f) => ({ ...f, cuenta_contable_codigo: v })),
@@ -1982,8 +1988,11 @@ function EditarGrupoModal({ grupo, proveedores, catalogos, proyectos, refreshPro
           !form.centro_costo_codigo
             ? h("input", { disabled: true, placeholder: "Primero selecciona un Centro de Costo" })
             : h(SearchSelect, {
+                // Antes se filtraba por el Centro de Costo elegido, pero
+                // algunos (ej. 000004) no tienen ninguna cuenta contable
+                // asociada en el catalogo -- eso dejaba el selector vacio e
+                // inutilizable. Ahora siempre se ofrece el catalogo completo.
                 options: catalogos.cuentasContables
-                  .filter((c) => c.centro_costo_codigo === form.centro_costo_codigo)
                   .map((c) => ({ value: c.codigo, label: c.codigo + " — " + c.descripcion })),
                 value: form.cuenta_contable_codigo,
                 onChange: (v) => setForm((f) => ({ ...f, cuenta_contable_codigo: v })),
