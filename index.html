@@ -66,6 +66,24 @@ button{font-family:'Inter',sans-serif;cursor:pointer;transition:all 0.15s}
 .nav-btn{background:transparent;border:1px solid var(--bdr2);color:var(--txm);border-radius:6px;padding:8px 16px;font-size:12px;font-weight:600}
 .nav-btn:hover{background:var(--surf2);color:var(--tx)}
 .nav-btn.active{background:var(--acc);border-color:var(--acc);color:#fff}
+/* Barra lateral expandible (mismo patrón que facturacion-patagonica/index.html:
+   fixed + overflow:hidden en colapso, el texto se "revela" solo al expandir
+   porque el contenedor deja de recortarlo, sin tener que condicionar en JS). */
+.sidebar{position:fixed;left:0;top:0;bottom:0;z-index:100;width:48px;background:var(--surf);border-right:1px solid var(--bdr);display:flex;flex-direction:column;transition:width 0.22s cubic-bezier(.16,1,.3,1);overflow:hidden}
+.sidebar.expanded{width:220px;box-shadow:4px 0 24px rgba(0,0,0,.08)}
+.sidebar-logo{display:flex;align-items:center;gap:10px;padding:14px 10px 10px;border-bottom:1px solid var(--bdr);min-height:52px;overflow:hidden;white-space:nowrap}
+.sidebar-logo-sub{font-size:9px;color:var(--txm);font-family:'DM Mono',monospace;margin-top:1px}
+.sidebar-nav{flex:1;display:flex;flex-direction:column;gap:2px;padding:10px 6px;overflow-y:auto}
+.sidebar-item{display:flex;align-items:center;gap:10px;padding:9px 8px;border-radius:8px;cursor:pointer;transition:all .15s;white-space:nowrap;overflow:hidden;border:none;background:transparent;text-align:left;width:100%;font-family:'Inter',sans-serif}
+.sidebar-item:hover{background:var(--surf2)}
+.sidebar-item.active{background:var(--acc);border-color:var(--acc);color:#fff!important}
+.sidebar-item-icon{font-size:16px;min-width:28px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.sidebar-item-label{font-size:12px;font-weight:600;color:var(--tx);overflow:hidden}
+.sidebar-item.active .sidebar-item-label{color:#fff!important}
+.sidebar-footer{padding:10px 6px;border-top:1px solid var(--bdr);font-size:9px;color:var(--txd);font-family:'DM Mono',monospace;white-space:nowrap;overflow:hidden;display:flex;align-items:center;gap:8px}
+.sidebar-footer-dot{width:6px;height:6px;min-width:6px;border-radius:50%;background:var(--green);flex-shrink:0}
+.app-content{margin-left:48px}
+@media (max-width:720px){.sidebar{display:none!important}.app-content{margin-left:0!important}}
 .page{padding:20px 24px 60px;max-width:1800px;margin:0 auto}
 .card{background:var(--surf);border:1px solid var(--bdr);border-radius:8px;padding:22px 24px;margin-bottom:18px}
 .card h2{font-size:14px;font-weight:700;margin-bottom:14px;color:var(--tx)}
@@ -4970,6 +4988,47 @@ function RendicionGastosPage({ rendiciones, refreshRendiciones, catalogos, notif
   );
 }
 
+function Sidebar({ tab, setTab, esPatagonica, onOrdenesClick }) {
+  const [expanded, setExpanded] = useState(false);
+  const items = [
+    { id: "dashboard", icon: "📊", label: "Dashboard" },
+    { id: "nueva", icon: "➕", label: "Nueva OC" },
+    { id: "ordenes", icon: "📦", label: "Órdenes" },
+    { id: "ot-mantencion", icon: "🛠️", label: "OT Mantención", show: esPatagonica },
+    { id: "proyectos-seguimiento", icon: "🏗️", label: "Proyectos", show: esPatagonica },
+    { id: "proveedores", icon: "🤝", label: "Proveedores", show: esPatagonica },
+    { id: "rendiciones", icon: "💳", label: "Rendición de Gastos", show: esPatagonica },
+    { id: "reportes", icon: "📈", label: "Reportes", show: esPatagonica },
+    { id: "administracion", icon: "⚙️", label: "Administración" },
+  ].filter((it) => it.show !== false);
+  const handleNav = (id) => {
+    if (id === "ordenes") onOrdenesClick();
+    else setTab(id);
+    setExpanded(false);
+  };
+  return h("aside", { className: "sidebar" + (expanded ? " expanded" : ""), onMouseEnter: () => setExpanded(true), onMouseLeave: () => setExpanded(false) },
+    h("div", { className: "sidebar-logo" },
+      h("div", { style: { width: 28, height: 28, minWidth: 28, overflow: "hidden", flexShrink: 0, display: "flex", alignItems: "center" } },
+        h("img", { src: "/logo-OCFast.png", alt: "OCFast", style: { height: 16, width: "auto", display: "block" } }),
+      ),
+      h("div", null,
+        h("img", { src: "/logo-OCFast.png", alt: "OCFast", style: { height: 14, width: "auto", display: "block" } }),
+        h("div", { className: "sidebar-logo-sub" }, "Órdenes de Compra"),
+      ),
+    ),
+    h("nav", { className: "sidebar-nav" },
+      items.map((item) => h("button", { key: item.id, className: "sidebar-item" + (tab === item.id ? " active" : ""), onClick: () => handleNav(item.id), title: item.label },
+        h("span", { className: "sidebar-item-icon" }, item.icon),
+        h("span", { className: "sidebar-item-label" }, item.label),
+      )),
+    ),
+    h("div", { className: "sidebar-footer" },
+      h("span", { className: "sidebar-footer-dot" }),
+      h("span", null, "OCFast"),
+    ),
+  );
+}
+
 function App({ currentUser, onLogout }) {
   const [tab, setTab] = useState("dashboard");
   // Filtro de estado al entrar a Órdenes desde un cuadro del Dashboard (ej.
@@ -5075,7 +5134,9 @@ function App({ currentUser, onLogout }) {
   // mientras se valida el flujo; el resto del equipo ve "En construcción".
   const puedeVerOtMantencion = (currentUser.usuario || "").toLowerCase() === "amelendez@patagonica.cl";
 
-  return h("div", null,
+  return h("div", { className: "app-shell" },
+    h(Sidebar, { tab, setTab, esPatagonica, onOrdenesClick: () => { setFiltroEstadoOrdenes(null); setTab("ordenes"); } }),
+    h("div", { className: "app-content" },
     notif && h("div", { className: "notif notif-" + (notif.type === "ok" ? "ok" : notif.type === "warn" ? "warn" : "err") }, notif.msg),
     h("div", { className: "header" },
       h("img", { src: (EMPRESA_PDF_INFO[empresaId] || EMPRESA_PDF_INFO[1]).logo, alt: empresaActual ? empresaActual.nombre : "Patagónica" }),
@@ -5092,17 +5153,6 @@ function App({ currentUser, onLogout }) {
         (currentUser.nombre || currentUser.usuario),
         h("button", { className: "btn-ghost", style: { padding: "5px 12px", fontSize: 11 }, onClick: onLogout }, "Cerrar sesión"),
       ),
-    ),
-    h("div", { className: "nav" },
-      h("button", { className: "nav-btn" + (tab === "dashboard" ? " active" : ""), onClick: () => setTab("dashboard") }, "Dashboard"),
-      h("button", { className: "nav-btn" + (tab === "nueva" ? " active" : ""), onClick: () => setTab("nueva") }, "Nueva OC"),
-      h("button", { className: "nav-btn" + (tab === "ordenes" ? " active" : ""), onClick: () => { setFiltroEstadoOrdenes(null); setTab("ordenes"); } }, "Órdenes"),
-      esPatagonica && h("button", { className: "nav-btn" + (tab === "rendiciones" ? " active" : ""), onClick: () => setTab("rendiciones") }, "Rendición de Gastos"),
-      esPatagonica && h("button", { className: "nav-btn" + (tab === "proveedores" ? " active" : ""), onClick: () => setTab("proveedores") }, "Proveedores"),
-      esPatagonica && h("button", { className: "nav-btn" + (tab === "reportes" ? " active" : ""), onClick: () => setTab("reportes") }, "Reportes"),
-      h("button", { className: "nav-btn" + (tab === "administracion" ? " active" : ""), onClick: () => setTab("administracion") }, "Administración"),
-      esPatagonica && h("button", { className: "nav-btn" + (tab === "proyectos-seguimiento" ? " active" : ""), onClick: () => setTab("proyectos-seguimiento") }, "Proyectos"),
-      esPatagonica && h("button", { className: "nav-btn" + (tab === "ot-mantencion" ? " active" : ""), onClick: () => setTab("ot-mantencion") }, "OT Mantención"),
     ),
     tab === "dashboard" && h(Dashboard, {
       ordenes,
@@ -5121,6 +5171,7 @@ function App({ currentUser, onLogout }) {
     tab === "ot-mantencion" && esPatagonica && (puedeVerOtMantencion
       ? h(OtMantencionPage, { empresaId, currentUser, proveedores, notify })
       : h(OtMantencionEnConstruccion)),
+    ),
   );
 }
 
