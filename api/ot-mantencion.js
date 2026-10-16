@@ -353,8 +353,66 @@ async function obtenerEtiquetasUnidades(db, unidadIds) {
   }));
 }
 
+// Para que Andres pueda asignar responsable escribiendo un nombre por
+// WhatsApp (en vez de entrar a OCFast): busca primero en el personal interno
+// (usuarios @patagonica.cl) y si no hay match, en el catalogo de proveedores.
+// Solo acepta un match si es unico, igual que el matcheo de clientes del bot.
+async function resolverEjecutorPorNombre(db, nombre) {
+  const target = normalizarNombre(nombre);
+  if (target.length < 2) return null;
+
+  const { data: usuarios } = await db.from("usuarios")
+    .select("id, nombre, apellido").eq("activo", true).ilike("usuario", "%@patagonica.cl");
+  const candidatosUsuarios = (usuarios || []).filter((u) => {
+    const n = normalizarNombre((u.nombre || "") + " " + (u.apellido || ""));
+    return n && (n === target || n.includes(target) || target.includes(n));
+  });
+  if (candidatosUsuarios.length === 1) {
+    const u = candidatosUsuarios[0];
+    return { tipo: "interno", usuarioId: u.id, nombreMostrar: (u.nombre + " " + u.apellido).trim() };
+  }
+
+  const { data: proveedores } = await db.from("proveedores").select("id, razon_social").neq("activo", false);
+  const candidatosProveedores = (proveedores || []).filter((p) => {
+    const n = normalizarNombre(p.razon_social);
+    return n && (n === target || n.includes(target) || target.includes(n));
+  });
+  if (candidatosProveedores.length === 1) {
+    const p = candidatosProveedores[0];
+    return { tipo: "proveedor", proveedorId: p.id, nombreMostrar: p.razon_social };
+  }
+
+  return null;
+}
+
 export default async function handler(req, res) {
   const db = supabase();
+
+  // Asignar responsable/ejecutor a una OT escribiendole al bot por WhatsApp
+  // (ej. "OT-0020 Juan Perez") -- mismo token fijo que el resto del portal,
+  // sin sesion de OCFast.
+  if (req.method === "POST" && req.query.andres_asignar) {
+    const token = req.headers["x-portal-token"];
+    if (!token || token !== process.env.PORTAL_CLIENTE_TOKEN) {
+      return res.status(401).json({ error: "No autorizado" });
+    }
+    const body = await readJsonBody(req);
+    if (!body.codigo || !body.nombre) return res.status(400).json({ error: "codigo y nombre son obligatorios" });
+
+    const { data: ot } = await db.from("ot_mantencion").select("id, codigo").ilike("codigo", body.codigo.trim()).eq("activo", true).maybeSingle();
+    if (!ot) return res.status(404).json({ error: "ot_no_encontrada" });
+
+    const match = await resolverEjecutorPorNombre(db, body.nombre);
+    if (!match) return res.status(404).json({ error: "nombre_no_encontrado" });
+
+    const fields = match.tipo === "interno"
+      ? { responsable_id: match.usuarioId }
+      : { ejecutor_tipo: "contratista", ejecutor_proveedor_id: match.proveedorId };
+    const { error } = await db.from("ot_mantencion").update(fields).eq("id", ot.id);
+    if (error) return res.status(500).json({ error: error.message });
+    await registrarBitacora(db, ot.id, "Asignado desde WhatsApp a " + match.nombreMostrar + (match.tipo === "proveedor" ? " (proveedor)" : ""), "Andrés Sánchez");
+    return res.status(200).json({ ok: true, codigo: ot.codigo, tipo: match.tipo, nombre: match.nombreMostrar });
+  }
 
   // Portal publico de solicitudes para arrendatarios (piloto, sin login) --
   // llamado por un canal externo (ej. un bot de Telegram/WhatsApp via n8n),
