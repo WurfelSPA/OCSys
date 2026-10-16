@@ -3998,14 +3998,39 @@ const MESA_SORT_COLS = [
   { key: "prioridad", label: "Pri", getVal: (o) => o.prioridad || "" },
   { key: "codigo", label: "Código", getVal: (o) => o.codigo || "" },
   { key: "titulo", label: "Título", getVal: (o) => o.titulo || "" },
-  { key: "responsable", label: "Responsable", getVal: (o) => (o.usuarios ? o.usuarios.nombre + " " + o.usuarios.apellido : "") },
+  { key: "patagonica", label: "Patagónica", getVal: (o) => (o.usuarios ? o.usuarios.nombre + " " + o.usuarios.apellido : (o.personal ? o.personal.nombre + " " + (o.personal.apellido || "") : "")) },
+  { key: "empresa", label: "Empresa", getVal: (o) => (o.proveedores ? o.proveedores.razon_social : "") },
   { key: "estado", label: "Estado", getVal: (o) => o.estado || "" },
   { key: "fecha_limite_solucion", label: "SLA solución", getVal: (o) => o.fecha_limite_solucion || "" },
 ];
 
-function MesaDeControl({ ots, cargando, expandido, setExpandido, onAbrir }) {
+function MesaDeControl({ ots, cargando, expandido, setExpandido, onAbrir, usuariosOps, personalOps, proveedores, notify, onChanged }) {
   const [sortKey, setSortKey] = useState(null);
   const [sortDir, setSortDir] = useState("asc");
+
+  // Guardado inline desde la fila de la Mesa de control, sin abrir la ficha
+  // completa de la OT -- mismo endpoint PUT que usa OtDetalleModal.
+  const guardarInline = async (otId, campos) => {
+    try {
+      await api("ot-mantencion?id=" + otId, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(campos) });
+      onChanged();
+    } catch (e) {
+      notify("err", e.message);
+    }
+  };
+
+  // Columna "Patagonica": une personal interno (usuarios, ej. Andres) y
+  // personal de campo (tabla personal) en un solo selector -- elegir uno
+  // limpia el otro para no dejar los dos guardados a la vez.
+  const PATAGONICA_VACIO = "";
+  const valorPatagonica = (o) => (o.responsable_id ? "u:" + o.responsable_id : (o.personal_id ? "p:" + o.personal_id : PATAGONICA_VACIO));
+  const cambiarPatagonica = (o, valor) => {
+    if (!valor) return guardarInline(o.id, { responsable_id: null, personal_id: null });
+    const [tipo, id] = valor.split(":");
+    return tipo === "u"
+      ? guardarInline(o.id, { responsable_id: id, personal_id: null })
+      : guardarInline(o.id, { personal_id: id, responsable_id: null });
+  };
 
   const toggleSort = (key) => {
     if (sortKey !== key) { setSortKey(key); setSortDir("asc"); }
@@ -4032,7 +4057,7 @@ function MesaDeControl({ ots, cargando, expandido, setExpandido, onAbrir }) {
     return {
       p1: abiertos.filter((o) => o.prioridad === "P1").length,
       p2: abiertos.filter((o) => o.prioridad === "P2").length,
-      sinAsignar: abiertos.filter((o) => !o.responsable_id).length,
+      sinAsignar: abiertos.filter((o) => !o.responsable_id && !o.personal_id).length,
       vencidas: abiertos.filter((o) => o.fecha_limite_solucion && new Date(o.fecha_limite_solucion) < new Date()).length,
       resueltasHoy: ots.filter((o) => o.fecha_resolucion && o.fecha_resolucion.slice(0, 10) === hoy).length,
     };
@@ -4062,13 +4087,25 @@ function MesaDeControl({ ots, cargando, expandido, setExpandido, onAbrir }) {
             h("td", null, h("b", { style: { color: OT_PRIORIDAD_COLOR[o.prioridad] } }, o.prioridad || "—")),
             h("td", null, o.codigo),
             h("td", null, truncar(o.titulo, 260)),
-            h("td", null, o.usuarios ? (o.usuarios.nombre + " " + o.usuarios.apellido) : "—"),
+            h("td", { onClick: (e) => e.stopPropagation() },
+              h("select", { value: valorPatagonica(o), onChange: (e) => cambiarPatagonica(o, e.target.value), style: { fontSize: 12, padding: "4px 6px" } },
+                h("option", { value: "" }, "Sin asignar"),
+                usuariosOps.map((u) => h("option", { key: "u:" + u.id, value: "u:" + u.id }, u.nombre + " " + u.apellido)),
+                (personalOps || []).map((p) => h("option", { key: "p:" + p.id, value: "p:" + p.id }, (p.nombre + " " + (p.apellido || "")).trim())))),
+            h("td", { onClick: (e) => e.stopPropagation() },
+              h("select", {
+                value: o.ejecutor_proveedor_id || "",
+                onChange: (e) => guardarInline(o.id, e.target.value ? { ejecutor_tipo: "contratista", ejecutor_proveedor_id: e.target.value } : { ejecutor_tipo: null, ejecutor_proveedor_id: null }),
+                style: { fontSize: 12, padding: "4px 6px" },
+              },
+                h("option", { value: "" }, "—"),
+                (proveedores || []).filter((p) => p.activo !== false).map((p) => h("option", { key: p.id, value: p.id }, p.razon_social)))),
             h("td", null, otEstadoPill(o.estado)),
             h("td", { style: { color: o.fecha_limite_solucion && new Date(o.fecha_limite_solucion) < new Date() ? "var(--red)" : undefined } },
               fmtFechaHora(o.fecha_limite_solucion)),
           ),
           expandido[o.id] && h("tr", null,
-            h("td", { colSpan: 7, style: { background: "var(--surf2)" } },
+            h("td", { colSpan: 8, style: { background: "var(--surf2)" } },
               h("div", { style: { maxHeight: 160, overflowY: "auto", padding: "8px 8px 8px 28px", fontSize: 12 } },
                 (o.bitacora || []).length ? o.bitacora.map((b) => h("div", { key: b.id, style: { marginBottom: 4 } },
                   h("span", { style: { color: "var(--txd)", fontFamily: "monospace" } }, fmtFechaHora(b.created_at) + " · "),
@@ -4255,7 +4292,7 @@ function OtMantencionPage({ empresaId, currentUser, proveedores, notify }) {
         vista === "mesa" && h("button", { className: "btn-primary", onClick: () => setNuevaOt(true) }, "+ Registro rápido"),
       ),
       vista === "mesa"
-        ? h(MesaDeControl, { ots, cargando, expandido, setExpandido, onAbrir: abrirOt })
+        ? h(MesaDeControl, { ots, cargando, expandido, setExpandido, onAbrir: abrirOt, usuariosOps, personalOps, proveedores, notify, onChanged: cargarTodo })
         : h(CatalogoOperaciones, { empresaId, catalogo, notify, onChanged: cargarTodo }),
     ),
   );

@@ -621,7 +621,7 @@ export default async function handler(req, res) {
       // Mesa de control: lista de OT activas de la empresa.
       const empresaId = Number(req.query.empresa_id) || 1;
       const { data: ots, error } = await db.from("ot_mantencion")
-        .select("*, usuarios!ot_mantencion_responsable_id_fkey(nombre, apellido), personal(nombre, apellido, rol)")
+        .select("*, usuarios!ot_mantencion_responsable_id_fkey(nombre, apellido), personal(nombre, apellido, rol), proveedores(razon_social, rut)")
         .eq("empresa_id", empresaId).eq("activo", true)
         .order("created_at", { ascending: false });
       if (error) return res.status(500).json({ error: error.message });
@@ -873,6 +873,15 @@ export default async function handler(req, res) {
         fields.aprobacion_gasto_fecha = new Date().toISOString();
         if (actual.motivo_espera === "Aprobación de gasto") { fields.estado = "En curso"; fields.motivo_espera = null; }
         cambios.push("Gasto aprobado por " + usuario);
+      }
+
+      // Si se asigna una empresa ejecutora y la OT todavia no tiene a nadie de
+      // Patagonica a cargo (ni responsable ni personal), Andres queda como
+      // responsable por defecto -- sigue siendo el punto de contacto interno
+      // aunque la ejecucion quede externa.
+      if (fields.ejecutor_proveedor_id && !actual.responsable_id && !actual.personal_id
+        && fields.responsable_id === undefined && fields.personal_id === undefined) {
+        fields.responsable_id = await responsableDefecto(db);
       }
 
       if (!Object.keys(fields).length) return res.status(400).json({ error: "No hay campos para actualizar" });
