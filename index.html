@@ -289,7 +289,7 @@ function formBlank() {
     centro_costo_codigo: "", cuenta_contable_codigo: "",
     tipo_orden: "Afecto", tipo_compra: "Servicios", moneda: "CLP",
     monto_neto: "", monto_iva: "", monto_total: "",
-    documentos_respaldo: [],
+    documentos_respaldo: [], ot_mantencion_id: "",
   };
 }
 
@@ -1040,6 +1040,15 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, proyectos, refres
   const [motorIA, setMotorIA] = useState("Gemini");
   const [numCuotas, setNumCuotas] = useState(1);
   const [cuotas, setCuotas] = useState(distribuirCuotas(1, 0));
+  // OT Mantención sigue en pruebas (solo amelendez tiene acceso real, ver
+  // App()) -- el selector para vincular una OC a una OT solo tiene sentido
+  // mostrarlo/cargar datos para quien de verdad puede ver ese menu.
+  const puedeVerOtMantencion = (currentUser.usuario || "").toLowerCase() === "amelendez@patagonica.cl";
+  const [otsDisponibles, setOtsDisponibles] = useState([]);
+  useEffect(() => {
+    if (!puedeVerOtMantencion) return;
+    api("ot-mantencion?empresa_id=" + empresaId).then((d) => setOtsDisponibles(d.ots || [])).catch(() => {});
+  }, [puedeVerOtMantencion, empresaId]);
   // Si el usuario tiene proveedores permitidos, solo puede elegir entre
   // esos (no el catalogo completo) -- y si es uno solo, queda fijo.
   const proveedoresPermitidos = (currentUser.proveedor_ids && currentUser.proveedor_ids.length)
@@ -1429,6 +1438,12 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, proyectos, refres
           ),
         ),
       ),
+
+      puedeVerOtMantencion && otsDisponibles.length > 0 && h(Field, { label: "Vincular a OT de Mantención (opcional)" },
+        h("select", { value: form.ot_mantencion_id, onChange: set("ot_mantencion_id") },
+          h("option", { value: "" }, "Ninguna"),
+          otsDisponibles.map((o) => h("option", { key: o.id, value: o.id }, o.codigo + " — " + truncar(o.titulo, 60))),
+        )),
 
       h("div", { style: { display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 20 } },
         h("button", { className: "btn-ghost", onClick: () => submit("Borrador"), disabled: saving }, "Guardar Borrador"),
@@ -3730,10 +3745,12 @@ function NuevaOtModal({ empresaId, catalogo, currentUser, notify, onClose, onCre
 }
 
 function OtDetalleModal({ data, usuariosOps, notify, onClose, onSaved }) {
-  const { ot, bitacora, costos, evidencias } = data;
+  const { ot, bitacora, costos, evidencias, uf_hoy: ufHoy } = data;
   const [comentario, setComentario] = useState("");
   const [montoCosto, setMontoCosto] = useState("");
   const [conceptoCosto, setConceptoCosto] = useState("materiales");
+  const [descripcionCosto, setDescripcionCosto] = useState("");
+  const [monedaTotalCostos, setMonedaTotalCostos] = useState("CLP");
   const [estadoDestino, setEstadoDestino] = useState("");
   const [solucionTxt, setSolucionTxt] = useState(ot.solucion || "");
   const [costoReal, setCostoReal] = useState(ot.costo_real ?? "");
@@ -3808,8 +3825,9 @@ function OtDetalleModal({ data, usuariosOps, notify, onClose, onSaved }) {
   const agregarCosto = async () => {
     if (!montoCosto) return;
     try {
-      await api("ot-mantencion?costo=1", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ot_id: ot.id, monto_clp: Number(montoCosto), concepto: conceptoCosto }) });
+      await api("ot-mantencion?costo=1", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ot_id: ot.id, monto_clp: Number(montoCosto), concepto: conceptoCosto, descripcion: descripcionCosto || null }) });
       setMontoCosto("");
+      setDescripcionCosto("");
       onSaved();
     } catch (e) {
       notify("err", e.message);
@@ -3824,6 +3842,7 @@ function OtDetalleModal({ data, usuariosOps, notify, onClose, onSaved }) {
   };
 
   const transicionesValidas = OT_TRANSICIONES[ot.estado] || [];
+  const totalCostosClp = (costos || []).reduce((s, c) => s + Number(c.monto_clp || 0), 0);
 
   return h("div", { className: "overlay", onClick: (e) => e.target === e.currentTarget && onClose() },
     h("div", { className: "modal", style: { width: 640, maxHeight: "90vh", overflowY: "auto" } },
@@ -3892,10 +3911,23 @@ function OtDetalleModal({ data, usuariosOps, notify, onClose, onSaved }) {
         onChange: (e) => { const f = e.target.files[0]; e.target.value = ""; agregarEvidencia(f); },
       }),
       h("div", { className: "section-lbl", style: { marginTop: 14 } }, "Costos"),
-      (costos || []).map((c) => h("div", { key: c.id, className: "hint" }, fmtDate(c.fecha) + " — " + c.concepto + ": $" + Number(c.monto_clp).toLocaleString("es-CL"))),
-      h("div", { style: { display: "flex", gap: 8, marginTop: 6 } },
+      (costos || []).map((c) => h("div", { key: c.id, className: "hint" },
+        fmtDate(c.fecha) + " — " + c.concepto + (c.descripcion ? " (" + c.descripcion + ")" : "") + ": $" + Number(c.monto_clp).toLocaleString("es-CL"))),
+      (costos || []).length > 0 && h("div", { style: { display: "flex", alignItems: "center", gap: 8, marginTop: 8 } },
+        h("span", { style: { fontSize: 12, fontWeight: 700 } }, "Total: " + (monedaTotalCostos === "UF"
+          ? fmtUF(ufHoy ? totalCostosClp / ufHoy : null)
+          : fmtMoney(totalCostosClp))),
+        h("div", { style: { display: "flex", gap: 4 } },
+          ["CLP", "UF"].map((m) => h("button", {
+            key: m, type: "button",
+            className: "nav-btn" + (monedaTotalCostos === m ? " active" : ""),
+            style: { padding: "2px 10px", fontSize: 10 },
+            onClick: () => setMonedaTotalCostos(m),
+          }, m)))),
+      h("div", { style: { display: "flex", gap: 8, marginTop: 6, flexWrap: "wrap" } },
         h("select", { value: conceptoCosto, onChange: (e) => setConceptoCosto(e.target.value), style: { width: 140 } },
           ["materiales", "mano de obra", "proveedor", "otro"].map((c) => h("option", { key: c, value: c }, c))),
+        h("input", { value: descripcionCosto, onChange: (e) => setDescripcionCosto(e.target.value), placeholder: "Descripción (qué material se requiere)", style: { width: 220 } }),
         h("input", { type: "number", placeholder: "Monto CLP", value: montoCosto, onChange: (e) => setMontoCosto(e.target.value), style: { width: 140 } }),
         h("button", { className: "btn-ghost", onClick: agregarCosto }, "+ Agregar costo")),
       h("div", { className: "section-lbl", style: { marginTop: 14 } }, "Bitácora"),

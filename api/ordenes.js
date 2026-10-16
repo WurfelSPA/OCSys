@@ -448,6 +448,7 @@ export default async function handler(req, res) {
       archivo_nombre: body.archivo_nombre || null,
       creado_por: body.creado_por || null,
       documentos_respaldo: Array.isArray(body.documentos_respaldo) ? body.documentos_respaldo : [],
+      ot_mantencion_id: body.ot_mantencion_id || null,
     };
 
     // Una OC con mas de 1 cuota se divide en N filas independientes (mismo

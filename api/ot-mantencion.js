@@ -10,6 +10,15 @@ import { valoresUF } from "./_uf.js";
 
 const UMBRAL_APROBACION_GASTO_DEFAULT = 500000; // CLP, editable en Configuracion en una fase futura
 
+// Toda OT nueva (bot o Registro rapido) queda con Andres Sanchez (Jefe de
+// Operaciones) como responsable por defecto -- pedido del usuario, para no
+// dejar OTs "sin dueño" apenas se crean.
+const RESPONSABLE_DEFECTO_USUARIO = "asanchez@patagonica.cl";
+async function responsableDefecto(db) {
+  const { data } = await db.from("usuarios").select("id").eq("usuario", RESPONSABLE_DEFECTO_USUARIO).maybeSingle();
+  return data ? data.id : null;
+}
+
 // Tabla 4.11 del spec: categoria -> prioridad base sugerida / cargo sugerido.
 const CATEGORIAS = {
   "Techumbre y filtraciones": { subcategorias: ["Gotera activa", "Humedad", "Canaletas y bajadas", "Planchas dañadas"], cargo: "Arrendador" },
@@ -429,6 +438,7 @@ export default async function handler(req, res) {
       clientes_afectados: clienteIds, contratos_afectados: contratoIds,
       impacto, urgencia, prioridad,
       estado: "Nueva",
+      responsable_id: await responsableDefecto(db),
       cargo: cat ? cat.cargo : "Por definir",
       ...fechas,
       reportado_por: vacioANull(body.reportado_por), fecha_reporte: fechaReporte,
@@ -515,7 +525,8 @@ export default async function handler(req, res) {
           db.from("ot_evidencia").select("*").eq("ot_id", ot.id).order("created_at", { ascending: true }),
           db.from("ot_costo").select("*, proveedores(razon_social)").eq("ot_id", ot.id).order("fecha", { ascending: true }),
         ]);
-        return res.status(200).json({ ot, bitacora, tareas, evidencias, costos });
+        const { ufHoy } = await valoresUF(db, []);
+        return res.status(200).json({ ot, bitacora, tareas, evidencias, costos, uf_hoy: ufHoy });
       }
 
       // Mesa de control: lista de OT activas de la empresa.
@@ -652,11 +663,12 @@ export default async function handler(req, res) {
         if (!body.ot_id || !body.monto_clp) return res.status(400).json({ error: "ot_id y monto_clp son obligatorios" });
         const { data, error } = await db.from("ot_costo").insert({
           ot_id: body.ot_id, concepto: body.concepto || "otro", monto_clp: body.monto_clp,
+          descripcion: vacioANull(body.descripcion),
           proveedor_id: vacioANull(body.proveedor_id), numero_factura_boleta: vacioANull(body.numero_factura_boleta),
           fecha: body.fecha || new Date().toISOString().slice(0, 10),
         }).select().single();
         if (error) return res.status(500).json({ error: error.message });
-        await registrarBitacora(db, body.ot_id, "Costo registrado: $" + Number(body.monto_clp).toLocaleString("es-CL") + " (" + (body.concepto || "otro") + ")", usuario);
+        await registrarBitacora(db, body.ot_id, "Costo registrado: $" + Number(body.monto_clp).toLocaleString("es-CL") + " (" + (body.concepto || "otro") + ")" + (body.descripcion ? " — " + body.descripcion : ""), usuario);
         return res.status(201).json({ costo: data });
       }
 
@@ -690,6 +702,7 @@ export default async function handler(req, res) {
         clientes_afectados: clienteIds, contratos_afectados: contratoIds,
         impacto, urgencia, prioridad,
         estado: "Nueva", centro_costo_codigo: vacioANull(body.centro_costo_codigo),
+        responsable_id: await responsableDefecto(db),
         cargo: vacante ? "Arrendador" : (cat ? cat.cargo : "Por definir"),
         ...fechas,
         reportado_por: vacioANull(body.reportado_por), fecha_reporte: fechaReporte,
