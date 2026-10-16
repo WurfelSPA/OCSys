@@ -889,6 +889,15 @@ export default async function handler(req, res) {
       if (body.ejecutor_tipo !== undefined) fields.ejecutor_tipo = vacioANull(body.ejecutor_tipo);
       if (body.ejecutor_proveedor_id !== undefined) fields.ejecutor_proveedor_id = vacioANull(body.ejecutor_proveedor_id);
       if (body.ejecutor_interno !== undefined) fields.ejecutor_interno = vacioANull(body.ejecutor_interno);
+      // Si se asigna responsable/personal/proveedor mientras la OT sigue
+      // "Nueva", pasa sola a "Asignada" -- no hace falta que elijan ese
+      // estado aparte en el selector de "Cambiar estado a" (feedback del
+      // usuario: ese paso es redundante y "Nueva" ya no ofrece esa opcion).
+      if (body.estado === undefined && actual.estado === "Nueva"
+        && (fields.responsable_id || fields.personal_id || fields.ejecutor_proveedor_id)) {
+        fields.estado = "Asignada";
+        fields.fecha_asignacion = new Date().toISOString();
+      }
       if (body.contencion_realizada === true && !actual.contencion_realizada) {
         fields.contencion_realizada = new Date().toISOString();
         cambios.push("Contención realizada");

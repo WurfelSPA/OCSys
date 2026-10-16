@@ -3636,7 +3636,10 @@ const OT_CATEGORIAS = [
 ];
 const OT_PRIORIDAD_COLOR = { P1: "var(--red)", P2: "var(--amber)", P3: "var(--acc)", P4: "var(--txd)" };
 const OT_TRANSICIONES = {
-  "Nueva": ["Asignada", "Anulada"],
+  // "Nueva" no ofrece transiciones manuales a proposito: el paso a
+  // "Asignada" ocurre solo al elegir responsable/personal/proveedor (ver
+  // backend), y anular desde aqui no aplica en el flujo real de Andres.
+  "Nueva": [],
   "Asignada": ["En curso", "En espera", "Anulada"],
   "En curso": ["En espera", "Resuelta", "Anulada"],
   "En espera": ["En curso", "Anulada"],
