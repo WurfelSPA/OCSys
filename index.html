@@ -3698,7 +3698,7 @@ function NuevaOtModal({ empresaId, catalogo, currentUser, notify, onClose, onCre
 }
 
 function OtDetalleModal({ data, usuariosOps, notify, onClose, onSaved }) {
-  const { ot, bitacora, costos } = data;
+  const { ot, bitacora, costos, evidencias } = data;
   const [comentario, setComentario] = useState("");
   const [montoCosto, setMontoCosto] = useState("");
   const [conceptoCosto, setConceptoCosto] = useState("materiales");
@@ -3709,6 +3709,30 @@ function OtDetalleModal({ data, usuariosOps, notify, onClose, onSaved }) {
   const [motivoPrioridad, setMotivoPrioridad] = useState("");
   const [prioridadSel, setPrioridadSel] = useState(ot.prioridad || "");
   const [guardando, setGuardando] = useState(false);
+  const [subiendoEvidencia, setSubiendoEvidencia] = useState(false);
+
+  // Fotos/documentos de la incidencia -- las que llegan del bot de WhatsApp/
+  // Telegram quedan aqui automaticamente (ver api/ot-mantencion.js
+  // ?solicitud=1); el personal tambien puede agregar mas a mano.
+  const agregarEvidencia = async (file) => {
+    if (!file) return;
+    setSubiendoEvidencia(true);
+    try {
+      const up = await subirArchivo(file);
+      await api("ot-mantencion?evidencia=1", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ot_id: ot.id, archivo_url: up.url, archivo_nombre: file.name,
+          tipo: file.type && file.type.startsWith("image/") ? "foto" : "documento",
+        }),
+      });
+      onSaved();
+    } catch (e) {
+      notify("err", e.message);
+    } finally {
+      setSubiendoEvidencia(false);
+    }
+  };
 
   const put = async (campos) => {
     setGuardando(true);
@@ -3811,6 +3835,30 @@ function OtDetalleModal({ data, usuariosOps, notify, onClose, onSaved }) {
           h("select", { value: cargoSel, onChange: (e) => setCargoSel(e.target.value) },
             h("option", { value: "" }, "Selecciona"),
             ["Arrendador", "Arrendatario", "Compartido", "Seguro", "Garantía"].map((c) => h("option", { key: c, value: c }, c))))),
+      h("div", { className: "section-lbl", style: { marginTop: 14 } }, "Evidencia / Fotos"),
+      h("div", { style: { display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 8 } },
+        (evidencias || []).length === 0 && h("div", { className: "hint" }, "Sin evidencia adjunta"),
+        (evidencias || []).map((e) => {
+          const esImagen = /\.(jpe?g|png|gif|webp)(\?|$)/i.test(e.archivo_url || "");
+          const titulo = (e.archivo_nombre || "Ver") + " — " + (e.autor_usuario || "—") + " · " + fmtFechaHora(e.created_at);
+          return h("a", {
+            key: e.id, href: urlParaVer(e.archivo_url), target: "_blank", rel: "noreferrer", title: titulo,
+            style: { display: "block" },
+          },
+            esImagen
+              ? h("img", { src: e.archivo_url, style: { width: 90, height: 90, objectFit: "cover", borderRadius: 8, border: "1px solid var(--border)" } })
+              : h("div", { className: "pill pill-info", style: { padding: "8px 12px" } }, "📄 " + truncar(e.archivo_nombre || "Ver", 120))
+          );
+        })
+      ),
+      h("label", {
+        htmlFor: "evidencia-file-" + ot.id, className: "btn-ghost",
+        style: { display: "inline-flex", alignItems: "center", padding: "6px 14px", fontSize: 12, cursor: subiendoEvidencia ? "default" : "pointer", opacity: subiendoEvidencia ? 0.6 : 1 },
+      }, subiendoEvidencia ? "Subiendo..." : "+ Agregar foto/documento"),
+      h("input", {
+        id: "evidencia-file-" + ot.id, type: "file", style: { display: "none" }, disabled: subiendoEvidencia,
+        onChange: (e) => { const f = e.target.files[0]; e.target.value = ""; agregarEvidencia(f); },
+      }),
       h("div", { className: "section-lbl", style: { marginTop: 14 } }, "Costos"),
       (costos || []).map((c) => h("div", { key: c.id, className: "hint" }, fmtDate(c.fecha) + " — " + c.concepto + ": $" + Number(c.monto_clp).toLocaleString("es-CL"))),
       h("div", { style: { display: "flex", gap: 8, marginTop: 6 } },
