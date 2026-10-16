@@ -47,6 +47,21 @@ const CATEGORIA_IMPACTO = {
 };
 const CATEGORIA_IMPACTO_DEFAULT = "Operación afectada";
 
+// El bot de WhatsApp/Telegram usa un menu simplificado de categorias (mas
+// facil de elegir en un chat) que no coincide textualmente con las de
+// CATEGORIAS/CATEGORIA_IMPACTO -- sin este mapeo, categorias como "Seguridad"
+// caian al default "Operacion afectada" (P3) en vez de "Seguridad de
+// personas" (P1), subestimando la prioridad real.
+const CATEGORIA_BOT_A_INTERNA = {
+  "Filtración Techumbre": "Techumbre y filtraciones",
+  "Filtración Agua Potable": "Agua y sanitario",
+  "Filtración Alcantarillado": "Agua y sanitario",
+  "Eléctrico": "Eléctrico",
+  "Pisos": "Obra civil",
+  "Seguridad": "Accesos y seguridad",
+  "Otro": "Otro",
+};
+
 // Matriz impacto x urgencia -> prioridad (seccion 7.1 del spec).
 const MATRIZ_PRIORIDAD = {
   "Seguridad de personas": { "En curso": "P1", "Estable": "P1" },
@@ -379,12 +394,13 @@ export default async function handler(req, res) {
     const empresaId = unidad && unidad.sitio && unidad.sitio.empresa_id;
     if (eUnidad || !empresaId) return res.status(500).json({ error: eUnidad ? eUnidad.message : "No se pudo determinar la empresa de la unidad" });
 
-    const impacto = CATEGORIA_IMPACTO[body.categoria] || CATEGORIA_IMPACTO_DEFAULT;
+    const categoriaInterna = CATEGORIA_BOT_A_INTERNA[body.categoria] || body.categoria;
+    const impacto = CATEGORIA_IMPACTO[categoriaInterna] || CATEGORIA_IMPACTO_DEFAULT;
     const urgencia = "Estable";
     const prioridad = calcularPrioridad(impacto, urgencia);
     const { clienteIds, contratoIds } = await resolverClientesContratos(db, "unidad", unidad.id, fechaReporte);
     const fechas = await calcularFechasLimite(db, prioridad, fechaReporte, contratoIds);
-    const cat = CATEGORIAS[body.categoria];
+    const cat = CATEGORIAS[categoriaInterna];
     const { data: numero, error: eNum } = await db.rpc("siguiente_numero_ot");
     if (eNum) return res.status(500).json({ error: eNum.message });
 
@@ -490,7 +506,7 @@ export default async function handler(req, res) {
       const { data: ots, error } = await db.from("ot_mantencion")
         .select("*, usuarios!ot_mantencion_responsable_id_fkey(nombre, apellido)")
         .eq("empresa_id", empresaId).eq("activo", true)
-        .order("prioridad", { ascending: true }).order("created_at", { ascending: false });
+        .order("created_at", { ascending: false });
       if (error) return res.status(500).json({ error: error.message });
 
       const otIds = (ots || []).map((o) => o.id);
