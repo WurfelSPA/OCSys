@@ -310,6 +310,19 @@ async function resolverUnidadPorIdentificador(db, { rut, telefono, nombre }, fec
   return { clienteId, razonSocial, unidadIds };
 }
 
+// Un mismo cliente puede tener varias unidades vigentes (ej. varias bodegas
+// o locales) -- cuando el bot no puede elegir una sola, le ofrece este
+// listado al arrendatario para que indique el lugar exacto de la incidencia.
+async function obtenerEtiquetasUnidades(db, unidadIds) {
+  const { data } = await db.from("unidad")
+    .select("id, codigo, edificio(nombre, sitio(codigo))")
+    .in("id", unidadIds);
+  return (data || []).map((u) => ({
+    id: u.id,
+    label: [u.edificio?.sitio?.codigo, u.edificio?.nombre || u.codigo].filter(Boolean).join(" — "),
+  }));
+}
+
 export default async function handler(req, res) {
   const db = supabase();
 
@@ -330,7 +343,11 @@ export default async function handler(req, res) {
     if (!body.rut && !body.telefono && !body.nombre) return res.status(400).json({ error: "rut, telefono o nombre es obligatorio" });
     const match = await resolverUnidadPorIdentificador(db, { rut: body.rut, telefono: body.telefono, nombre: body.nombre }, new Date().toISOString());
     if (!match) return res.status(404).json({ error: "no_encontrado" });
-    return res.status(200).json({ ok: true, razon_social: match.razonSocial });
+    if (match.unidadIds.length > 1) {
+      const unidades = await obtenerEtiquetasUnidades(db, match.unidadIds);
+      return res.status(200).json({ ok: true, razon_social: match.razonSocial, unidades });
+    }
+    return res.status(200).json({ ok: true, razon_social: match.razonSocial, unidad_id: match.unidadIds[0] });
   }
 
   if (req.method === "POST" && req.query.solicitud) {
@@ -346,7 +363,19 @@ export default async function handler(req, res) {
     const match = await resolverUnidadPorIdentificador(db, { rut: body.rut, telefono: body.telefono, nombre: body.nombre }, fechaReporte);
     if (!match) return res.status(404).json({ error: "rut_no_encontrado" });
 
-    const { data: unidad, error: eUnidad } = await db.from("unidad").select("id, sitio(empresa_id)").eq("id", match.unidadIds[0]).maybeSingle();
+    // Si el cliente tiene mas de una unidad vigente, el bot ya le pidio
+    // elegir el sitio exacto (ver ?identificar=1) -- unidad_id viene con esa
+    // eleccion. Se valida que de verdad sea una de las del cliente antes de
+    // usarla, para que no se pueda crear una OT en una unidad ajena.
+    let unidadId = match.unidadIds[0];
+    if (body.unidad_id) {
+      if (!match.unidadIds.includes(body.unidad_id)) {
+        return res.status(400).json({ error: "unidad_id no corresponde a este cliente" });
+      }
+      unidadId = body.unidad_id;
+    }
+
+    const { data: unidad, error: eUnidad } = await db.from("unidad").select("id, sitio(empresa_id)").eq("id", unidadId).maybeSingle();
     const empresaId = unidad && unidad.sitio && unidad.sitio.empresa_id;
     if (eUnidad || !empresaId) return res.status(500).json({ error: eUnidad ? eUnidad.message : "No se pudo determinar la empresa de la unidad" });
 
@@ -376,7 +405,9 @@ export default async function handler(req, res) {
     }).select().single();
     if (error) return res.status(500).json({ error: error.message });
     await registrarBitacora(db, data.id, vacioANull(body.descripcion) || data.resumen || data.titulo, body.reportado_por || "Arrendatario (portal)");
-    if (match.unidadIds.length > 1) {
+    if (match.unidadIds.length > 1 && body.unidad_id) {
+      await registrarBitacora(db, data.id, "Cliente tiene " + match.unidadIds.length + " unidades vigentes -- el arrendatario seleccionó la ubicación directamente", "sistema");
+    } else if (match.unidadIds.length > 1) {
       await registrarBitacora(db, data.id, "Cliente tiene " + match.unidadIds.length + " unidades vigentes -- confirmar cuál corresponde con el contacto", "sistema");
     }
     // Foto(s) de la incidencia enviadas por el bot (Telegram/WhatsApp) -- ya
