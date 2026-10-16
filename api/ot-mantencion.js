@@ -354,9 +354,11 @@ async function obtenerEtiquetasUnidades(db, unidadIds) {
 }
 
 // Para que Andres pueda asignar responsable escribiendo un nombre por
-// WhatsApp (en vez de entrar a OCFast): busca primero en el personal interno
-// (usuarios @patagonica.cl) y si no hay match, en el catalogo de proveedores.
-// Solo acepta un match si es unico, igual que el matcheo de clientes del bot.
+// WhatsApp (en vez de entrar a OCFast): busca en orden usuarios de OCFast
+// (@patagonica.cl), luego personal de campo (sin cuenta de login, tabla
+// "personal" -- mantencion, aseo, etc.) y por ultimo el catalogo de
+// proveedores. Solo acepta un match si es unico, igual que el matcheo de
+// clientes del bot.
 async function resolverEjecutorPorNombre(db, nombre) {
   const target = normalizarNombre(nombre);
   if (target.length < 2) return null;
@@ -370,6 +372,16 @@ async function resolverEjecutorPorNombre(db, nombre) {
   if (candidatosUsuarios.length === 1) {
     const u = candidatosUsuarios[0];
     return { tipo: "interno", usuarioId: u.id, nombreMostrar: (u.nombre + " " + u.apellido).trim() };
+  }
+
+  const { data: personal } = await db.from("personal").select("id, nombre, apellido").eq("activo", true);
+  const candidatosPersonal = (personal || []).filter((p) => {
+    const n = normalizarNombre((p.nombre || "") + " " + (p.apellido || ""));
+    return n && (n === target || n.includes(target) || target.includes(n));
+  });
+  if (candidatosPersonal.length === 1) {
+    const p = candidatosPersonal[0];
+    return { tipo: "personal", personalId: p.id, nombreMostrar: (p.nombre + " " + (p.apellido || "")).trim() };
   }
 
   const { data: proveedores } = await db.from("proveedores").select("id, razon_social").neq("activo", false);
@@ -407,9 +419,9 @@ export default async function handler(req, res) {
     if (vacioANull(body.nombre)) {
       const match = await resolverEjecutorPorNombre(db, body.nombre);
       if (!match) return res.status(404).json({ error: "nombre_no_encontrado" });
-      fields = match.tipo === "interno"
-        ? { responsable_id: match.usuarioId }
-        : { ejecutor_tipo: "contratista", ejecutor_proveedor_id: match.proveedorId };
+      if (match.tipo === "interno") fields = { responsable_id: match.usuarioId };
+      else if (match.tipo === "personal") fields = { personal_id: match.personalId };
+      else fields = { ejecutor_tipo: "contratista", ejecutor_proveedor_id: match.proveedorId };
       nombreMostrar = match.nombreMostrar;
       tipo = match.tipo;
     } else {
@@ -559,6 +571,16 @@ export default async function handler(req, res) {
         return res.status(200).json({ usuarios: data });
       }
 
+      // Personal de campo (mantencion, aseo, etc.) sin cuenta de login en
+      // OCFast -- se asigna igual que un responsable, pero vive en su propia
+      // tabla porque no corresponde crearles un usuario.
+      if (req.query.personal) {
+        const { data, error } = await db.from("personal").select("id, nombre, apellido, rol")
+          .eq("activo", true).order("nombre");
+        if (error) return res.status(500).json({ error: error.message });
+        return res.status(200).json({ personal: data });
+      }
+
       if (req.query.catalogo) {
         const empresaId = Number(req.query.empresa_id) || 1;
         const [sitios, edificios, unidades, areasComunes, clientes, contratos, contactos] = await Promise.all([
@@ -582,7 +604,7 @@ export default async function handler(req, res) {
 
       if (req.query.id) {
         const { data: ot, error } = await db.from("ot_mantencion")
-          .select("*, usuarios!ot_mantencion_responsable_id_fkey(nombre, apellido), proveedores(razon_social, rut)")
+          .select("*, usuarios!ot_mantencion_responsable_id_fkey(nombre, apellido), personal(nombre, apellido, rol), proveedores(razon_social, rut)")
           .eq("id", req.query.id).eq("activo", true).maybeSingle();
         if (error) return res.status(500).json({ error: error.message });
         if (!ot) return res.status(404).json({ error: "OT no encontrada" });
@@ -599,7 +621,7 @@ export default async function handler(req, res) {
       // Mesa de control: lista de OT activas de la empresa.
       const empresaId = Number(req.query.empresa_id) || 1;
       const { data: ots, error } = await db.from("ot_mantencion")
-        .select("*, usuarios!ot_mantencion_responsable_id_fkey(nombre, apellido)")
+        .select("*, usuarios!ot_mantencion_responsable_id_fkey(nombre, apellido), personal(nombre, apellido, rol)")
         .eq("empresa_id", empresaId).eq("activo", true)
         .order("created_at", { ascending: false });
       if (error) return res.status(500).json({ error: error.message });
@@ -816,6 +838,7 @@ export default async function handler(req, res) {
         cambios.push(actual.estado + " → " + body.estado);
       }
       if (body.responsable_id !== undefined) { fields.responsable_id = vacioANull(body.responsable_id); }
+      if (body.personal_id !== undefined) { fields.personal_id = vacioANull(body.personal_id); }
       if (body.ejecutor_tipo !== undefined) fields.ejecutor_tipo = vacioANull(body.ejecutor_tipo);
       if (body.ejecutor_proveedor_id !== undefined) fields.ejecutor_proveedor_id = vacioANull(body.ejecutor_proveedor_id);
       if (body.ejecutor_interno !== undefined) fields.ejecutor_interno = vacioANull(body.ejecutor_interno);

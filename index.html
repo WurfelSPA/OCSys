@@ -3763,7 +3763,7 @@ function NuevaOtModal({ empresaId, catalogo, currentUser, notify, onClose, onCre
     ));
 }
 
-function OtDetalleModal({ data, usuariosOps, proveedores, notify, onClose, onSaved }) {
+function OtDetalleModal({ data, usuariosOps, personalOps, proveedores, notify, onClose, onSaved }) {
   const { ot, bitacora, costos, evidencias, uf_hoy: ufHoy } = data;
   const [comentario, setComentario] = useState("");
   const [montoCosto, setMontoCosto] = useState("");
@@ -3890,6 +3890,13 @@ function OtDetalleModal({ data, usuariosOps, proveedores, notify, onClose, onSav
         },
           h("option", { value: "" }, "Sin asignar"),
           usuariosOps.map((u) => h("option", { key: u.id, value: u.id }, u.nombre + " " + u.apellido)))),
+      h(Field, { label: "Personal de campo (sin cuenta OCFast)" },
+        h("select", {
+          value: ot.personal_id || "",
+          onChange: (e) => put({ personal_id: e.target.value || null }),
+        },
+          h("option", { value: "" }, "Sin asignar"),
+          (personalOps || []).map((p) => h("option", { key: p.id, value: p.id }, (p.nombre + " " + (p.apellido || "")).trim() + (p.rol ? " — " + p.rol : ""))))),
       h(Field, { label: "Empresa ejecutora" },
         h("select", {
           value: ot.ejecutor_tipo || "",
@@ -4206,6 +4213,7 @@ function OtMantencionPage({ empresaId, currentUser, proveedores, notify }) {
   const [ots, setOts] = useState([]);
   const [catalogo, setCatalogo] = useState({ sitios: [], edificios: [], unidades: [], areas_comunes: [], clientes: [], contratos: [], contactos: [] });
   const [usuariosOps, setUsuariosOps] = useState([]);
+  const [personalOps, setPersonalOps] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [nuevaOt, setNuevaOt] = useState(false);
   const [otSel, setOtSel] = useState(null);
@@ -4217,10 +4225,12 @@ function OtMantencionPage({ empresaId, currentUser, proveedores, notify }) {
       api("ot-mantencion?empresa_id=" + empresaId),
       api("ot-mantencion?catalogo=1&empresa_id=" + empresaId),
       api("ot-mantencion?usuarios=1"),
-    ]).then(([a, b, c]) => {
+      api("ot-mantencion?personal=1"),
+    ]).then(([a, b, c, d]) => {
       setOts(a.ots);
       setCatalogo(b);
       setUsuariosOps(c.usuarios);
+      setPersonalOps(d.personal);
     }).catch((e) => notify("err", e.message)).finally(() => setCargando(false));
   };
   useEffect(cargarTodo, [empresaId]);
@@ -4231,7 +4241,7 @@ function OtMantencionPage({ empresaId, currentUser, proveedores, notify }) {
 
   return h("div", { className: "page fade-up" },
     nuevaOt && h(NuevaOtModal, { empresaId, catalogo, currentUser, notify, onClose: () => setNuevaOt(false), onCreated: () => { setNuevaOt(false); cargarTodo(); } }),
-    otSel && h(OtDetalleModal, { data: otSel, usuariosOps, proveedores, notify, onClose: () => setOtSel(null), onSaved: () => { abrirOt(otSel.ot.id); cargarTodo(); } }),
+    otSel && h(OtDetalleModal, { data: otSel, usuariosOps, personalOps, proveedores, notify, onClose: () => setOtSel(null), onSaved: () => { abrirOt(otSel.ot.id); cargarTodo(); } }),
     h("div", { className: "card" },
       h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 10 } },
         h("div", { style: { display: "flex", gap: 8, alignItems: "center" } },
