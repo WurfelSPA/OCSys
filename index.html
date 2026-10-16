@@ -3763,7 +3763,7 @@ function NuevaOtModal({ empresaId, catalogo, currentUser, notify, onClose, onCre
     ));
 }
 
-function OtDetalleModal({ data, usuariosOps, notify, onClose, onSaved }) {
+function OtDetalleModal({ data, usuariosOps, proveedores, notify, onClose, onSaved }) {
   const { ot, bitacora, costos, evidencias, uf_hoy: ufHoy } = data;
   const [comentario, setComentario] = useState("");
   const [montoCosto, setMontoCosto] = useState("");
@@ -3776,6 +3776,7 @@ function OtDetalleModal({ data, usuariosOps, notify, onClose, onSaved }) {
   const [cargoSel, setCargoSel] = useState(ot.cargo && ot.cargo !== "Por definir" ? ot.cargo : "");
   const [motivoPrioridad, setMotivoPrioridad] = useState("");
   const [prioridadSel, setPrioridadSel] = useState(ot.prioridad || "");
+  const [ejecutorInternoTxt, setEjecutorInternoTxt] = useState(ot.ejecutor_interno || "");
   const [guardando, setGuardando] = useState(false);
   const [subiendoEvidencia, setSubiendoEvidencia] = useState(false);
 
@@ -3889,6 +3890,31 @@ function OtDetalleModal({ data, usuariosOps, notify, onClose, onSaved }) {
         },
           h("option", { value: "" }, "Sin asignar"),
           usuariosOps.map((u) => h("option", { key: u.id, value: u.id }, u.nombre + " " + u.apellido)))),
+      h(Field, { label: "Empresa ejecutora" },
+        h("select", {
+          value: ot.ejecutor_tipo || "",
+          onChange: (e) => {
+            const tipo = e.target.value || null;
+            put({
+              ejecutor_tipo: tipo,
+              ejecutor_proveedor_id: tipo === "contratista" ? ot.ejecutor_proveedor_id : null,
+              ejecutor_interno: tipo === "interno" ? ot.ejecutor_interno : null,
+            });
+          },
+        },
+          h("option", { value: "" }, "Sin definir"),
+          h("option", { value: "interno" }, "Interno (personal propio)"),
+          h("option", { value: "contratista" }, "Contratista (proveedor)"))),
+      ot.ejecutor_tipo === "contratista" && h(Field, { label: "Proveedor" },
+        h(ProveedorPicker, {
+          proveedores: (proveedores || []).filter((p) => p.activo !== false),
+          value: ot.ejecutor_proveedor_id || "",
+          onChange: (id) => put({ ejecutor_proveedor_id: id || null }),
+        })),
+      ot.ejecutor_tipo === "interno" && h(Field, { label: "Persona / cuadrilla interna" },
+        h("div", { style: { display: "flex", gap: 8 } },
+          h("input", { value: ejecutorInternoTxt, onChange: (e) => setEjecutorInternoTxt(e.target.value), placeholder: "Ej: Juan Pérez, cuadrilla mantención" }),
+          ejecutorInternoTxt !== (ot.ejecutor_interno || "") && h("button", { className: "btn-ghost", onClick: () => put({ ejecutor_interno: ejecutorInternoTxt || null }) }, "Guardar"))),
       h("div", { className: "grid2" },
         h(Field, { label: "Cambiar estado a" },
           h("select", { value: estadoDestino, onChange: (e) => setEstadoDestino(e.target.value), disabled: !transicionesValidas.length },
@@ -4175,7 +4201,7 @@ function OtMantencionEnConstruccion() {
       h("div", { className: "empty" }, "EN CONSTRUCCIÓN — esta sección está en pruebas internas.")));
 }
 
-function OtMantencionPage({ empresaId, currentUser, notify }) {
+function OtMantencionPage({ empresaId, currentUser, proveedores, notify }) {
   const [vista, setVista] = useState("mesa");
   const [ots, setOts] = useState([]);
   const [catalogo, setCatalogo] = useState({ sitios: [], edificios: [], unidades: [], areas_comunes: [], clientes: [], contratos: [], contactos: [] });
@@ -4205,7 +4231,7 @@ function OtMantencionPage({ empresaId, currentUser, notify }) {
 
   return h("div", { className: "page fade-up" },
     nuevaOt && h(NuevaOtModal, { empresaId, catalogo, currentUser, notify, onClose: () => setNuevaOt(false), onCreated: () => { setNuevaOt(false); cargarTodo(); } }),
-    otSel && h(OtDetalleModal, { data: otSel, usuariosOps, notify, onClose: () => setOtSel(null), onSaved: () => { abrirOt(otSel.ot.id); cargarTodo(); } }),
+    otSel && h(OtDetalleModal, { data: otSel, usuariosOps, proveedores, notify, onClose: () => setOtSel(null), onSaved: () => { abrirOt(otSel.ot.id); cargarTodo(); } }),
     h("div", { className: "card" },
       h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 10 } },
         h("div", { style: { display: "flex", gap: 8, alignItems: "center" } },
