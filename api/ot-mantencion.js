@@ -297,7 +297,11 @@ async function resolverUnidadPorIdentificador(db, { rut, telefono, nombre }, fec
   // empresa -- solo se acepta si matchea con UNA sola empresa (si hay
   // varias parecidas, es mas seguro tratarlo como "no encontrado" que
   // adivinar y crear la OT bajo el cliente equivocado).
-  if (!clienteId && nombre && normalizarNombre(nombre).length >= 4) {
+  // Minimo 2 caracteres (no 4): hay clientes reales con razon social corta
+  // ("2R Spa", "A3D Chile S. A.") que con un umbral mas alto nunca
+  // matcheaban aunque el arrendatario escribiera el nombre exacto. La
+  // ambiguedad sigue cubierta por la regla de "un solo candidato" de abajo.
+  if (!clienteId && nombre && normalizarNombre(nombre).length >= 2) {
     const target = normalizarNombre(nombre);
     const { data: clientes } = await db.from("cliente_operaciones").select("id, razon_social");
     const candidatos = (clientes || []).filter((c) => {
