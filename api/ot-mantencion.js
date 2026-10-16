@@ -364,7 +364,7 @@ async function resolverEjecutorPorNombre(db, nombre) {
   if (target.length < 2) return null;
 
   const { data: usuarios } = await db.from("usuarios")
-    .select("id, nombre, apellido").eq("activo", true).ilike("usuario", "%@patagonica.cl");
+    .select("id, nombre, apellido").eq("activo", true).ilike("usuario", "%@patagonica.cl").not("rol_operaciones", "is", null);
   const candidatosUsuarios = (usuarios || []).filter((u) => {
     const n = normalizarNombre((u.nombre || "") + " " + (u.apellido || ""));
     return n && (n === target || n.includes(target) || target.includes(n));
@@ -593,8 +593,12 @@ export default async function handler(req, res) {
       if (req.query.categorias) return res.status(200).json({ categorias: CATEGORIAS });
 
       if (req.query.usuarios) {
+        // Solo personal a cargo de Operaciones (rol_operaciones asignado) --
+        // no todo el que tiene cuenta @patagonica.cl en OCFast (ej. gente de
+        // Finanzas que solo genera OC no deberia aparecer como responsable
+        // posible de una OT de mantencion).
         const { data, error } = await db.from("usuarios").select("id, usuario, nombre, apellido, rol_operaciones, especialidad")
-          .eq("activo", true).ilike("usuario", "%@patagonica.cl").order("nombre");
+          .eq("activo", true).ilike("usuario", "%@patagonica.cl").not("rol_operaciones", "is", null).order("nombre");
         if (error) return res.status(500).json({ error: error.message });
         return res.status(200).json({ usuarios: data });
       }
