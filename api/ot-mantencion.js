@@ -255,7 +255,11 @@ function normalizarTelefono(t) {
 // social (para poder saludar por nombre antes de pedir el detalle). null si
 // no se encuentra el cliente o no tiene ninguna unidad vigente -- ambos
 // casos se tratan igual de cara al arrendatario ("RUT no encontrado").
-async function resolverUnidadPorIdentificador(db, { rut, telefono }, fecha) {
+function normalizarNombre(s) {
+  return (s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9\s]/g, "").trim();
+}
+
+async function resolverUnidadPorIdentificador(db, { rut, telefono, nombre }, fecha) {
   let clienteId = null, razonSocial = null;
 
   const rutNorm = normalizarRut(rut);
@@ -271,6 +275,23 @@ async function resolverUnidadPorIdentificador(db, { rut, telefono }, fecha) {
       const { data: contactos } = await db.from("contacto_operaciones").select("cliente_id, telefono, cliente_operaciones(razon_social)");
       const contacto = (contactos || []).find((c) => normalizarTelefono(c.telefono) === telNorm);
       if (contacto) { clienteId = contacto.cliente_id; razonSocial = contacto.cliente_operaciones?.razon_social; }
+    }
+  }
+
+  // Si el arrendatario no sabe su RUT, puede escribir el nombre de la
+  // empresa -- solo se acepta si matchea con UNA sola empresa (si hay
+  // varias parecidas, es mas seguro tratarlo como "no encontrado" que
+  // adivinar y crear la OT bajo el cliente equivocado).
+  if (!clienteId && nombre && normalizarNombre(nombre).length >= 4) {
+    const target = normalizarNombre(nombre);
+    const { data: clientes } = await db.from("cliente_operaciones").select("id, razon_social");
+    const candidatos = (clientes || []).filter((c) => {
+      const n = normalizarNombre(c.razon_social);
+      return n && (n === target || n.includes(target) || target.includes(n));
+    });
+    if (candidatos.length === 1) {
+      clienteId = candidatos[0].id;
+      razonSocial = candidatos[0].razon_social;
     }
   }
 
@@ -306,8 +327,8 @@ export default async function handler(req, res) {
       return res.status(401).json({ error: "No autorizado" });
     }
     const body = await readJsonBody(req);
-    if (!body.rut && !body.telefono) return res.status(400).json({ error: "rut o telefono es obligatorio" });
-    const match = await resolverUnidadPorIdentificador(db, { rut: body.rut, telefono: body.telefono }, new Date().toISOString());
+    if (!body.rut && !body.telefono && !body.nombre) return res.status(400).json({ error: "rut, telefono o nombre es obligatorio" });
+    const match = await resolverUnidadPorIdentificador(db, { rut: body.rut, telefono: body.telefono, nombre: body.nombre }, new Date().toISOString());
     if (!match) return res.status(404).json({ error: "no_encontrado" });
     return res.status(200).json({ ok: true, razon_social: match.razonSocial });
   }
@@ -318,11 +339,11 @@ export default async function handler(req, res) {
       return res.status(401).json({ error: "No autorizado" });
     }
     const body = await readJsonBody(req);
-    if (!body.rut && !body.telefono) return res.status(400).json({ error: "rut o telefono es obligatorio" });
+    if (!body.rut && !body.telefono && !body.nombre) return res.status(400).json({ error: "rut, telefono o nombre es obligatorio" });
     if (!body.titulo) return res.status(400).json({ error: "titulo es obligatorio" });
 
     const fechaReporte = new Date().toISOString();
-    const match = await resolverUnidadPorIdentificador(db, { rut: body.rut, telefono: body.telefono }, fechaReporte);
+    const match = await resolverUnidadPorIdentificador(db, { rut: body.rut, telefono: body.telefono, nombre: body.nombre }, fechaReporte);
     if (!match) return res.status(404).json({ error: "rut_no_encontrado" });
 
     const { data: unidad, error: eUnidad } = await db.from("unidad").select("id, sitio(empresa_id)").eq("id", match.unidadIds[0]).maybeSingle();
