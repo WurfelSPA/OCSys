@@ -472,7 +472,7 @@ export default async function handler(req, res) {
         }
       }
     }
-    return res.status(201).json({ ok: true, codigo: data.codigo });
+    return res.status(201).json({ ok: true, codigo: data.codigo, prioridad: data.prioridad });
   }
 
   const session = verifyToken(parseCookie(req.headers.cookie, "ocsys_token"), process.env.SESSION_SECRET || "");
