@@ -388,30 +388,39 @@ async function resolverEjecutorPorNombre(db, nombre) {
 export default async function handler(req, res) {
   const db = supabase();
 
-  // Asignar responsable/ejecutor a una OT escribiendole al bot por WhatsApp
-  // (ej. "OT-0020 Juan Perez") -- mismo token fijo que el resto del portal,
-  // sin sesion de OCFast.
+  // Asignar responsable/ejecutor a una OT escribiendole al bot por WhatsApp.
+  // Solo el codigo ("OT0020"): Andres se autoasigna la OT. Codigo + nombre
+  // ("OT0020 Juan Perez"): asigna a ese interno o proveedor. Mismo token fijo
+  // que el resto del portal, sin sesion de OCFast.
   if (req.method === "POST" && req.query.andres_asignar) {
     const token = req.headers["x-portal-token"];
     if (!token || token !== process.env.PORTAL_CLIENTE_TOKEN) {
       return res.status(401).json({ error: "No autorizado" });
     }
     const body = await readJsonBody(req);
-    if (!body.codigo || !body.nombre) return res.status(400).json({ error: "codigo y nombre son obligatorios" });
+    if (!body.codigo) return res.status(400).json({ error: "codigo es obligatorio" });
 
     const { data: ot } = await db.from("ot_mantencion").select("id, codigo").ilike("codigo", body.codigo.trim()).eq("activo", true).maybeSingle();
     if (!ot) return res.status(404).json({ error: "ot_no_encontrada" });
 
-    const match = await resolverEjecutorPorNombre(db, body.nombre);
-    if (!match) return res.status(404).json({ error: "nombre_no_encontrado" });
-
-    const fields = match.tipo === "interno"
-      ? { responsable_id: match.usuarioId }
-      : { ejecutor_tipo: "contratista", ejecutor_proveedor_id: match.proveedorId };
+    let fields, nombreMostrar, tipo;
+    if (vacioANull(body.nombre)) {
+      const match = await resolverEjecutorPorNombre(db, body.nombre);
+      if (!match) return res.status(404).json({ error: "nombre_no_encontrado" });
+      fields = match.tipo === "interno"
+        ? { responsable_id: match.usuarioId }
+        : { ejecutor_tipo: "contratista", ejecutor_proveedor_id: match.proveedorId };
+      nombreMostrar = match.nombreMostrar;
+      tipo = match.tipo;
+    } else {
+      fields = { responsable_id: await responsableDefecto(db) };
+      nombreMostrar = "Andrés Sánchez";
+      tipo = "interno";
+    }
     const { error } = await db.from("ot_mantencion").update(fields).eq("id", ot.id);
     if (error) return res.status(500).json({ error: error.message });
-    await registrarBitacora(db, ot.id, "Asignado desde WhatsApp a " + match.nombreMostrar + (match.tipo === "proveedor" ? " (proveedor)" : ""), "Andrés Sánchez");
-    return res.status(200).json({ ok: true, codigo: ot.codigo, tipo: match.tipo, nombre: match.nombreMostrar });
+    await registrarBitacora(db, ot.id, "Asignado desde WhatsApp a " + nombreMostrar + (tipo === "proveedor" ? " (proveedor)" : ""), "Andrés Sánchez");
+    return res.status(200).json({ ok: true, codigo: ot.codigo, tipo, nombre: nombreMostrar });
   }
 
   // Portal publico de solicitudes para arrendatarios (piloto, sin login) --
