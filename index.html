@@ -2076,7 +2076,17 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
   const [search, setSearch] = useState("");
   const [gruposExpandidos, setGruposExpandidos] = useState({});
   const [eliminadas, setEliminadas] = useState([]);
+  const [actualizando, setActualizando] = useState(false);
   const puedeAprobar = currentUser && currentUser.nivel_aprobacion === 1;
+
+  const actualizar = async () => {
+    setActualizando(true);
+    try {
+      await refreshOrdenes();
+    } finally {
+      setActualizando(false);
+    }
+  };
 
   // Las OC eliminadas (siempre antes de aprobarse) se piden aparte -- el
   // listado normal (usado tambien por Dashboard/Reportes) no las trae, para
@@ -2458,6 +2468,10 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
     h("div", { className: "card" },
       h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: filtroEstadoCategoria ? 4 : 14 } },
         h("h2", { style: { marginBottom: 0 } }, "Órdenes de Compra"),
+        h("button", {
+          className: "btn-ghost", style: { padding: "6px 14px", fontSize: 12 },
+          onClick: actualizar, disabled: actualizando,
+        }, actualizando ? "Actualizando..." : "↻ Actualizar"),
       ),
       filtroEstadoCategoria && h("div", { className: "hint", style: { marginBottom: 14 } },
         "Mostrando solo: ",
@@ -4125,9 +4139,13 @@ function OtMantencionPage({ empresaId, currentUser, notify }) {
     otSel && h(OtDetalleModal, { data: otSel, usuariosOps, notify, onClose: () => setOtSel(null), onSaved: () => { abrirOt(otSel.ot.id); cargarTodo(); } }),
     h("div", { className: "card" },
       h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 10 } },
-        h("div", { style: { display: "flex", gap: 8 } },
+        h("div", { style: { display: "flex", gap: 8, alignItems: "center" } },
           h("button", { className: "nav-btn" + (vista === "mesa" ? " active" : ""), onClick: () => setVista("mesa") }, "Mesa de control"),
           h("button", { className: "nav-btn" + (vista === "catalogo" ? " active" : ""), onClick: () => setVista("catalogo") }, "Catálogo"),
+          h("button", {
+            className: "btn-ghost", style: { padding: "6px 14px", fontSize: 12 },
+            onClick: cargarTodo, disabled: cargando,
+          }, cargando ? "Actualizando..." : "↻ Actualizar"),
         ),
         vista === "mesa" && h("button", { className: "btn-primary", onClick: () => setNuevaOt(true) }, "+ Registro rápido"),
       ),
