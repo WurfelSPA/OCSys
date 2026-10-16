@@ -848,6 +848,21 @@ export default async function handler(req, res) {
       if (body.estado !== undefined && body.estado !== actual.estado) {
         const ESTADOS = ["Nueva", "Asignada", "En curso", "En espera", "Resuelta", "Cerrada", "Anulada"];
         if (!ESTADOS.includes(body.estado)) return res.status(400).json({ error: "Estado no válido" });
+        // Mismo mapa que OT_TRANSICIONES en index.html -- se valida tambien
+        // aqui (no solo ocultando opciones en el selector del frontend) para
+        // que nada se salte "En curso" y fecha_inicio quede sin llenar.
+        const TRANSICIONES_VALIDAS = {
+          "Nueva": ["Asignada", "Anulada"],
+          "Asignada": ["En curso", "En espera", "Anulada"],
+          "En curso": ["En espera", "Resuelta", "Anulada"],
+          "En espera": ["En curso", "Anulada"],
+          "Resuelta": ["En curso", "Cerrada"],
+          "Cerrada": ["En curso"],
+          "Anulada": [],
+        };
+        if (!(TRANSICIONES_VALIDAS[actual.estado] || []).includes(body.estado)) {
+          return res.status(400).json({ error: "No se puede pasar de \"" + actual.estado + "\" a \"" + body.estado + "\" directamente" });
+        }
         if (body.estado === "Asignada" && !(body.responsable_id || actual.responsable_id)) {
           return res.status(400).json({ error: "No se puede asignar sin responsable" });
         }
