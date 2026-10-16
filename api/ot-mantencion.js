@@ -462,6 +462,29 @@ export default async function handler(req, res) {
     });
   }
 
+  // Foto del trabajo terminado que Andres manda por WhatsApp -- queda como
+  // evidencia "despues" de la OT, igual que las fotos que suben los
+  // arrendatarios o el personal interno desde OCFast.
+  if (req.method === "POST" && req.query.andres_evidencia) {
+    const token = req.headers["x-portal-token"];
+    if (!token || token !== process.env.PORTAL_CLIENTE_TOKEN) {
+      return res.status(401).json({ error: "No autorizado" });
+    }
+    const body = await readJsonBody(req);
+    if (!body.codigo || !body.url) return res.status(400).json({ error: "codigo y url son obligatorios" });
+
+    const { data: ot } = await db.from("ot_mantencion").select("id, codigo").ilike("codigo", body.codigo.trim()).eq("activo", true).maybeSingle();
+    if (!ot) return res.status(404).json({ error: "ot_no_encontrada" });
+
+    const { error } = await db.from("ot_evidencia").insert({
+      ot_id: ot.id, archivo_url: body.url, archivo_nombre: vacioANull(body.nombre),
+      tipo: "despues", autor_usuario: "Andrés Sánchez",
+    });
+    if (error) return res.status(500).json({ error: error.message });
+    await registrarBitacora(db, ot.id, "Foto del trabajo terminado agregada por Andrés desde WhatsApp", "Andrés Sánchez");
+    return res.status(200).json({ ok: true, codigo: ot.codigo });
+  }
+
   // Portal publico de solicitudes para arrendatarios (piloto, sin login) --
   // llamado por un canal externo (ej. un bot de Telegram/WhatsApp via n8n),
   // no por un usuario de OCFast, asi que se autentica con un token fijo en
