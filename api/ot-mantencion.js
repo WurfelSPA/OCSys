@@ -349,14 +349,27 @@ export default async function handler(req, res) {
       cargo: cat ? cat.cargo : "Por definir",
       ...fechas,
       reportado_por: vacioANull(body.reportado_por), fecha_reporte: fechaReporte,
-      descripcion_original: body.titulo,
+      descripcion_original: vacioANull(body.descripcion) || body.titulo,
       creado_por_usuario: "amelendez@patagonica.cl",
       origen: "portal_cliente",
     }).select().single();
     if (error) return res.status(500).json({ error: error.message });
-    await registrarBitacora(db, data.id, data.resumen || data.titulo, body.reportado_por || "Arrendatario (portal)");
+    await registrarBitacora(db, data.id, vacioANull(body.descripcion) || data.resumen || data.titulo, body.reportado_por || "Arrendatario (portal)");
     if (match.unidadIds.length > 1) {
       await registrarBitacora(db, data.id, "Cliente tiene " + match.unidadIds.length + " unidades vigentes -- confirmar cuál corresponde con el contacto", "sistema");
+    }
+    // Foto(s) de la incidencia enviadas por el bot (Telegram/WhatsApp) -- ya
+    // subidas a Storage antes de llegar aqui, solo falta dejarlas asociadas
+    // a la OT igual que la evidencia que sube el personal interno.
+    if (Array.isArray(body.adjuntos)) {
+      for (const a of body.adjuntos) {
+        if (a && a.url) {
+          await db.from("ot_evidencia").insert({
+            ot_id: data.id, archivo_url: a.url, archivo_nombre: vacioANull(a.nombre),
+            tipo: "foto", autor_usuario: body.reportado_por || "Arrendatario (portal)",
+          });
+        }
+      }
     }
     return res.status(201).json({ ok: true, codigo: data.codigo });
   }
