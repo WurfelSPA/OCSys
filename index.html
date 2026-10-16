@@ -3878,7 +3878,7 @@ function OtDetalleModal({ data, usuariosOps, notify, onClose, onSaved }) {
             style: { display: "block" },
           },
             esImagen
-              ? h("img", { src: e.archivo_url, style: { width: 90, height: 90, objectFit: "cover", borderRadius: 8, border: "1px solid var(--border)" } })
+              ? h("img", { src: e.archivo_url, style: { width: 90, height: 90, objectFit: "cover", borderRadius: 8, border: "1px solid var(--bdr)" } })
               : h("div", { className: "pill pill-info", style: { padding: "8px 12px" } }, "📄 " + truncar(e.archivo_nombre || "Ver", 120))
           );
         })
