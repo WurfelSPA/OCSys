@@ -435,6 +435,33 @@ export default async function handler(req, res) {
     return res.status(200).json({ ok: true, codigo: ot.codigo, tipo, nombre: nombreMostrar });
   }
 
+  // Resumen de una OT para el menu de Andres por WhatsApp (cliente,
+  // descripcion y el telefono de quien reporto, si vino del bot -- para
+  // poder llamarlo directo sin buscarlo en el catastro).
+  if (req.method === "POST" && req.query.andres_ver_ot) {
+    const token = req.headers["x-portal-token"];
+    if (!token || token !== process.env.PORTAL_CLIENTE_TOKEN) {
+      return res.status(401).json({ error: "No autorizado" });
+    }
+    const body = await readJsonBody(req);
+    if (!body.codigo) return res.status(400).json({ error: "codigo es obligatorio" });
+
+    const { data: ot } = await db.from("ot_mantencion")
+      .select("codigo, titulo, descripcion_original, prioridad, estado, reportado_telefono, reportado_por, clientes_afectados")
+      .ilike("codigo", body.codigo.trim()).eq("activo", true).maybeSingle();
+    if (!ot) return res.status(404).json({ error: "ot_no_encontrada" });
+
+    let cliente = ot.reportado_por;
+    if (ot.clientes_afectados && ot.clientes_afectados[0]) {
+      const { data: c } = await db.from("cliente_operaciones").select("razon_social").eq("id", ot.clientes_afectados[0]).maybeSingle();
+      if (c) cliente = c.razon_social;
+    }
+    return res.status(200).json({
+      ok: true, codigo: ot.codigo, titulo: ot.titulo, descripcion: ot.descripcion_original,
+      prioridad: ot.prioridad, estado: ot.estado, cliente, telefono: ot.reportado_telefono,
+    });
+  }
+
   // Portal publico de solicitudes para arrendatarios (piloto, sin login) --
   // llamado por un canal externo (ej. un bot de Telegram/WhatsApp via n8n),
   // no por un usuario de OCFast, asi que se autentica con un token fijo en
@@ -522,6 +549,7 @@ export default async function handler(req, res) {
       ...fechas,
       reportado_por: vacioANull(body.reportado_por), fecha_reporte: fechaReporte,
       descripcion_original: vacioANull(body.descripcion) || body.titulo,
+      reportado_telefono: vacioANull(body.telefono_reportante),
       creado_por_usuario: "amelendez@patagonica.cl",
       origen: "portal_cliente",
     }).select().single();
