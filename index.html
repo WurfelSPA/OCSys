@@ -1045,10 +1045,29 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, proyectos, refres
   // mostrarlo/cargar datos para quien de verdad puede ver ese menu.
   const puedeVerOtMantencion = (currentUser.usuario || "").toLowerCase() === "amelendez@patagonica.cl";
   const [otsDisponibles, setOtsDisponibles] = useState([]);
+  const [clientesOtPorId, setClientesOtPorId] = useState({});
   useEffect(() => {
     if (!puedeVerOtMantencion) return;
-    api("ot-mantencion?empresa_id=" + empresaId).then((d) => setOtsDisponibles(d.ots || [])).catch(() => {});
+    Promise.all([
+      api("ot-mantencion?empresa_id=" + empresaId),
+      api("ot-mantencion?catalogo=1&empresa_id=" + empresaId),
+    ]).then(([a, b]) => {
+      setOtsDisponibles(a.ots || []);
+      const mapa = {};
+      (b.clientes || []).forEach((c) => { mapa[c.id] = c.razon_social; });
+      setClientesOtPorId(mapa);
+    }).catch(() => {});
   }, [puedeVerOtMantencion, empresaId]);
+  // Etiqueta del selector de OT: codigo, categoria, cliente (si tiene uno
+  // claro) y una parte de la descripcion original -- texto plano, no usar
+  // truncar() aqui (devuelve un <span>, no sirve concatenado con "+").
+  const etiquetaOt = (o) => {
+    const clienteId = o.clientes_afectados && o.clientes_afectados[0];
+    const cliente = clienteId ? clientesOtPorId[clienteId] : null;
+    const descripcion = o.descripcion_original && o.descripcion_original.length > 60
+      ? o.descripcion_original.slice(0, 60) + "…" : o.descripcion_original;
+    return [o.codigo, o.categoria, cliente, descripcion].filter(Boolean).join(" — ");
+  };
   // Si el usuario tiene proveedores permitidos, solo puede elegir entre
   // esos (no el catalogo completo) -- y si es uno solo, queda fijo.
   const proveedoresPermitidos = (currentUser.proveedor_ids && currentUser.proveedor_ids.length)
@@ -1442,7 +1461,7 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, proyectos, refres
       puedeVerOtMantencion && otsDisponibles.length > 0 && h(Field, { label: "Vincular a OT de Mantención (opcional)" },
         h("select", { value: form.ot_mantencion_id, onChange: set("ot_mantencion_id") },
           h("option", { value: "" }, "Ninguna"),
-          otsDisponibles.map((o) => h("option", { key: o.id, value: o.id }, o.codigo + " — " + truncar(o.titulo, 60))),
+          otsDisponibles.map((o) => h("option", { key: o.id, value: o.id }, etiquetaOt(o))),
         )),
 
       h("div", { style: { display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 20 } },
