@@ -421,7 +421,7 @@ export default async function handler(req, res) {
       if (!match) return res.status(404).json({ error: "nombre_no_encontrado" });
       if (match.tipo === "interno") fields = { responsable_id: match.usuarioId };
       else if (match.tipo === "personal") fields = { personal_id: match.personalId };
-      else fields = { ejecutor_tipo: "contratista", ejecutor_proveedor_id: match.proveedorId };
+      else fields = { ejecutor_tipo: "proveedor", ejecutor_proveedor_id: match.proveedorId };
       nombreMostrar = match.nombreMostrar;
       tipo = match.tipo;
     } else {

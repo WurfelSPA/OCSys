@@ -3904,15 +3904,15 @@ function OtDetalleModal({ data, usuariosOps, personalOps, proveedores, notify, o
             const tipo = e.target.value || null;
             put({
               ejecutor_tipo: tipo,
-              ejecutor_proveedor_id: tipo === "contratista" ? ot.ejecutor_proveedor_id : null,
+              ejecutor_proveedor_id: tipo === "proveedor" ? ot.ejecutor_proveedor_id : null,
               ejecutor_interno: tipo === "interno" ? ot.ejecutor_interno : null,
             });
           },
         },
           h("option", { value: "" }, "Sin definir"),
           h("option", { value: "interno" }, "Interno (personal propio)"),
-          h("option", { value: "contratista" }, "Contratista (proveedor)"))),
-      ot.ejecutor_tipo === "contratista" && h(Field, { label: "Proveedor" },
+          h("option", { value: "proveedor" }, "Contratista (proveedor)"))),
+      ot.ejecutor_tipo === "proveedor" && h(Field, { label: "Proveedor" },
         h(ProveedorPicker, {
           proveedores: (proveedores || []).filter((p) => p.activo !== false),
           value: ot.ejecutor_proveedor_id || "",
@@ -4098,7 +4098,7 @@ function MesaDeControl({ ots, cargando, expandido, setExpandido, onAbrir, usuari
             h("td", { onClick: (e) => e.stopPropagation() },
               h("select", {
                 value: o.ejecutor_proveedor_id || "",
-                onChange: (e) => guardarInline(o.id, e.target.value ? { ejecutor_tipo: "contratista", ejecutor_proveedor_id: e.target.value } : { ejecutor_tipo: null, ejecutor_proveedor_id: null }),
+                onChange: (e) => guardarInline(o.id, e.target.value ? { ejecutor_tipo: "proveedor", ejecutor_proveedor_id: e.target.value } : { ejecutor_tipo: null, ejecutor_proveedor_id: null }),
                 style: { fontSize: 12, padding: "4px 6px" },
               },
                 h("option", { value: "" }, "—"),
