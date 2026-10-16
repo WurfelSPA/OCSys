@@ -416,10 +416,16 @@ export default async function handler(req, res) {
     if (Array.isArray(body.adjuntos)) {
       for (const a of body.adjuntos) {
         if (a && a.url) {
-          await db.from("ot_evidencia").insert({
+          // ot_evidencia.tipo tiene un check: solo acepta 'antes'/'durante'/
+          // 'despues'/'documento'/'factura' -- "foto" no es valido ahi (esto
+          // hacia fallar el insert en silencio, sin que nadie se enterara).
+          const { error: eEvidencia } = await db.from("ot_evidencia").insert({
             ot_id: data.id, archivo_url: a.url, archivo_nombre: vacioANull(a.nombre),
-            tipo: "foto", autor_usuario: body.reportado_por || "Arrendatario (portal)",
+            tipo: "antes", autor_usuario: body.reportado_por || "Arrendatario (portal)",
           });
+          if (eEvidencia) {
+            await registrarBitacora(db, data.id, "No se pudo guardar un adjunto enviado por el bot: " + eEvidencia.message, "sistema");
+          }
         }
       }
     }
