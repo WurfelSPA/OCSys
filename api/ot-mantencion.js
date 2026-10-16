@@ -316,15 +316,17 @@ async function resolverUnidadPorIdentificador(db, { rut, telefono, nombre }, fec
 
   if (!clienteId) return null;
 
-  const f = (fecha || new Date().toISOString()).slice(0, 10);
-  const { data: vigentes } = await db
+  // Sin filtro de vigencia a proposito: quien escribe al bot para reportar
+  // una incidencia se asume arrendatario activo -- si la fecha de termino de
+  // su contrato quedo desactualizada (ej. una renovacion automatica que no
+  // se reflejo aqui), no tiene que bloquear la identificacion. Si de verdad
+  // ya no es cliente, Operaciones lo vera al revisar la OT creada.
+  const { data: unidades } = await db
     .from("contrato_unidad")
     .select("unidad_id, contrato_operaciones!inner(cliente_id)")
-    .eq("contrato_operaciones.cliente_id", clienteId)
-    .lte("desde", f)
-    .or("hasta.is.null,hasta.gte." + f);
+    .eq("contrato_operaciones.cliente_id", clienteId);
 
-  const unidadIds = [...new Set((vigentes || []).map((v) => v.unidad_id))];
+  const unidadIds = [...new Set((unidades || []).map((v) => v.unidad_id))];
   if (!unidadIds.length) return null;
   return { clienteId, razonSocial, unidadIds };
 }
@@ -402,7 +404,18 @@ export default async function handler(req, res) {
     const impacto = CATEGORIA_IMPACTO[categoriaInterna] || CATEGORIA_IMPACTO_DEFAULT;
     const urgencia = "Estable";
     const prioridad = calcularPrioridad(impacto, urgencia);
-    const { clienteIds, contratoIds } = await resolverClientesContratos(db, "unidad", unidad.id, fechaReporte);
+    let { clienteIds, contratoIds } = await resolverClientesContratos(db, "unidad", unidad.id, fechaReporte);
+    if (!clienteIds.includes(match.clienteId)) {
+      // resolverClientesContratos SI filtra por vigencia (la usan tambien
+      // flujos internos donde "vacante" importa) -- si por eso no incluyo al
+      // cliente que el bot ya identifico explicitamente, lo agrego igual en
+      // vez de dejar la OT sin cliente/contrato asociado.
+      const { data: contratosCliente } = await db.from("contrato_unidad")
+        .select("contrato_id, contrato_operaciones!inner(cliente_id)")
+        .eq("unidad_id", unidad.id).eq("contrato_operaciones.cliente_id", match.clienteId);
+      clienteIds = [...new Set([...clienteIds, match.clienteId])];
+      contratoIds = [...new Set([...contratoIds, ...(contratosCliente || []).map((c) => c.contrato_id)])];
+    }
     const fechas = await calcularFechasLimite(db, prioridad, fechaReporte, contratoIds);
     const cat = CATEGORIAS[categoriaInterna];
     const { data: numero, error: eNum } = await db.rpc("siguiente_numero_ot");
