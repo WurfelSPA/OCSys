@@ -2525,18 +2525,25 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
     ? h("button", { className: "btn-ghost", style: { padding: "4px 10px", fontSize: 11 }, onClick: () => setAccion({ orden: o, tipo: "pagar" }) }, "Registrar Pago")
     : null;
 
+  // Mismo criterio de orden que Mesa de Control (OT Mantencion): primero el
+  // toggle de detalle, despues los identificadores y "quien/que viene"
+  // (N°OC, OT, Fecha, Proveedor, HES/Accion), luego Estado, montos, y recien
+  // al final los documentos/adjuntos y las acciones de fila.
   const columns = useMemo(() => [
     {
-      key: "archivo", label: "Cotiz.", sortable: false,
-      render: (o) => (o.activo !== false && o.archivo_url)
-        ? h("a", { className: "link", href: urlParaVer(o.archivo_url), target: "_blank", rel: "noreferrer", title: o.archivo_nombre || "Ver cotización" }, o.numero_cotizacion || "Ver")
-        : "—",
-    },
-    {
-      key: "documentos_respaldo", label: "Respaldo", sortable: false,
-      render: (o) => (o.activo !== false && (o.documentos_respaldo || []).length)
-        ? h("span", { title: (o.documentos_respaldo || []).map((d) => d.nombre).join(", ") }, "📎 " + o.documentos_respaldo.length)
-        : "—",
+      key: "detalles", label: "Detalles", sortable: false,
+      render: (o) => {
+        if (o._esGrupo) {
+          const expandido = !!gruposExpandidos[o._grupoId];
+          return h("button", {
+            className: "btn-ghost", title: expandido ? "Ocultar cuotas" : "Ver cuotas",
+            style: { padding: "2px 8px", fontSize: 12 },
+            onClick: () => setGruposExpandidos((g) => ({ ...g, [o._grupoId]: !g[o._grupoId] })),
+          }, expandido ? "▾" : "▸");
+        }
+        if (o._esHijoDeGrupo) return h("span", { className: "hint" }, "↳");
+        return null;
+      },
     },
     {
       key: "numero_oc_visible", label: "N° OC",
@@ -2563,21 +2570,6 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
         onClick: () => abrirOt(o.ot_mantencion.id),
       }, o.ot_mantencion.codigo),
     }] : []),
-    {
-      key: "detalles", label: "Detalles", sortable: false,
-      render: (o) => {
-        if (o._esGrupo) {
-          const expandido = !!gruposExpandidos[o._grupoId];
-          return h("button", {
-            className: "btn-ghost", title: expandido ? "Ocultar cuotas" : "Ver cuotas",
-            style: { padding: "2px 8px", fontSize: 12 },
-            onClick: () => setGruposExpandidos((g) => ({ ...g, [o._grupoId]: !g[o._grupoId] })),
-          }, expandido ? "▾" : "▸");
-        }
-        if (o._esHijoDeGrupo) return h("span", { className: "hint" }, "↳");
-        return null;
-      },
-    },
     { key: "fecha", label: "Fecha", render: (o) => fmtDate(o.fecha) },
     {
       key: "proveedor", label: "Proveedor",
@@ -2617,6 +2609,12 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
       },
     },
     {
+      key: "estado", label: "Estado",
+      render: (o) => o.activo === false
+        ? h("span", { className: "pill pill-anul" }, "ELIMINADA")
+        : o._esGrupo ? h("span", { className: "hint" }, o._indicadorEstados) : estadoPill(o.estado),
+    },
+    {
       key: "monto_neto_grupo", label: "Monto Neto",
       sortValue: (o) => o.monto_neto_grupo,
       render: (o) => fmtMontoMoneda(o.monto_neto_grupo, o.moneda || "CLP"),
@@ -2629,6 +2627,23 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
       render: (o) => (o._esGrupo || o.activo === false) ? "—" : fmtMontoMoneda(o.monto_neto, o.moneda || "CLP"),
     },
     {
+      key: "pendiente", label: "Pendiente",
+      sortValue: (o) => o.pendiente_calc,
+      render: (o) => (o._esGrupo || o.activo === false) ? "—" : fmtMontoMoneda(o.pendiente_calc, o.moneda || "CLP"),
+    },
+    {
+      key: "archivo", label: "Cotiz.", sortable: false,
+      render: (o) => (o.activo !== false && o.archivo_url)
+        ? h("a", { className: "link", href: urlParaVer(o.archivo_url), target: "_blank", rel: "noreferrer", title: o.archivo_nombre || "Ver cotización" }, o.numero_cotizacion || "Ver")
+        : "—",
+    },
+    {
+      key: "documentos_respaldo", label: "Respaldo", sortable: false,
+      render: (o) => (o.activo !== false && (o.documentos_respaldo || []).length)
+        ? h("span", { title: (o.documentos_respaldo || []).map((d) => d.nombre).join(", ") }, "📎 " + o.documentos_respaldo.length)
+        : "—",
+    },
+    {
       key: "numero_factura", label: "N° Factura",
       render: (o) => (o._esGrupo || o.activo === false) ? "—" : o.archivo_factura_url
         ? h("a", { className: "link", href: urlParaVer(o.archivo_factura_url), target: "_blank", rel: "noreferrer", title: "Ver factura" }, o.numero_factura)
@@ -2639,17 +2654,6 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
       render: (o) => (!o._esGrupo && o.activo !== false && o.archivo_comprobante_url)
         ? h("a", { className: "link", href: urlParaVer(o.archivo_comprobante_url), target: "_blank", rel: "noreferrer", title: o.archivo_comprobante_nombre || "Ver comprobante de pago" }, "Ver")
         : "—",
-    },
-    {
-      key: "pendiente", label: "Pendiente",
-      sortValue: (o) => o.pendiente_calc,
-      render: (o) => (o._esGrupo || o.activo === false) ? "—" : fmtMontoMoneda(o.pendiente_calc, o.moneda || "CLP"),
-    },
-    {
-      key: "estado", label: "Estado",
-      render: (o) => o.activo === false
-        ? h("span", { className: "pill pill-anul" }, "ELIMINADA")
-        : o._esGrupo ? h("span", { className: "hint" }, o._indicadorEstados) : estadoPill(o.estado),
     },
     {
       key: "editar", label: "Editar", sortable: false,
@@ -2742,9 +2746,13 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
         // tenue -- tanto la fila resumen del grupo como cada cuota cuando
         // esta expandida. Una OC eliminada (ver fetch de `eliminadas`) se
         // marca en rojo, en su puesto, para no dejar un hueco silencioso en
-        // la numeracion.
+        // la numeracion. Las del proyecto "Remodelación El Cortijo" llevan
+        // fondo amarillo tenue (mismo tono que la "O" de Patagónica) para
+        // distinguirlas a simple vista -- tiene prioridad sobre el tinte de
+        // OC en cuotas.
         rowStyle: (o) => o.activo === false
           ? { color: "var(--red)" }
+          : (o.proyectos && (o.proyectos.nombre || "").toLowerCase() === "remodelación el cortijo") ? { backgroundColor: "var(--abg)" }
           : (o.cuota_total) ? { backgroundColor: "var(--accbg)" } : undefined,
         emptyText: "Aún no hay órdenes de compra creadas en OCFast",
       }),
