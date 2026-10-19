@@ -85,6 +85,10 @@ button{font-family:'Inter',sans-serif;cursor:pointer;transition:all 0.15s}
 .app-content{margin-left:48px}
 @media (max-width:720px){.sidebar{display:none!important}.app-content{margin-left:0!important}}
 .page{padding:20px 24px 60px;max-width:1800px;margin:0 auto}
+/* Ordenes tiene muchas columnas (ver OrdenesList) -- el tope de 1800px
+   dejaba espacio sin usar a los lados y la tabla igual quedaba con scroll
+   horizontal; esta pagina usa todo el ancho disponible de la pantalla. */
+.page-ordenes{max-width:none}
 .card{background:var(--surf);border:1px solid var(--bdr);border-radius:8px;padding:22px 24px;margin-bottom:18px}
 .card h2{font-size:14px;font-weight:700;margin-bottom:14px;color:var(--tx)}
 .section-lbl{font-size:10px;font-weight:700;color:var(--acc);letter-spacing:.06em;text-transform:uppercase;margin:18px 0 10px;padding-top:14px;border-top:1px solid var(--bdr)}
@@ -2523,7 +2527,7 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
     [columns, hayFiltroActivo]
   );
 
-  return h("div", { className: "page fade-up" },
+  return h("div", { className: "page page-ordenes fade-up" },
     accion && h(OrdenAccionModal, {
       orden: accion.orden, tipo: accion.tipo, notify, proveedores, empresa, currentUser,
       onClose: () => setAccion(null),
