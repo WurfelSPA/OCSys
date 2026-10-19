@@ -1532,10 +1532,29 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, proyectos, refres
 
       puedeVerOtMantencion && h("div", null,
         h("div", { className: "section-lbl" }, "Órdenes de Trabajo"),
-        h("label", { style: { display: "flex", alignItems: "center", gap: 8, fontSize: 12, cursor: "pointer", marginBottom: 12 } },
+        h("label", { style: { display: "inline-flex", alignItems: "center", gap: 8, fontSize: 12, cursor: "pointer", marginBottom: 12 } },
           h("input", {
             type: "checkbox", checked: generarOt,
-            onChange: (e) => { setGenerarOt(e.target.checked); if (e.target.checked) set("ot_mantencion_id")({ target: { value: "" } }); },
+            // El checkbox hereda width:100% de la regla global de
+            // inputs/selects -- sin fijar un tamaño queda estirado y
+            // descentrado respecto del texto.
+            style: { width: 14, height: 14, flex: "none", margin: 0 },
+            onChange: (e) => {
+              const checked = e.target.checked;
+              setGenerarOt(checked);
+              if (!checked) return;
+              set("ot_mantencion_id")({ target: { value: "" } });
+              // Si el "Cliente *" de arriba ya calza con una unidad real del
+              // catastro de OT Mantencion, se autocompletan Cliente/Ubicacion
+              // -- solo cuando hay una UNICA unidad detras de esa etiqueta
+              // (puede repetirse por edificio); si hay mas de una no se
+              // adivina cual, queda para elegir a mano filtrado por cliente.
+              const candidatos = (catalogos.clientesOcDetalle || {})[form.cliente_destino] || [];
+              if (candidatos.length) {
+                setOtClienteId(candidatos[0].cliente_id || "");
+                setOtUbicacionId(candidatos.length === 1 ? candidatos[0].unidad_id : "");
+              }
+            },
           }),
           "Generar OT de Mantención junto con esta OC",
         ),
@@ -1554,7 +1573,10 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, proyectos, refres
                   h("option", { value: "" }, "Selecciona"),
                   opcionesOtUbicacion.map((o) => h("option", { key: o.value, value: o.value }, o.label)))),
             )
-          : otsDisponibles.length > 0 && h(Field, { label: "Vincular a OT de Mantención existente (opcional)" },
+          : null,
+        generarOt && otClienteId && opcionesOtUbicacion.length > 1 && !otUbicacionId && h("div", { className: "hint", style: { marginTop: -8, marginBottom: 12 } },
+          "Este cliente tiene " + opcionesOtUbicacion.length + " unidades vigentes — selecciona la correcta."),
+        !generarOt && otsDisponibles.length > 0 && h(Field, { label: "Vincular a OT de Mantención existente (opcional)" },
               h("select", { value: form.ot_mantencion_id, onChange: set("ot_mantencion_id") },
                 h("option", { value: "" }, "Ninguna"),
                 otsDisponibles.map((o) => h("option", { key: o.id, value: o.id }, etiquetaOt(o))),

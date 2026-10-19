@@ -9,23 +9,32 @@ async function construirClientesOc(db, empresaId) {
   const hoy = new Date().toISOString().slice(0, 10);
   const { data, error } = await db
     .from("unidad")
-    .select("id, codigo, edificio!inner(nombre, sitio!inner(codigo, empresa_id)), contrato_unidad(desde, hasta, contrato_operaciones(cliente_operaciones(rut, razon_social)))")
+    .select("id, codigo, edificio!inner(nombre, sitio!inner(codigo, empresa_id)), contrato_unidad(desde, hasta, contrato_operaciones(cliente_operaciones(id, rut, razon_social)))")
     .eq("edificio.sitio.empresa_id", empresaId)
     .order("codigo");
   if (error) return { data: null, error };
 
+  // detalle agrupa por etiqueta las unidades/clientes que la producen -- la
+  // etiqueta es a nivel edificio (no unidad especifica), asi que un mismo
+  // texto puede salir de varias unidades con igual cliente vigente (ver
+  // "Generar OT" en Nueva OC: solo se autocompleta Ubicacion/Cliente cuando
+  // hay una sola unidad detras de la etiqueta elegida -- si hay mas de una
+  // no se adivina cual, se deja elegir a mano).
+  const detalle = {};
   const etiquetas = (data || []).map((u) => {
     const vigente = (u.contrato_unidad || []).find((cu) => cu.desde <= hoy && (!cu.hasta || cu.hasta >= hoy));
     const cliente = vigente?.contrato_operaciones?.cliente_operaciones;
     const sitioCod = u.edificio?.sitio?.codigo || "";
     const edifNom = u.edificio?.nombre || u.codigo;
-    return cliente
+    const etiqueta = cliente
       ? [sitioCod, edifNom, cliente.rut, cliente.razon_social].filter(Boolean).join(" — ")
       : [sitioCod, edifNom, "VACANTE"].filter(Boolean).join(" — ");
+    (detalle[etiqueta] = detalle[etiqueta] || []).push({ unidad_id: u.id, cliente_id: cliente ? cliente.id : null });
+    return etiqueta;
   });
   // Mismo sitio/edificio puede repetirse si tiene mas de una unidad con el
   // mismo cliente -- sin duplicados en el desplegable.
-  return { data: [...new Set(etiquetas)].sort(), error: null };
+  return { data: [...new Set(etiquetas)].sort(), detalle, error: null };
 }
 
 export default async function handler(req, res) {
@@ -62,5 +71,6 @@ export default async function handler(req, res) {
     regiones: regiones.data,
     ciudades: ciudades.data,
     clientesOc: clientesOc.data,
+    clientesOcDetalle: clientesOc.detalle,
   });
 }
