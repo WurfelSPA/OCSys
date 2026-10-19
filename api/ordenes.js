@@ -305,7 +305,7 @@ export default async function handler(req, res) {
 
     let query = db
       .from("ordenes_compra")
-      .select("*, proveedores(razon_social, rut), proyectos(nombre)")
+      .select("*, proveedores(razon_social, rut), proyectos(nombre), ot_mantencion(id, codigo, categoria, estado)")
       .eq("activo", true)
       .eq("empresa_id", empresaId)
       .order("created_at", { ascending: false });

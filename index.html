@@ -2130,6 +2130,21 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
   const [eliminadas, setEliminadas] = useState([]);
   const [actualizando, setActualizando] = useState(false);
   const puedeAprobar = currentUser && currentUser.nivel_aprobacion === 1;
+  // OT Mantención sigue en pruebas (ver NuevaOC) -- la columna/modal de OT
+  // vinculada solo se carga para quien de verdad puede ver ese menu.
+  const puedeVerOtMantencion = (currentUser.usuario || "").toLowerCase() === "amelendez@patagonica.cl";
+  const [otSel, setOtSel] = useState(null);
+  const [opsOt, setOpsOt] = useState({ usuariosOps: [], personalOps: [] });
+  const abrirOt = (id) => {
+    Promise.all([
+      api("ot-mantencion?id=" + id),
+      api("ot-mantencion?usuarios=1"),
+      api("ot-mantencion?personal=1"),
+    ]).then(([d, u, p]) => {
+      setOtSel(d);
+      setOpsOt({ usuariosOps: u.usuarios || [], personalOps: p.personal || [] });
+    }).catch((e) => notify("err", e.message));
+  };
 
   const actualizar = async () => {
     setActualizando(true);
@@ -2336,6 +2351,21 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
     return c ? c.codigo + " — " + c.descripcion : codigo;
   };
 
+  // Antes era su propia columna "Acción" -- ahora se muestra plegada bajo
+  // N° HES para que quepan todas las columnas sin desplazarse horizontalmente.
+  const renderAccion = (o) => o.activo === false ? null : o._esGrupo ? h("span", { className: "hint" }, "Expandir para gestionar") : o.estado === "Pendiente aprobación"
+    ? (puedeAprobar
+        ? h("button", { className: "btn-ghost", style: { padding: "4px 10px", fontSize: 11 }, onClick: () => setAccion({ orden: o, tipo: "aprobar" }) }, "Aprobar")
+        : h("span", { className: "hint" }, "Requiere aprobador"))
+    : o.estado === "Aprobada"
+    ? h("div", { style: { display: "flex", gap: 6, flexWrap: "wrap" } },
+        h("button", { className: "btn-ghost", style: { padding: "4px 10px", fontSize: 11 }, onClick: () => setAccion({ orden: o, tipo: "facturar" }) }, "Facturar"),
+        puedeAprobar && h("button", { className: "btn-ghost", style: { padding: "4px 10px", fontSize: 11 }, onClick: () => desaprobarOrden(o) }, "Desaprobar"),
+      )
+    : o.estado === "Facturada"
+    ? h("button", { className: "btn-ghost", style: { padding: "4px 10px", fontSize: 11 }, onClick: () => setAccion({ orden: o, tipo: "pagar" }) }, "Registrar Pago")
+    : null;
+
   const columns = useMemo(() => [
     {
       key: "archivo", label: "Cotiz.", sortable: false,
@@ -2364,8 +2394,16 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
             onClick: () => editarObservacionCuota(o),
           }, "✏️"),
         ),
+        o.creado_por_usuario && h("div", { style: { fontSize: 10, color: "var(--txm)" } }, "👤 " + nombreUsuario(usuarios, o.creado_por_usuario)),
       ),
     },
+    ...(puedeVerOtMantencion ? [{
+      key: "ot_codigo", label: "OT", sortable: false,
+      render: (o) => (o.activo === false || !o.ot_mantencion) ? "—" : h("a", {
+        className: "link", style: { cursor: "pointer" }, title: "Ver OT de Mantención",
+        onClick: () => abrirOt(o.ot_mantencion.id),
+      }, o.ot_mantencion.codigo),
+    }] : []),
     {
       key: "detalles", label: "Detalles", sortable: false,
       render: (o) => {
@@ -2382,20 +2420,41 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
       },
     },
     { key: "fecha", label: "Fecha", render: (o) => fmtDate(o.fecha) },
-    { key: "proveedor", label: "Proveedor", sortValue: (o) => (o.proveedores ? o.proveedores.razon_social : ""), render: (o) => truncar(o.proveedores ? o.proveedores.razon_social : "—", 160) },
+    {
+      key: "proveedor", label: "Proveedor",
+      sortValue: (o) => (o.proveedores ? o.proveedores.razon_social : ""),
+      render: (o) => {
+        if (o.activo === false) return o.proveedores ? o.proveedores.razon_social : "—";
+        const proyectoNombre = o.proyectos ? o.proyectos.nombre : "—";
+        const texto = (o.centro_costo_codigo || "—") + " - " + (o.cuenta_contable_codigo || "—") + " - " + proyectoNombre;
+        const tooltip = [
+          o.centro_costo_codigo ? centroCostoLabel(o.centro_costo_codigo) : "Sin centro de costo",
+          o.cuenta_contable_codigo ? cuentaContableLabel(o.cuenta_contable_codigo) : "Sin cuenta contable",
+          proyectoNombre,
+        ].join(" · ");
+        return h("div", { style: { maxWidth: 220 } },
+          h("div", null, o.proveedores ? o.proveedores.razon_social : "—"),
+          h("div", { title: tooltip, style: { fontSize: 10, color: "var(--txm)", whiteSpace: "normal" } }, texto),
+        );
+      },
+    },
     {
       key: "numero_hes", label: "N° HES",
       render: (o) => {
         if (o.activo === false) return "—";
         const codigos = (o.numero_hes || "").split(",").map((s) => s.trim()).filter(Boolean);
-        if (codigos.length <= 1) return o.numero_hes || "—";
         // Las OC con varias cuotas traen un HES por cuota -- listarlos en
         // linea (separados por coma) ensanchaba mucho la tabla, asi que se
         // muestran en un desplegable compacto en vez de un texto largo.
-        return h("select", {
+        const hesContenido = codigos.length <= 1 ? (o.numero_hes || "—") : h("select", {
           title: codigos.length + " códigos HES (uno por cuota)",
           style: { width: 100, fontSize: 11, padding: "2px 4px" },
         }, codigos.map((c, i) => h("option", { key: i, value: c }, c)));
+        const accionContenido = renderAccion(o);
+        return h("div", null,
+          h("div", null, hesContenido),
+          accionContenido && h("div", { style: { marginTop: 4 } }, accionContenido),
+        );
       },
     },
     {
@@ -2434,26 +2493,6 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
         : o._esGrupo ? h("span", { className: "hint" }, o._indicadorEstados) : estadoPill(o.estado),
     },
     {
-      key: "creado_por_usuario", label: "Usuario",
-      sortValue: (o) => nombreUsuario(usuarios, o.creado_por_usuario),
-      render: (o) => nombreUsuario(usuarios, o.creado_por_usuario),
-    },
-    {
-      key: "accion", label: "Acción", sortable: false,
-      render: (o) => o.activo === false ? "—" : o._esGrupo ? h("span", { className: "hint" }, "Expandir para gestionar") : o.estado === "Pendiente aprobación"
-        ? (puedeAprobar
-            ? h("button", { className: "btn-ghost", style: { padding: "4px 10px", fontSize: 11 }, onClick: () => setAccion({ orden: o, tipo: "aprobar" }) }, "Aprobar")
-            : h("span", { className: "hint" }, "Requiere aprobador"))
-        : o.estado === "Aprobada"
-        ? h("div", { style: { display: "flex", gap: 6, flexWrap: "wrap" } },
-            h("button", { className: "btn-ghost", style: { padding: "4px 10px", fontSize: 11 }, onClick: () => setAccion({ orden: o, tipo: "facturar" }) }, "Facturar"),
-            puedeAprobar && h("button", { className: "btn-ghost", style: { padding: "4px 10px", fontSize: 11 }, onClick: () => desaprobarOrden(o) }, "Desaprobar"),
-          )
-        : o.estado === "Facturada"
-        ? h("button", { className: "btn-ghost", style: { padding: "4px 10px", fontSize: 11 }, onClick: () => setAccion({ orden: o, tipo: "pagar" }) }, "Registrar Pago")
-        : "—",
-    },
-    {
       key: "editar", label: "Editar", sortable: false,
       render: (o) => o.activo === false ? null : o._esGrupo
         // Si alguna cuota ya avanzo mas alla de Pendiente aprobacion, el
@@ -2474,24 +2513,7 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
         onClick: () => o._esGrupo ? eliminarGrupo(o) : eliminarOrden(o),
       }, "🗑"),
     },
-    {
-      key: "contexto_proyecto", label: "Centro Costo / Cuenta / Proyecto", sortable: false,
-      render: (o) => {
-        if (o.activo === false) return "—";
-        const proyectoNombre = o.proyectos ? o.proyectos.nombre : "—";
-        const texto = (o.centro_costo_codigo || "—") + " - " + (o.cuenta_contable_codigo || "—") + " - " + proyectoNombre;
-        const tooltip = [
-          o.centro_costo_codigo ? centroCostoLabel(o.centro_costo_codigo) : "Sin centro de costo",
-          o.cuenta_contable_codigo ? cuentaContableLabel(o.cuenta_contable_codigo) : "Sin cuenta contable",
-          proyectoNombre,
-        ].join(" · ");
-        return h("span", {
-          title: tooltip,
-          style: { display: "inline-block", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", verticalAlign: "bottom" },
-        }, texto);
-      },
-    },
-  ], [puedeAprobar, gruposExpandidos, catalogos, usuarios]);
+  ], [puedeAprobar, puedeVerOtMantencion, gruposExpandidos, catalogos, usuarios]);
 
   // Mientras se agrupa (sin busqueda/filtro activos), el orden queda fijo
   // por N° de OC -- se deshabilita el sort por columna para no romper el
@@ -2516,6 +2538,11 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
       grupo: editandoGrupo, proveedores, catalogos, proyectos, refreshProyectos, refreshProyectosTodos, empresaId, notify,
       onClose: () => setEditandoGrupo(null),
       onSaved: () => { refreshOrdenes(); setEditandoGrupo(null); },
+    }),
+    otSel && h(OtDetalleModal, {
+      data: otSel, usuariosOps: opsOt.usuariosOps, personalOps: opsOt.personalOps, proveedores, notify,
+      onClose: () => setOtSel(null),
+      onSaved: () => abrirOt(otSel.ot.id),
     }),
     h("div", { className: "card" },
       h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: filtroEstadoCategoria ? 4 : 14 } },
