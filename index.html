@@ -186,6 +186,22 @@ function fmtDate(d) {
   return new Date(d + "T00:00:00").toLocaleDateString("es-CL");
 }
 
+const MESES_ES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
+// Al duplicar una OC recurrente (ver "Duplicar" en OrdenesList) la
+// descripcion suele referirse al mes anterior al que se solicito (ej. "mes
+// de Septiembre" pedida en octubre) -- si menciona un mes, se reemplaza por
+// el mes anterior a HOY (fecha de la nueva OC), preservando mayus/minusculas.
+function ajustarMesAnteriorEnTexto(texto) {
+  if (!texto) return texto;
+  const mesNuevo = MESES_ES[(new Date().getMonth() + 11) % 12];
+  const regex = new RegExp("\\b(" + MESES_ES.join("|") + ")\\b", "i");
+  const match = texto.match(regex);
+  if (!match) return texto;
+  const esMayuscula = match[0][0] === match[0][0].toUpperCase();
+  const reemplazo = esMayuscula ? mesNuevo.charAt(0).toUpperCase() + mesNuevo.slice(1) : mesNuevo;
+  return texto.replace(regex, reemplazo);
+}
+
 // Los navegadores no tienen visor nativo para Word/Excel (a diferencia de
 // PDF/imagen, que abren inline en una pestaña) -- un link directo a un .doc
 // o .xlsx simplemente los descarga sin mostrar nada. Para esos formatos se
@@ -2364,6 +2380,51 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
     }
   };
 
+  // Para OC recurrentes (mismo proveedor/monto/concepto todos los meses,
+  // ej. un servicio mensual) -- copia todos los datos de la OC elegida en
+  // una OC nueva: numero de OC y fecha son los de hoy, el usuario queda
+  // como quien duplica (lo resuelve el backend via sesion), y si la
+  // descripcion menciona un mes se actualiza al mes anterior a hoy. Queda
+  // en Borrador para revisar antes de generarla.
+  const duplicarOrden = async (o) => {
+    if (!window.confirm("¿Duplicar la OC " + (o.numero_oc_acquisys || o.numero_oc_visible) + "? Se creará una OC nueva con los mismos datos, fecha de hoy y quedará en Borrador para revisar antes de generarla.")) return;
+    try {
+      const { orden } = await api("ordenes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          proveedor_id: o.proveedor_id,
+          empresa_id: empresaId,
+          fecha: new Date().toISOString().slice(0, 10),
+          numero_cotizacion: o.numero_cotizacion || null,
+          titulo: o.titulo || null,
+          descripcion: ajustarMesAnteriorEnTexto(o.descripcion),
+          condiciones: o.condiciones || null,
+          motivo: o.motivo || null,
+          gerencia: o.gerencia || null,
+          centro_costo_codigo: o.centro_costo_codigo,
+          cuenta_contable_codigo: o.cuenta_contable_codigo,
+          proyecto_id: o.proyecto_id,
+          cliente_destino: o.cliente_destino,
+          tipo_orden: o.tipo_orden || null,
+          tipo_compra: o.tipo_compra || null,
+          moneda: o.moneda || "CLP",
+          estado: "Borrador",
+          monto_neto: o.monto_neto || null,
+          monto_iva: o.monto_iva || null,
+          monto_total: o.monto_total || null,
+          archivo_url: o.archivo_url || null,
+          archivo_nombre: o.archivo_nombre || null,
+          documentos_respaldo: Array.isArray(o.documentos_respaldo) ? o.documentos_respaldo : [],
+        }),
+      });
+      notify("ok", "OC duplicada como " + orden.numero_oc + " (Borrador) — revísala antes de generarla");
+      refreshOrdenes();
+    } catch (e) {
+      notify("err", e.message);
+    }
+  };
+
   const ordenesConVisible = useMemo(() => {
     // Las OC eliminadas se mezclan con las activas para que queden en su
     // puesto dentro de la numeracion (ver fetch de `eliminadas` mas arriba).
@@ -2667,6 +2728,14 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
         : ["Borrador", "Pendiente aprobación"].includes(o.estado)
         ? h("button", { className: "btn-ghost", title: "Editar OC", style: { padding: "4px 8px", fontSize: 12 }, onClick: () => setEditando(o) }, "✏️")
         : null,
+    },
+    {
+      key: "duplicar", label: "Duplicar", sortable: false,
+      render: (o) => o.activo === false ? "—" : h("button", {
+        className: "btn-ghost", title: "Duplicar como OC nueva (fecha de hoy)",
+        style: { padding: "4px 8px", fontSize: 12 },
+        onClick: () => duplicarOrden(o),
+      }, "📄+"),
     },
     {
       key: "eliminar", label: "Borrar", sortable: false,
