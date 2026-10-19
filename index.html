@@ -2633,6 +2633,7 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
             onClick: () => editarObservacionCuota(o),
           }, "✏️"),
         ),
+        o.titulo && h("div", { style: { marginTop: 2 } }, truncar(o.titulo, 190)),
         o.creado_por_usuario && h("div", { style: { fontSize: 10, color: "var(--txm)" } }, "👤 " + nombreUsuario(usuarios, o.creado_por_usuario)),
       ),
     },
