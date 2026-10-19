@@ -1060,10 +1060,10 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, proyectos, refres
   const [motorIA, setMotorIA] = useState("Gemini");
   const [numCuotas, setNumCuotas] = useState(1);
   const [cuotas, setCuotas] = useState(distribuirCuotas(1, 0));
-  // OT Mantención sigue en pruebas (solo amelendez tiene acceso real, ver
-  // App()) -- el selector para vincular una OC a una OT solo tiene sentido
-  // mostrarlo/cargar datos para quien de verdad puede ver ese menu.
-  const puedeVerOtMantencion = (currentUser.usuario || "").toLowerCase() === "amelendez@patagonica.cl";
+  // El selector para vincular/generar una OT solo tiene sentido mostrarlo
+  // para quien de verdad puede ver el menu OT Mantención (personal interno
+  // @patagonica.cl, igual que esPatagonica en App()).
+  const puedeVerOtMantencion = (currentUser.usuario || "").toLowerCase().endsWith("@patagonica.cl");
   const [otsDisponibles, setOtsDisponibles] = useState([]);
   const [clientesOtPorId, setClientesOtPorId] = useState({});
   const [catalogoOt, setCatalogoOt] = useState({ clientes: [], unidades: [], contratos: [] });
@@ -2285,9 +2285,9 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
     { key: "estado", label: "Estado", getVal: (o) => o.estado || "" },
   ], [usuarios]);
   const puedeAprobar = currentUser && currentUser.nivel_aprobacion === 1;
-  // OT Mantención sigue en pruebas (ver NuevaOC) -- la columna/modal de OT
-  // vinculada solo se carga para quien de verdad puede ver ese menu.
-  const puedeVerOtMantencion = (currentUser.usuario || "").toLowerCase() === "amelendez@patagonica.cl";
+  // La columna/modal de OT vinculada solo se carga para quien de verdad
+  // puede ver el menu OT Mantención (ver NuevaOC).
+  const puedeVerOtMantencion = (currentUser.usuario || "").toLowerCase().endsWith("@patagonica.cl");
   const [otSel, setOtSel] = useState(null);
   const [opsOt, setOpsOt] = useState({ usuariosOps: [], personalOps: [] });
   const abrirOt = (id) => {
@@ -4528,12 +4528,6 @@ function CatalogoOperaciones({ empresaId, catalogo, notify, onChanged }) {
   );
 }
 
-function OtMantencionEnConstruccion() {
-  return h("div", { className: "page fade-up" },
-    h("div", { className: "card" },
-      h("div", { className: "empty" }, "EN CONSTRUCCIÓN — esta sección está en pruebas internas.")));
-}
-
 function OtMantencionPage({ empresaId, currentUser, proveedores, notify }) {
   const [vista, setVista] = useState("mesa");
   const [ots, setOts] = useState([]);
@@ -5543,9 +5537,6 @@ function App({ currentUser, onLogout }) {
   // importar su nivel de aprobación o si está atado a una empresa/proyecto.
   const esPatagonica = (currentUser.usuario || "").toLowerCase().endsWith("@patagonica.cl");
   const esGestionObras = (currentUser.usuario || "").toLowerCase().endsWith("@gestionobras.cl");
-  // OT Mantención sigue en pruebas -- solo amelendez tiene acceso real
-  // mientras se valida el flujo; el resto del equipo ve "En construcción".
-  const puedeVerOtMantencion = (currentUser.usuario || "").toLowerCase() === "amelendez@patagonica.cl";
 
   return h("div", { className: "app-shell" },
     h(Sidebar, { tab, setTab, esPatagonica, onOrdenesClick: () => { setFiltroEstadoOrdenes(null); setTab("ordenes"); } }),
@@ -5581,9 +5572,7 @@ function App({ currentUser, onLogout }) {
     tab === "reportes" && esPatagonica && h(ReportesList, { ordenes, proveedores, notify }),
     tab === "administracion" && h(AdministracionList, { usuarios, refreshUsuarios: loadUsuarios, notify, currentUser, refreshOrdenes: loadOrdenes, refreshProveedores: loadProveedores, refreshEmpresas: loadEmpresas, empresaId, empresa: empresaActual, empresas, proyectosTodos, catalogosTodos, proveedores }),
     tab === "proyectos-seguimiento" && esPatagonica && h(ProyectosPage, { empresaId, proveedores, notify }),
-    tab === "ot-mantencion" && esPatagonica && (puedeVerOtMantencion
-      ? h(OtMantencionPage, { empresaId, currentUser, proveedores, notify })
-      : h(OtMantencionEnConstruccion)),
+    tab === "ot-mantencion" && esPatagonica && h(OtMantencionPage, { empresaId, currentUser, proveedores, notify }),
     ),
   );
 }
