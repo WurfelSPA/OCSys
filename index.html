@@ -2531,6 +2531,18 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
   // al final los documentos/adjuntos y las acciones de fila.
   const columns = useMemo(() => [
     {
+      key: "archivo", label: "Cotiz.", sortable: false,
+      render: (o) => (o.activo !== false && o.archivo_url)
+        ? h("a", { className: "link", href: urlParaVer(o.archivo_url), target: "_blank", rel: "noreferrer", title: o.archivo_nombre || "Ver cotización" }, o.numero_cotizacion || "Ver")
+        : "—",
+    },
+    {
+      key: "documentos_respaldo", label: "Respaldo", sortable: false,
+      render: (o) => (o.activo !== false && (o.documentos_respaldo || []).length)
+        ? h("span", { title: (o.documentos_respaldo || []).map((d) => d.nombre).join(", ") }, "📎 " + o.documentos_respaldo.length)
+        : "—",
+    },
+    {
       key: "detalles", label: "Detalles", sortable: false,
       render: (o) => {
         if (o._esGrupo) {
@@ -2630,18 +2642,6 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
       key: "pendiente", label: "Pendiente",
       sortValue: (o) => o.pendiente_calc,
       render: (o) => (o._esGrupo || o.activo === false) ? "—" : fmtMontoMoneda(o.pendiente_calc, o.moneda || "CLP"),
-    },
-    {
-      key: "archivo", label: "Cotiz.", sortable: false,
-      render: (o) => (o.activo !== false && o.archivo_url)
-        ? h("a", { className: "link", href: urlParaVer(o.archivo_url), target: "_blank", rel: "noreferrer", title: o.archivo_nombre || "Ver cotización" }, o.numero_cotizacion || "Ver")
-        : "—",
-    },
-    {
-      key: "documentos_respaldo", label: "Respaldo", sortable: false,
-      render: (o) => (o.activo !== false && (o.documentos_respaldo || []).length)
-        ? h("span", { title: (o.documentos_respaldo || []).map((d) => d.nombre).join(", ") }, "📎 " + o.documentos_respaldo.length)
-        : "—",
     },
     {
       key: "numero_factura", label: "N° Factura",
