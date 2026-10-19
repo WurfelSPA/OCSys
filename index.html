@@ -1050,6 +1050,7 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, proyectos, refres
   const puedeVerOtMantencion = (currentUser.usuario || "").toLowerCase() === "amelendez@patagonica.cl";
   const [otsDisponibles, setOtsDisponibles] = useState([]);
   const [clientesOtPorId, setClientesOtPorId] = useState({});
+  const [catalogoOt, setCatalogoOt] = useState({ clientes: [], unidades: [], contratos: [] });
   useEffect(() => {
     if (!puedeVerOtMantencion) return;
     Promise.all([
@@ -1060,8 +1061,49 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, proyectos, refres
       const mapa = {};
       (b.clientes || []).forEach((c) => { mapa[c.id] = c.razon_social; });
       setClientesOtPorId(mapa);
+      setCatalogoOt(b);
     }).catch(() => {});
   }, [puedeVerOtMantencion, empresaId]);
+  // Generar OT junto con la OC -- mismo patron de "Cliente -> Ubicacion"
+  // que NuevaOtModal (Registro rapido), pero embebido aqui para no tener
+  // que crear la OT aparte y despues volver a buscarla en el selector.
+  const [generarOt, setGenerarOt] = useState(false);
+  const [otCategoria, setOtCategoria] = useState("");
+  const [otClienteId, setOtClienteId] = useState("");
+  const [otUbicacionId, setOtUbicacionId] = useState("");
+  const unidadIdsOtCliente = useMemo(() => {
+    if (!otClienteId) return null;
+    const hoy = new Date().toISOString().slice(0, 10);
+    const ids = new Set();
+    for (const c of catalogoOt.contratos || []) {
+      if (c.cliente_id !== otClienteId) continue;
+      for (const cu of c.contrato_unidad || []) {
+        if (cu.hasta && cu.hasta < hoy) continue;
+        ids.add(cu.unidad_id);
+      }
+    }
+    return ids;
+  }, [otClienteId, catalogoOt.contratos]);
+  const opcionesOtUbicacion = useMemo(() => {
+    const opciones = (catalogoOt.unidades || []).map((u) => ({ value: u.id, label: u.codigo + (u.nombre ? " — " + u.nombre : "") }));
+    if (unidadIdsOtCliente) return opciones.filter((o) => unidadIdsOtCliente.has(o.value));
+    return opciones;
+  }, [catalogoOt.unidades, unidadIdsOtCliente]);
+  const seleccionarOtCliente = (e) => {
+    const clienteId = e.target.value;
+    if (!clienteId) { setOtClienteId(""); return; }
+    const hoy = new Date().toISOString().slice(0, 10);
+    const ids = [];
+    for (const c of catalogoOt.contratos || []) {
+      if (c.cliente_id !== clienteId) continue;
+      for (const cu of c.contrato_unidad || []) {
+        if (cu.hasta && cu.hasta < hoy) continue;
+        ids.push(cu.unidad_id);
+      }
+    }
+    setOtClienteId(clienteId);
+    setOtUbicacionId(ids.length === 1 ? ids[0] : "");
+  };
   // Etiqueta del selector de OT: codigo, categoria, cliente (si tiene uno
   // claro) y una parte de la descripcion original -- texto plano, no usar
   // truncar() aqui (devuelve un <span>, no sirve concatenado con "+").
@@ -1230,6 +1272,11 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, proyectos, refres
     if (!form.cuenta_contable_codigo) return notify("err", "Selecciona la Cuenta Contable");
     if (!form.proyecto_id) return notify("err", "Selecciona el Proyecto");
     if (!form.cliente_destino) return notify("err", "Selecciona el Cliente");
+    if (generarOt) {
+      if (!form.titulo.trim()) return notify("err", "Ingresa el Título de la orden (se usa como título de la OT)");
+      if (!otCategoria) return notify("err", "Selecciona la Categoría de la OT");
+      if (!otUbicacionId) return notify("err", "Selecciona la Ubicación de la OT");
+    }
     if (estado === "Pendiente aprobación") {
       // Solo avisa, no bloquea -- la ficha puede completarse despues (ej.
       // datos bancarios), no tiene por que detener la generacion de la OC.
@@ -1246,12 +1293,28 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, proyectos, refres
         archivo_url = up.url;
         archivo_nombre = file.name;
       }
+      // Si se tildo "Generar OT", la OT se crea primero -- la OC se genera
+      // ya vinculada a ella (ver ot_mantencion_id mas abajo).
+      let otMantencionId = form.ot_mantencion_id || null;
+      if (generarOt) {
+        const nombreReportante = currentUser.nombre ? (currentUser.nombre + " " + (currentUser.apellido || "")).trim() : currentUser.usuario;
+        const { ot: otCreada } = await api("ot-mantencion", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            titulo: form.titulo, categoria: otCategoria,
+            ubicacion_tipo: "unidad", ubicacion_id: otUbicacionId,
+            descripcion_original: form.descripcion || null,
+            reportado_por: nombreReportante, empresa_id: empresaId,
+          }),
+        });
+        otMantencionId = otCreada.id;
+      }
       const respuesta = await api("ordenes", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...form, estado, archivo_url, archivo_nombre, cuotas,
-          empresa_id: empresaId,
+          empresa_id: empresaId, ot_mantencion_id: otMantencionId,
         }),
         timeoutMs: 25000,
       });
@@ -1271,6 +1334,7 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, proyectos, refres
       if (estado === "Pendiente aprobación") {
         mensaje += respuesta.correoError ? " — aviso a aprobador no enviado: " + respuesta.correoError : " — aviso enviado a aprobador";
       }
+      if (generarOt) mensaje += " — OT creada y vinculada";
       notify(estado === "Pendiente aprobación" && respuesta.correoError ? "warn" : "ok", mensaje);
       onCreated();
       limpiarFormulario();
@@ -1292,6 +1356,10 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, proyectos, refres
     setFile(null);
     setNumCuotas(1);
     setCuotas(distribuirCuotas(1, 0));
+    setGenerarOt(false);
+    setOtCategoria("");
+    setOtClienteId("");
+    setOtUbicacionId("");
   };
 
   return h("div", { className: "page fade-up" },
@@ -1462,11 +1530,36 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, proyectos, refres
         ),
       ),
 
-      puedeVerOtMantencion && otsDisponibles.length > 0 && h(Field, { label: "Vincular a OT de Mantención (opcional)" },
-        h("select", { value: form.ot_mantencion_id, onChange: set("ot_mantencion_id") },
-          h("option", { value: "" }, "Ninguna"),
-          otsDisponibles.map((o) => h("option", { key: o.id, value: o.id }, etiquetaOt(o))),
-        )),
+      puedeVerOtMantencion && h("div", null,
+        h("div", { className: "section-lbl" }, "Órdenes de Trabajo"),
+        h("label", { style: { display: "flex", alignItems: "center", gap: 8, fontSize: 12, cursor: "pointer", marginBottom: 12 } },
+          h("input", {
+            type: "checkbox", checked: generarOt,
+            onChange: (e) => { setGenerarOt(e.target.checked); if (e.target.checked) set("ot_mantencion_id")({ target: { value: "" } }); },
+          }),
+          "Generar OT de Mantención junto con esta OC",
+        ),
+        generarOt
+          ? h("div", { className: "grid3" },
+              h(Field, { label: "Categoría *" },
+                h("select", { value: otCategoria, onChange: (e) => setOtCategoria(e.target.value) },
+                  h("option", { value: "" }, "Selecciona"),
+                  OT_CATEGORIAS.map((c) => h("option", { key: c, value: c }, c)))),
+              h(Field, { label: "Cliente (para filtrar ubicación)" },
+                h("select", { value: otClienteId, onChange: seleccionarOtCliente },
+                  h("option", { value: "" }, "Todos"),
+                  (catalogoOt.clientes || []).map((c) => h("option", { key: c.id, value: c.id }, c.razon_social)))),
+              h(Field, { label: "Ubicación *" },
+                h("select", { value: otUbicacionId, onChange: (e) => setOtUbicacionId(e.target.value) },
+                  h("option", { value: "" }, "Selecciona"),
+                  opcionesOtUbicacion.map((o) => h("option", { key: o.value, value: o.value }, o.label)))),
+            )
+          : otsDisponibles.length > 0 && h(Field, { label: "Vincular a OT de Mantención existente (opcional)" },
+              h("select", { value: form.ot_mantencion_id, onChange: set("ot_mantencion_id") },
+                h("option", { value: "" }, "Ninguna"),
+                otsDisponibles.map((o) => h("option", { key: o.id, value: o.id }, etiquetaOt(o))),
+              )),
+      ),
 
       h("div", { style: { display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 20 } },
         h("button", { className: "btn-ghost", onClick: () => submit("Borrador"), disabled: saving }, "Guardar Borrador"),
@@ -2133,6 +2226,26 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
   const [gruposExpandidos, setGruposExpandidos] = useState({});
   const [eliminadas, setEliminadas] = useState([]);
   const [actualizando, setActualizando] = useState(false);
+  // "Usuario", "Centro Costo/Cuenta/Proyecto" y "Acción" ya no son columnas
+  // propias (quedaron plegadas dentro de otras celdas, ver columns mas abajo)
+  // -- este selector es la unica forma de ordenar por esos campos, y
+  // reemplaza el clic en el encabezado para todos los campos (incluidos los
+  // que si siguen siendo columna) para no tener dos mecanismos de orden.
+  const [ordenarPor, setOrdenarPor] = useState("");
+  const [ordenDireccion, setOrdenDireccion] = useState("asc");
+  const OPCIONES_ORDEN = useMemo(() => [
+    { key: "numero_oc_visible", label: "N° OC", getVal: (o) => o.numero_oc_visible || "" },
+    { key: "fecha", label: "Fecha", getVal: (o) => o.fecha || "" },
+    { key: "proveedor", label: "Proveedor", getVal: (o) => (o.proveedores ? o.proveedores.razon_social : "") },
+    { key: "usuario", label: "Usuario", getVal: (o) => nombreUsuario(usuarios, o.creado_por_usuario) },
+    { key: "centro_costo", label: "Centro de Costo", getVal: (o) => o.centro_costo_codigo || "" },
+    { key: "cuenta_contable", label: "Cuenta Contable", getVal: (o) => o.cuenta_contable_codigo || "" },
+    { key: "proyecto", label: "Proyecto", getVal: (o) => (o.proyectos ? o.proyectos.nombre : "") },
+    { key: "monto_neto_grupo", label: "Monto Neto", getVal: (o) => o.monto_neto_grupo },
+    { key: "numero_factura", label: "N° Factura", getVal: (o) => o.numero_factura || "" },
+    { key: "pendiente_calc", label: "Pendiente", getVal: (o) => o.pendiente_calc },
+    { key: "estado", label: "Estado", getVal: (o) => o.estado || "" },
+  ], [usuarios]);
   const puedeAprobar = currentUser && currentUser.nivel_aprobacion === 1;
   // OT Mantención sigue en pruebas (ver NuevaOC) -- la columna/modal de OT
   // vinculada solo se carga para quien de verdad puede ver ese menu.
@@ -2307,19 +2420,39 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
   // expandir un grupo para encontrarla.
   const hayFiltroActivo = !!filtroEstadoCategoria || search.trim().length > 0;
 
+  // Reordena ANTES de agrupar (no despues) -- asi el orden elegido decide
+  // que grupo/OC aparece primero, y las cuotas de una misma OC se mantienen
+  // juntas e internamente ordenadas 1/2, 2/2... como siempre (ver mas abajo).
+  const ordenesParaAgrupar = useMemo(() => {
+    const opt = OPCIONES_ORDEN.find((op) => op.key === ordenarPor);
+    if (!opt) return ordenesFiltradas;
+    const copia = [...ordenesFiltradas];
+    copia.sort((a, b) => {
+      let va = opt.getVal(a), vb = opt.getVal(b);
+      if (va === null || va === undefined) va = "";
+      if (vb === null || vb === undefined) vb = "";
+      if (typeof va === "number" && typeof vb === "number") return ordenDireccion === "asc" ? va - vb : vb - va;
+      va = String(va).toLowerCase(); vb = String(vb).toLowerCase();
+      if (va < vb) return ordenDireccion === "asc" ? -1 : 1;
+      if (va > vb) return ordenDireccion === "asc" ? 1 : -1;
+      return 0;
+    });
+    return copia;
+  }, [ordenesFiltradas, ordenarPor, ordenDireccion, OPCIONES_ORDEN]);
+
   // Agrupa las cuotas de una misma OC en una sola fila resumen (colapsada por
   // defecto); al expandirla se insertan las filas individuales justo debajo,
   // en orden de cuota.
   const filasAgrupadas = useMemo(() => {
-    if (hayFiltroActivo) return ordenesFiltradas;
+    if (hayFiltroActivo) return ordenesParaAgrupar;
     const vistos = new Set();
     const resultado = [];
-    ordenesFiltradas.forEach((o) => {
+    ordenesParaAgrupar.forEach((o) => {
       if (!o.cuota_total) { resultado.push(o); return; }
       const b = o.numero_oc_base;
       if (vistos.has(b)) return;
       vistos.add(b);
-      const hijos = ordenesFiltradas
+      const hijos = ordenesParaAgrupar
         .filter((x) => x.cuota_total && x.numero_oc_base === b)
         .sort((x, y) => (x.cuota_numero || 0) - (y.cuota_numero || 0));
       const conteoPorEstado = {};
@@ -2344,7 +2477,7 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
       }
     });
     return resultado;
-  }, [ordenesFiltradas, hayFiltroActivo, gruposExpandidos]);
+  }, [ordenesParaAgrupar, hayFiltroActivo, gruposExpandidos]);
 
   const centroCostoLabel = (codigo) => {
     const c = (catalogos.centrosCosto || []).find((x) => x.codigo === codigo);
@@ -2519,12 +2652,13 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
     },
   ], [puedeAprobar, puedeVerOtMantencion, gruposExpandidos, catalogos, usuarios]);
 
-  // Mientras se agrupa (sin busqueda/filtro activos), el orden queda fijo
-  // por N° de OC -- se deshabilita el sort por columna para no romper el
-  // agrupamiento.
+  // El clic en encabezado quedo reemplazado por el selector "Ordenar por"
+  // (ver ordenarPor/OPCIONES_ORDEN mas arriba) -- asi hay un solo mecanismo
+  // de orden y tambien sirve para campos que ya no tienen columna propia
+  // (Usuario, Centro Costo/Cuenta/Proyecto).
   const columnsEfectivas = useMemo(
-    () => (hayFiltroActivo ? columns : columns.map((c) => ({ ...c, sortable: false }))),
-    [columns, hayFiltroActivo]
+    () => columns.map((c) => ({ ...c, sortable: false })),
+    [columns]
   );
 
   return h("div", { className: "page page-ordenes fade-up" },
@@ -2549,12 +2683,27 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
       onSaved: () => abrirOt(otSel.ot.id),
     }),
     h("div", { className: "card" },
-      h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: filtroEstadoCategoria ? 4 : 14 } },
+      h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: filtroEstadoCategoria ? 4 : 14, flexWrap: "wrap", gap: 10 } },
         h("h2", { style: { marginBottom: 0 } }, "Órdenes de Compra"),
-        h("button", {
-          className: "btn-ghost", style: { padding: "6px 14px", fontSize: 12 },
-          onClick: actualizar, disabled: actualizando,
-        }, actualizando ? "Actualizando..." : "↻ Actualizar"),
+        h("div", { style: { display: "flex", alignItems: "center", gap: 8 } },
+          h("span", { className: "hint" }, "Ordenar por"),
+          h("select", {
+            value: ordenarPor, onChange: (e) => setOrdenarPor(e.target.value),
+            style: { width: "auto", fontSize: 12, padding: "6px 10px" },
+          },
+            h("option", { value: "" }, "Más reciente (por defecto)"),
+            OPCIONES_ORDEN.map((o) => h("option", { key: o.key, value: o.key }, o.label)),
+          ),
+          ordenarPor && h("button", {
+            className: "btn-ghost", title: ordenDireccion === "asc" ? "Ascendente" : "Descendente",
+            style: { padding: "6px 10px", fontSize: 12 },
+            onClick: () => setOrdenDireccion((d) => (d === "asc" ? "desc" : "asc")),
+          }, ordenDireccion === "asc" ? "▲" : "▼"),
+          h("button", {
+            className: "btn-ghost", style: { padding: "6px 14px", fontSize: 12 },
+            onClick: actualizar, disabled: actualizando,
+          }, actualizando ? "Actualizando..." : "↻ Actualizar"),
+        ),
       ),
       filtroEstadoCategoria && h("div", { className: "hint", style: { marginBottom: 14 } },
         "Mostrando solo: ",
