@@ -167,6 +167,24 @@ tr:hover td{background:var(--surf2)}
 const h = React.createElement;
 const { useState, useEffect, useCallback, useMemo } = React;
 
+// Mientras se sigue ajustando el desarrollo se hacen deploys seguidos -- esto
+// detecta si la pestaña abierta quedo en una version vieja (comparando contra
+// el commit del deploy actual, que Vercel expone solo via VERCEL_GIT_COMMIT_SHA
+// -- ver api/version.js) y la refresca sola. "versionVista" guarda la version
+// que esta pestaña vio al cargar/revisar por ultima vez; null = todavia no se
+// reviso nada en esta carga de pagina.
+let versionVista = null;
+async function validarVersion(notify) {
+  try {
+    const { version } = await api("version");
+    if (versionVista === null) { versionVista = version; return; }
+    if (version !== versionVista) {
+      notify("warn", "Hay una nueva versión de OCFast — actualizando...");
+      setTimeout(() => window.location.reload(), 1500);
+    }
+  } catch (e) { /* si falla el chequeo no bloquea la navegacion */ }
+}
+
 function useNotif() {
   const [notif, setNotif] = useState(null);
   const show = useCallback((type, msg) => {
@@ -378,14 +396,25 @@ function Field({ label, children }) {
   return h("div", { className: "field" }, h("label", null, label), children);
 }
 
-function DataTable({ columns, rows, rowKey, searchPlaceholder, searchFields, onRowClick, emptyText, searchValue, onSearchChange, rowStyle }) {
+function DataTable({
+  columns, rows, rowKey, searchPlaceholder, searchFields, onRowClick, emptyText, searchValue, onSearchChange, rowStyle,
+  sortKey: sortKeyControlado, sortDir: sortDirControlado, onSortChange,
+}) {
   const [searchInterno, setSearchInterno] = useState("");
   // Controlado (searchValue/onSearchChange) cuando el padre necesita saber si
   // hay texto de busqueda; si no se pasan, se comporta igual que siempre.
   const search = searchValue !== undefined ? searchValue : searchInterno;
   const setSearch = onSearchChange || setSearchInterno;
-  const [sortKey, setSortKey] = useState(null);
-  const [sortDir, setSortDir] = useState("asc");
+  const [sortKeyInterno, setSortKeyInterno] = useState(null);
+  const [sortDirInterno, setSortDirInterno] = useState("asc");
+  // Controlado (sortKey/sortDir/onSortChange) cuando el padre necesita
+  // ordenar las filas ANTES de otra transformacion propia (ej. OrdenesList
+  // agrupa cuotas despues de ordenar) -- en ese caso las `rows` ya llegan
+  // ordenadas y aqui solo se pinta la flecha y se avisa el clic, sin volver
+  // a ordenar por cuenta propia.
+  const controlado = onSortChange !== undefined;
+  const sortKey = controlado ? sortKeyControlado : sortKeyInterno;
+  const sortDir = controlado ? sortDirControlado : sortDirInterno;
 
   const filtered = useMemo(() => {
     if (!search.trim()) return rows;
@@ -394,6 +423,7 @@ function DataTable({ columns, rows, rowKey, searchPlaceholder, searchFields, onR
   }, [rows, search, searchFields]);
 
   const sorted = useMemo(() => {
+    if (controlado) return filtered;
     const col = columns.find((c) => c.key === sortKey);
     // Si la columna ya no es ordenable (ej. se desactivo el sort al agrupar),
     // se ignora un sortKey que haya quedado de una interaccion anterior.
@@ -411,12 +441,13 @@ function DataTable({ columns, rows, rowKey, searchPlaceholder, searchFields, onR
       return 0;
     });
     return copy;
-  }, [filtered, sortKey, sortDir, columns]);
+  }, [filtered, sortKey, sortDir, columns, controlado]);
 
   const toggleSort = (key) => {
-    if (sortKey !== key) { setSortKey(key); setSortDir("asc"); }
-    else if (sortDir === "asc") setSortDir("desc");
-    else { setSortKey(null); setSortDir("asc"); }
+    if (controlado) return onSortChange(key);
+    if (sortKeyInterno !== key) { setSortKeyInterno(key); setSortDirInterno("asc"); }
+    else if (sortDirInterno === "asc") setSortDirInterno("desc");
+    else { setSortKeyInterno(null); setSortDirInterno("asc"); }
   };
 
   return h(React.Fragment, null,
@@ -436,7 +467,7 @@ function DataTable({ columns, rows, rowKey, searchPlaceholder, searchFields, onR
               key: c.key,
               onClick: c.sortable === false ? undefined : () => toggleSort(c.key),
               style: c.sortable === false ? undefined : { cursor: "pointer", userSelect: "none" },
-            }, c.label + (sortKey === c.key ? (sortDir === "asc" ? " ▲" : " ▼") : ""))),
+            }, c.label + (c.sortable === false ? "" : (sortKey === c.key ? (sortDir === "asc" ? " ▲" : " ▼") : " ⇅")))),
           )),
           h("tbody", null, sorted.map((row, i) => h("tr", {
             key: rowKey ? rowKey(row) : i,
@@ -2368,26 +2399,27 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
   const [search, setSearch] = useState("");
   const [eliminadas, setEliminadas] = useState([]);
   const [actualizando, setActualizando] = useState(false);
-  // "Usuario", "Centro Costo/Cuenta/Proyecto" y "Acción" ya no son columnas
-  // propias (quedaron plegadas dentro de otras celdas, ver columns mas abajo)
-  // -- este selector es la unica forma de ordenar por esos campos, y
-  // reemplaza el clic en el encabezado para todos los campos (incluidos los
-  // que si siguen siendo columna) para no tener dos mecanismos de orden.
-  const [ordenarPor, setOrdenarPor] = useState("");
-  const [ordenDireccion, setOrdenDireccion] = useState("asc");
+  // El orden se dispara desde el propio encabezado de columna (flechas ▲/▼,
+  // ver DataTable) -- pero tiene que aplicarse ANTES de agrupar las cuotas
+  // (si no, se rompe el agrupamiento, ver comentario en filasAgrupadas), asi
+  // que el estado vive aqui y se pasa a DataTable como "controlado" en vez
+  // de dejar que DataTable ordene sus propias filas (ya agrupadas) por su cuenta.
+  const [sortKey, setSortKey] = useState(null);
+  const [sortDir, setSortDir] = useState("asc");
+  const onSortChange = (key) => {
+    if (sortKey !== key) { setSortKey(key); setSortDir("asc"); }
+    else if (sortDir === "asc") setSortDir("desc");
+    else { setSortKey(null); setSortDir("asc"); }
+  };
   const OPCIONES_ORDEN = useMemo(() => [
-    { key: "numero_oc_visible", label: "N° OC", getVal: (o) => o.numero_oc_visible || "" },
-    { key: "fecha", label: "Fecha", getVal: (o) => o.fecha || "" },
-    { key: "proveedor", label: "Proveedor", getVal: (o) => (o.proveedores ? o.proveedores.razon_social : "") },
-    { key: "usuario", label: "Usuario", getVal: (o) => nombreUsuario(usuarios, o.creado_por_usuario) },
-    { key: "centro_costo", label: "Centro de Costo", getVal: (o) => o.centro_costo_codigo || "" },
-    { key: "cuenta_contable", label: "Cuenta Contable", getVal: (o) => o.cuenta_contable_codigo || "" },
-    { key: "proyecto", label: "Proyecto", getVal: (o) => (o.proyectos ? o.proyectos.nombre : "") },
-    { key: "monto_neto_grupo", label: "Monto Neto", getVal: (o) => o.monto_neto_grupo },
-    { key: "numero_factura", label: "N° Factura", getVal: (o) => o.numero_factura || "" },
-    { key: "pendiente_calc", label: "Pendiente", getVal: (o) => o.pendiente_calc },
-    { key: "estado", label: "Estado", getVal: (o) => o.estado || "" },
-  ], [usuarios]);
+    { key: "numero_oc_visible", getVal: (o) => o.numero_oc_visible || "" },
+    { key: "fecha", getVal: (o) => o.fecha || "" },
+    { key: "proveedor", getVal: (o) => (o.proveedores ? o.proveedores.razon_social : "") },
+    { key: "monto_neto_grupo", getVal: (o) => o.monto_neto_grupo },
+    { key: "numero_factura", getVal: (o) => o.numero_factura || "" },
+    { key: "pendiente", getVal: (o) => o.pendiente_calc },
+    { key: "estado", getVal: (o) => o.estado || "" },
+  ], []);
   const puedeAprobar = currentUser && currentUser.nivel_aprobacion === 1;
   // La columna/modal de OT vinculada solo se carga para quien de verdad
   // puede ver el menu OT Mantención (ver NuevaOC).
@@ -2611,21 +2643,21 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
   // que grupo/OC aparece primero, y las cuotas de una misma OC se mantienen
   // juntas e internamente ordenadas 1/2, 2/2... como siempre (ver mas abajo).
   const ordenesParaAgrupar = useMemo(() => {
-    const opt = OPCIONES_ORDEN.find((op) => op.key === ordenarPor);
+    const opt = OPCIONES_ORDEN.find((op) => op.key === sortKey);
     if (!opt) return ordenesFiltradas;
     const copia = [...ordenesFiltradas];
     copia.sort((a, b) => {
       let va = opt.getVal(a), vb = opt.getVal(b);
       if (va === null || va === undefined) va = "";
       if (vb === null || vb === undefined) vb = "";
-      if (typeof va === "number" && typeof vb === "number") return ordenDireccion === "asc" ? va - vb : vb - va;
+      if (typeof va === "number" && typeof vb === "number") return sortDir === "asc" ? va - vb : vb - va;
       va = String(va).toLowerCase(); vb = String(vb).toLowerCase();
-      if (va < vb) return ordenDireccion === "asc" ? -1 : 1;
-      if (va > vb) return ordenDireccion === "asc" ? 1 : -1;
+      if (va < vb) return sortDir === "asc" ? -1 : 1;
+      if (va > vb) return sortDir === "asc" ? 1 : -1;
       return 0;
     });
     return copia;
-  }, [ordenesFiltradas, ordenarPor, ordenDireccion, OPCIONES_ORDEN]);
+  }, [ordenesFiltradas, sortKey, sortDir, OPCIONES_ORDEN]);
 
   // Agrupa las cuotas de una misma OC en una sola fila resumen (colapsada por
   // defecto); al expandirla se insertan las filas individuales justo debajo,
@@ -2839,13 +2871,15 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
     },
   ], [puedeAprobar, puedeVerOtMantencion, catalogos, usuarios]);
 
-  // El clic en encabezado quedo reemplazado por el selector "Ordenar por"
-  // (ver ordenarPor/OPCIONES_ORDEN mas arriba) -- asi hay un solo mecanismo
-  // de orden y tambien sirve para campos que ya no tienen columna propia
-  // (Usuario, Centro Costo/Cuenta/Proyecto).
+  // El orden se controla desde aqui arriba (sortKey/sortDir), no dentro de
+  // DataTable -- tiene que aplicarse ANTES de agrupar las cuotas (ver
+  // ordenesParaAgrupar). Solo quedan ordenables las columnas que tienen una
+  // entrada equivalente en OPCIONES_ORDEN; el resto (documentos, acciones,
+  // N° HES mixto) no tiene sentido ordenarlas y se marcan sortable:false.
+  const CLAVES_ORDENABLES = useMemo(() => new Set(OPCIONES_ORDEN.map((o) => o.key)), [OPCIONES_ORDEN]);
   const columnsEfectivas = useMemo(
-    () => columns.map((c) => ({ ...c, sortable: false })),
-    [columns]
+    () => columns.map((c) => ({ ...c, sortable: CLAVES_ORDENABLES.has(c.key) })),
+    [columns, CLAVES_ORDENABLES]
   );
 
   return h("div", { className: "page page-ordenes fade-up" },
@@ -2873,19 +2907,6 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
       h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: filtroEstadoCategoria ? 4 : 14, flexWrap: "wrap", gap: 10 } },
         h("h2", { style: { marginBottom: 0 } }, "Órdenes de Compra"),
         h("div", { style: { display: "flex", alignItems: "center", gap: 8 } },
-          h("span", { className: "hint" }, "Ordenar por"),
-          h("select", {
-            value: ordenarPor, onChange: (e) => setOrdenarPor(e.target.value),
-            style: { width: "auto", fontSize: 12, padding: "6px 10px" },
-          },
-            h("option", { value: "" }, "Más reciente (por defecto)"),
-            OPCIONES_ORDEN.map((o) => h("option", { key: o.key, value: o.key }, o.label)),
-          ),
-          ordenarPor && h("button", {
-            className: "btn-ghost", title: ordenDireccion === "asc" ? "Ascendente" : "Descendente",
-            style: { padding: "6px 10px", fontSize: 12 },
-            onClick: () => setOrdenDireccion((d) => (d === "asc" ? "desc" : "asc")),
-          }, ordenDireccion === "asc" ? "▲" : "▼"),
           h("button", {
             className: "btn-ghost", style: { padding: "6px 14px", fontSize: 12 },
             onClick: actualizar, disabled: actualizando,
@@ -2903,6 +2924,7 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
         searchFields: ["numero_oc_visible", "numero_hes", "numero_egreso", "numero_factura", "moneda"],
         searchPlaceholder: "Buscar por N° OC, N° HES, N° Factura o Moneda (ej. UF)",
         searchValue: search, onSearchChange: setSearch,
+        sortKey, sortDir, onSortChange,
         // OC compuestas (divididas en cuotas) se distinguen con un fondo
         // tenue -- tanto la fila resumen del grupo como cada cuota cuando
         // esta expandida. Una OC eliminada (ver fetch de `eliminadas`) se
@@ -5553,6 +5575,13 @@ function App({ currentUser, onLogout }) {
     try { localStorage.setItem("ocsys_empresa_id", String(id)); } catch (e) { /* modo privado u otro bloqueo: no persiste, no es critico */ }
   };
 
+  // Cada vez que se cambia de menu a mano se aprovecha para chequear si esta
+  // pestaña quedo en una version vieja (ver validarVersion mas arriba).
+  const cambiarTab = (nuevoTab) => {
+    validarVersion(notify);
+    setTab(nuevoTab);
+  };
+
   const loadProveedores = useCallback(() => {
     api("proveedores").then((d) => setProveedores(d.proveedores)).catch((e) => notify("err", e.message));
   }, [notify]);
@@ -5630,7 +5659,7 @@ function App({ currentUser, onLogout }) {
   const esGestionObras = (currentUser.usuario || "").toLowerCase().endsWith("@gestionobras.cl");
 
   return h("div", { className: "app-shell" },
-    h(Sidebar, { tab, setTab, esPatagonica, onOrdenesClick: () => { setFiltroEstadoOrdenes(null); setTab("ordenes"); } }),
+    h(Sidebar, { tab, setTab: cambiarTab, esPatagonica, onOrdenesClick: () => { setFiltroEstadoOrdenes(null); cambiarTab("ordenes"); } }),
     h("div", { className: "app-content" },
     notif && h("div", { className: "notif notif-" + (notif.type === "ok" ? "ok" : notif.type === "warn" ? "warn" : "err") }, notif.msg),
     h("div", { className: "header" },
