@@ -2673,14 +2673,17 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
     // muestran el estado real de cada cuota; mostrar menos cuotas de las que
     // realmente tiene (porque las demas no calzaban el filtro) daria una
     // fila con menos circulos de los que corresponden.
+    // Una OC eliminada conserva su "estado" original en la base (solo cambia
+    // "activo"), asi que sin este chequeo calzaba igual con el filtro y
+    // aparecia mezclada bajo una categoria a la que ya no pertenece.
     const basesQueCalzan = new Set(
       ordenesConVisible
-        .filter((o) => o.cuota_total && normalizarEstadoCategoria(o.estado) === filtroEstadoCategoria)
+        .filter((o) => o.activo !== false && o.cuota_total && normalizarEstadoCategoria(o.estado) === filtroEstadoCategoria)
         .map((o) => o.numero_oc_base)
     );
-    return ordenesConVisible.filter((o) => o.cuota_total
+    return ordenesConVisible.filter((o) => o.activo !== false && (o.cuota_total
       ? basesQueCalzan.has(o.numero_oc_base)
-      : normalizarEstadoCategoria(o.estado) === filtroEstadoCategoria);
+      : normalizarEstadoCategoria(o.estado) === filtroEstadoCategoria));
   }, [ordenesConVisible, filtroEstadoCategoria]);
 
   // Reordena ANTES de agrupar (no despues) -- asi el orden elegido decide
