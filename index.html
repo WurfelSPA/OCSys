@@ -2256,12 +2256,48 @@ function EditarGrupoModal({ grupo, proveedores, catalogos, proyectos, refreshPro
   );
 }
 
+// Que accion corresponde al clic en el circulo de una cuota, segun su estado
+// real -- "Anulada"/"Completada" no tienen accion pendiente (null = el
+// circulo no reacciona al clic en ese caso).
+function tipoAccionCuota(estado) {
+  if (estado === "Pendiente aprobación") return "aprobar";
+  if (estado === "Aprobada") return "facturar";
+  if (estado === "Facturada") return "pagar";
+  return null;
+}
+
+// Fila unica con chips: reemplaza el texto "Expandir para gestionar" de hoy.
+// Cada circulo es 1 cuota; verde+check = ya paso de "Pendiente aprobacion"
+// (Aprobada/Facturada/Completada se ven igual -- el clic decide el paso
+// real segun el estado de ESA fila hija). onAccionar recibe (hijo, tipo).
+function CuotasChips({ hijos, puedeAprobar, onAccionar }) {
+  return h("div", { style: { display: "flex", gap: 5, flexWrap: "wrap" } },
+    hijos.map((hijo) => {
+      const emitida = hijo.estado !== "Pendiente aprobación";
+      const tooltip = (hijo.cuota_observacion || ("Cuota " + hijo.cuota_numero + "/" + hijo.cuota_total))
+        + (emitida && hijo.fecha_asignacion ? (" — emitida " + fmtDate(hijo.fecha_asignacion.slice(0, 10))) : "");
+      const tipo = tipoAccionCuota(hijo.estado);
+      const clickable = puedeAprobar && !!tipo;
+      return h("span", {
+        key: hijo.id, title: tooltip,
+        style: {
+          width: 22, height: 22, minWidth: 22, borderRadius: "50%", display: "flex",
+          alignItems: "center", justifyContent: "center", fontSize: 11, flexShrink: 0,
+          cursor: clickable ? "pointer" : "default",
+          border: "2px solid " + (emitida ? "var(--green)" : "var(--acc2)"),
+          color: emitida ? "var(--green)" : "var(--acc2)",
+        },
+        onClick: clickable ? () => onAccionar(hijo, tipo) : undefined,
+      }, emitida ? "✓" : "");
+    }),
+  );
+}
+
 function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores, catalogos, proyectos, refreshProyectos, refreshProyectosTodos, empresaId, empresa, filtroEstadoCategoria, onLimpiarFiltroEstado, usuarios }) {
   const [accion, setAccion] = useState(null);
   const [editando, setEditando] = useState(null);
   const [editandoGrupo, setEditandoGrupo] = useState(null);
   const [search, setSearch] = useState("");
-  const [gruposExpandidos, setGruposExpandidos] = useState({});
   const [eliminadas, setEliminadas] = useState([]);
   const [actualizando, setActualizando] = useState(false);
   // "Usuario", "Centro Costo/Cuenta/Proyecto" y "Acción" ya no son columnas
@@ -2555,12 +2591,9 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
         numero_oc: hijos[0].numero_oc.replace(/-\d+$/, ""),
         numero_oc_acquisys: hijos[0].numero_oc_acquisys ? hijos[0].numero_oc_acquisys.replace(/-\d+$/, "") : null,
       });
-      if (gruposExpandidos[b]) {
-        hijos.forEach((h) => resultado.push({ ...h, _esHijoDeGrupo: true }));
-      }
     });
     return resultado;
-  }, [ordenesParaAgrupar, hayFiltroActivo, gruposExpandidos]);
+  }, [ordenesParaAgrupar, hayFiltroActivo]);
 
   const centroCostoLabel = (codigo) => {
     const c = (catalogos.centrosCosto || []).find((x) => x.codigo === codigo);
@@ -2573,7 +2606,7 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
 
   // Antes era su propia columna "Acción" -- ahora se muestra plegada bajo
   // N° HES para que quepan todas las columnas sin desplazarse horizontalmente.
-  const renderAccion = (o) => o.activo === false ? null : o._esGrupo ? h("span", { className: "hint" }, "Expandir para gestionar") : o.estado === "Pendiente aprobación"
+  const renderAccion = (o) => o.activo === false ? null : o._esGrupo ? null : o.estado === "Pendiente aprobación"
     ? (puedeAprobar
         ? h("button", { className: "btn-ghost", style: { padding: "4px 10px", fontSize: 11 }, onClick: () => setAccion({ orden: o, tipo: "aprobar" }) }, "Aprobar")
         : h("span", { className: "hint" }, "Requiere aprobador"))
@@ -2602,21 +2635,6 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
       render: (o) => (o.activo !== false && (o.documentos_respaldo || []).length)
         ? h("span", { title: (o.documentos_respaldo || []).map((d) => d.nombre).join(", ") }, "📎 " + o.documentos_respaldo.length)
         : "—",
-    },
-    {
-      key: "detalles", label: "Detalles", sortable: false,
-      render: (o) => {
-        if (o._esGrupo) {
-          const expandido = !!gruposExpandidos[o._grupoId];
-          return h("button", {
-            className: "btn-ghost", title: expandido ? "Ocultar cuotas" : "Ver cuotas",
-            style: { padding: "2px 8px", fontSize: 12 },
-            onClick: () => setGruposExpandidos((g) => ({ ...g, [o._grupoId]: !g[o._grupoId] })),
-          }, expandido ? "▾" : "▸");
-        }
-        if (o._esHijoDeGrupo) return h("span", { className: "hint" }, "↳");
-        return null;
-      },
     },
     {
       key: "numero_oc_visible", label: "N° OC",
@@ -2686,7 +2704,12 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
       key: "estado", label: "Estado",
       render: (o) => o.activo === false
         ? h("span", { className: "pill pill-anul" }, "ELIMINADA")
-        : o._esGrupo ? h("span", { className: "hint" }, o._indicadorEstados) : estadoPill(o.estado),
+        : o._esGrupo
+        ? h(CuotasChips, {
+            hijos: o._hijos, puedeAprobar,
+            onAccionar: (hijo, tipo) => setAccion({ orden: hijo, tipo, hermanos: o._hijos }),
+          })
+        : estadoPill(o.estado),
     },
     {
       key: "monto_neto_grupo", label: "Monto Neto",
@@ -2746,7 +2769,7 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
         onClick: () => o._esGrupo ? eliminarGrupo(o) : eliminarOrden(o),
       }, "🗑"),
     },
-  ], [puedeAprobar, puedeVerOtMantencion, gruposExpandidos, catalogos, usuarios]);
+  ], [puedeAprobar, puedeVerOtMantencion, catalogos, usuarios]);
 
   // El clic en encabezado quedo reemplazado por el selector "Ordenar por"
   // (ver ordenarPor/OPCIONES_ORDEN mas arriba) -- asi hay un solo mecanismo
@@ -2759,7 +2782,7 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
 
   return h("div", { className: "page page-ordenes fade-up" },
     accion && h(OrdenAccionModal, {
-      orden: accion.orden, tipo: accion.tipo, notify, proveedores, empresa, currentUser,
+      orden: accion.orden, tipo: accion.tipo, hermanos: accion.hermanos, notify, proveedores, empresa, currentUser,
       onClose: () => setAccion(null),
       onDone: () => { refreshOrdenes(); setAccion(null); },
     }),
