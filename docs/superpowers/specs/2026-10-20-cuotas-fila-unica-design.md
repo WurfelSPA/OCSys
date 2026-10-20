@@ -127,10 +127,14 @@ igual que el PDF de referencia que mostró el Gerente:
   ahora siempre representa el grupo completo) y usa el número de OC sin sufijo.
 - "Base Imponible"/"IVA"/"Total" siguen siendo los de **toda la OC** (la suma de
   las N cuotas), no los de una sola.
-- Este PDF se regenera y reemplaza cada vez que se aprueba/factura/paga **cualquier**
-  cuota del grupo (para que la columna Estado/Fecha Emisión quede al día), y es el
-  que se adjunta al correo que se envía en ese momento al proveedor — mismo
-  mecanismo de envío que existe hoy, solo que ahora la tabla siempre sale completa.
+- Este PDF se regenera cada vez que se **aprueba** cualquier cuota del grupo (es la
+  única transición que cambia la columna Estado/Fecha Emisión de la tabla — Facturar
+  y Registrar Pago no tocan esas columnas ni el PDF de la OC, igual que hoy). Se sube
+  y se adjunta al correo de aprobación de esa cuota, y además se actualiza
+  `archivo_oc_url`/`archivo_oc_nombre` de la **cuota 1** del grupo (la que realmente
+  se ve y se puede abrir desde la columna "N° OC" del listado, ya que las demás
+  cuotas dejan de tener fila propia visible) — así el link que ve el usuario siempre
+  apunta a la versión más reciente, sin importar cuál cuota se acaba de aprobar.
 - Para construir la tabla, el código que genera el PDF necesita las N filas
   hermanas (hoy cada llamada a `generarPdfOC` solo recibe la fila sobre la que se
   está actuando) — se buscan por `numero_oc_base` antes de generar, igual que ya
