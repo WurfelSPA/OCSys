@@ -131,6 +131,7 @@ export default async function handler(req, res) {
         // Igual que solicitado_por: se toma de la sesion, no de lo que mande
         // el cliente -- se imprime en el PDF como pie de nota "Aprobado por".
         fields.aprobado_por = ((session.nombre || "") + " " + (session.apellido || "")).trim() || session.usuario;
+        fields.fecha_asignacion = new Date().toISOString();
         // El cliente puede generar y enviar su propio numero_hes junto con
         // el PDF ya regenerado con ese mismo HES (para que el correo de
         // aprobacion salga con el PDF correcto desde el primer envio, sin

@@ -840,13 +840,29 @@ async function generarPdfOC(orden, proveedor, cuotas, empresa, hermanos) {
   doc.text(orden.fecha, 90, 96.5);
   doc.text(moneda, 150, 96.5);
 
+  // Si viene "hermanos" (grupo de cuotas), este box de resumen debe reflejar
+  // la suma del grupo completo -- igual que el footer "Precio Total Neto" de
+  // la tabla mas abajo -- en vez de solo esta cuota individual; si no, el PDF
+  // queda con dos "Total" distintos y contradictorios en la misma pagina.
+  // Sin "hermanos" (OC de 1 sola cuota, o fallback sin hermanas a mano) se
+  // mantiene exactamente igual que antes: los montos de "orden".
+  const montoNetoGrupo = hermanos
+    ? hermanos.reduce((sum, h) => sum + (Number(h.monto_neto) || 0), 0)
+    : Number(orden.monto_neto) || 0;
+  const montoIvaGrupo = hermanos
+    ? hermanos.reduce((sum, h) => sum + (Number(h.monto_iva) || 0), 0)
+    : Number(orden.monto_iva) || 0;
+  const montoTotalGrupoHeader = hermanos
+    ? montoNetoGrupo + montoIvaGrupo
+    : Number(orden.monto_total) || 0;
+
   doc.setDrawColor(210); doc.line(150, 100, right, 100);
   doc.setTextColor(150); doc.text("Base Imponible", 150, 105);
-  doc.setTextColor(40); doc.text(fmtMontoPdf(orden.monto_neto, moneda), right, 105, { align: "right" });
+  doc.setTextColor(40); doc.text(fmtMontoPdf(montoNetoGrupo, moneda), right, 105, { align: "right" });
   doc.setFont(undefined, "bold");
-  doc.text("IVA 19%", 150, 111); doc.text(fmtMontoPdf(orden.monto_iva, moneda), right, 111, { align: "right" });
+  doc.text("IVA 19%", 150, 111); doc.text(fmtMontoPdf(montoIvaGrupo, moneda), right, 111, { align: "right" });
   doc.setDrawColor(210); doc.line(150, 114, right, 114);
-  doc.text("Total", 150, 119); doc.text(fmtMontoPdf(orden.monto_total, moneda), right, 119, { align: "right" });
+  doc.text("Total", 150, 119); doc.text(fmtMontoPdf(montoTotalGrupoHeader, moneda), right, 119, { align: "right" });
   doc.setFont(undefined, "normal");
 
   doc.setFont(undefined, "bold"); doc.text("Ref. Interna", left, 106);
@@ -863,9 +879,7 @@ async function generarPdfOC(orden, proveedor, cuotas, empresa, hermanos) {
   //    quedaria vacio (ver _cuotas.js), asi que se arma una sola fila
   //    mostrando nada mas la posicion de ESTA fila (ej. "1/6"), nunca el resto.
   // 3) ninguno de los anteriores -- OC de 1 sola cuota con su jsonb "cuotas".
-  const montoTotalGrupo = hermanos
-    ? hermanos.reduce((sum, h) => sum + (Number(h.monto_neto) || 0), 0)
-    : Number(orden.monto_neto) || 0;
+  const montoTotalGrupo = montoNetoGrupo;
   const rows = hermanos
     ? hermanos
         .slice()
