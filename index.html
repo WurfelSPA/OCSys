@@ -2561,6 +2561,25 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
     }
   };
 
+  // Para OC en cuotas cuya cuota 1 (o alguna otra) se aprobó antes de tener
+  // el PDF consolidado, o cuyo PDF quedo desactualizado por algun motivo --
+  // rearma el PDF con el estado actual de las N cuotas y lo deja guardado,
+  // sin disparar ningun correo (generarYAdjuntarPdf solo toca archivo_oc_url/
+  // archivo_oc_nombre, nunca el estado -- el correo solo sale del PUT que
+  // cambia estado a Aprobada/Facturada/Completada, que esto no toca).
+  const regenerarPdfGrupo = async (o) => {
+    const proveedor = proveedores.find((p) => p.id === o.proveedor_id);
+    if (!proveedor) return notify("err", "No se encontró el proveedor de esta OC");
+    if (!window.confirm("¿Regenerar el PDF de " + o.numero_oc_visible + " con el estado actual de sus " + o._hijos.length + " cuotas? No se envía ningún correo.")) return;
+    try {
+      await generarYAdjuntarPdf(o._hijos[0], proveedor, empresa, o._hijos);
+      notify("ok", "PDF de " + o.numero_oc_visible + " regenerado");
+      refreshOrdenes();
+    } catch (e) {
+      notify("err", e.message);
+    }
+  };
+
   const ordenesConVisible = useMemo(() => {
     // Las OC eliminadas se mezclan con las activas para que queden en su
     // puesto dentro de la numeracion (ver fetch de `eliminadas` mas arriba).
@@ -2860,6 +2879,16 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
         style: { padding: "4px 8px", fontSize: 12 },
         onClick: () => duplicarOrden(o),
       }, "📄+"),
+    },
+    {
+      key: "regenerar_pdf", label: "PDF", sortable: false,
+      // Solo tiene sentido para OC en cuotas -- el PDF de una OC normal ya se
+      // regenera solo en cada Aprobar/Editar, no necesita un boton aparte.
+      render: (o) => (o.activo === false || !o._esGrupo || !puedeAprobar) ? "—" : h("button", {
+        className: "btn-ghost", title: "Regenerar el PDF consolidado (no envía correo)",
+        style: { padding: "4px 8px", fontSize: 12 },
+        onClick: () => regenerarPdfGrupo(o),
+      }, "📄↻"),
     },
     {
       key: "eliminar", label: "Borrar", sortable: false,
