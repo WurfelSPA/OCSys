@@ -2654,13 +2654,21 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
   // pasa filtro, asi que ahi siempre se ven todas.
   const ordenesFiltradas = useMemo(() => {
     if (!filtroEstadoCategoria) return ordenesConVisible;
-    return ordenesConVisible.filter((o) => normalizarEstadoCategoria(o.estado) === filtroEstadoCategoria);
+    // Para una OC en cuotas, el filtro de categoria (ej. "Pendiente
+    // aprobacion" desde el Dashboard) incluye el GRUPO COMPLETO si al menos
+    // una de sus cuotas calza -- nunca un grupo a medias. Los chips ya
+    // muestran el estado real de cada cuota; mostrar menos cuotas de las que
+    // realmente tiene (porque las demas no calzaban el filtro) daria una
+    // fila con menos circulos de los que corresponden.
+    const basesQueCalzan = new Set(
+      ordenesConVisible
+        .filter((o) => o.cuota_total && normalizarEstadoCategoria(o.estado) === filtroEstadoCategoria)
+        .map((o) => o.numero_oc_base)
+    );
+    return ordenesConVisible.filter((o) => o.cuota_total
+      ? basesQueCalzan.has(o.numero_oc_base)
+      : normalizarEstadoCategoria(o.estado) === filtroEstadoCategoria);
   }, [ordenesConVisible, filtroEstadoCategoria]);
-
-  // Con busqueda de texto o filtro de categoria desde el Dashboard activos no
-  // se agrupa -- se quiere ver la fila exacta que calza, no tener que
-  // expandir un grupo para encontrarla.
-  const hayFiltroActivo = !!filtroEstadoCategoria || search.trim().length > 0;
 
   // Reordena ANTES de agrupar (no despues) -- asi el orden elegido decide
   // que grupo/OC aparece primero, y las cuotas de una misma OC se mantienen
@@ -2686,7 +2694,6 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
   // defecto); al expandirla se insertan las filas individuales justo debajo,
   // en orden de cuota.
   const filasAgrupadas = useMemo(() => {
-    if (hayFiltroActivo) return ordenesParaAgrupar;
     const vistos = new Set();
     const resultado = [];
     ordenesParaAgrupar.forEach((o) => {
@@ -2697,16 +2704,12 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
       const hijos = ordenesParaAgrupar
         .filter((x) => x.cuota_total && x.numero_oc_base === b)
         .sort((x, y) => (x.cuota_numero || 0) - (y.cuota_numero || 0));
-      const conteoPorEstado = {};
-      hijos.forEach((h) => { conteoPorEstado[h.estado] = (conteoPorEstado[h.estado] || 0) + 1; });
-      const indicadorEstados = Object.entries(conteoPorEstado).map(([estado, n]) => n + " " + estado).join(" · ");
       resultado.push({
         ...hijos[0],
         id: "grupo-" + b,
         _esGrupo: true,
         _grupoId: b,
         _hijos: hijos,
-        _indicadorEstados: indicadorEstados,
         numero_hes: hijos.map((h) => h.numero_hes).filter(Boolean).join(", "),
         // El N° de OC visible/interno del grupo es el base sin el sufijo -N
         // de la cuota 1 (que es lo que trae hijos[0] tal cual).
@@ -2716,7 +2719,7 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
       });
     });
     return resultado;
-  }, [ordenesParaAgrupar, hayFiltroActivo]);
+  }, [ordenesParaAgrupar]);
 
   const centroCostoLabel = (codigo) => {
     const c = (catalogos.centrosCosto || []).find((x) => x.codigo === codigo);
