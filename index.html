@@ -1751,6 +1751,12 @@ function OrdenAccionModal({ orden, tipo, hermanos, onClose, onDone, notify, prov
             // la primera vez que se aprueba.
             const numeroHes = orden.numero_hes || (await api("ordenes?siguiente_hes=1&empresa_id=" + orden.empresa_id, { timeoutMs: 15000 })).numero_hes;
             const esGrupo = Array.isArray(hermanos) && hermanos.length > 1;
+            // El PUT que de verdad aprueba "orden" (payload.estado = "Aprobada")
+            // todavia no corrio -- en la base sigue en "Pendiente aprobacion".
+            // Para que el PDF/correo que se envia AHORA ya la muestre "Emitida"
+            // (no en la proxima aprobacion), se arma una copia en memoria de
+            // "hermanos" con solo esa fila adelantada; nunca se guarda asi, es
+            // solo para el render de este PDF puntual.
             const hermanosConEstaAprobada = esGrupo
               ? hermanos.map((h) => h.id === orden.id ? { ...h, estado: "Aprobada", fecha_asignacion: new Date().toISOString() } : h)
               : undefined;
@@ -1764,6 +1770,12 @@ function OrdenAccionModal({ orden, tipo, hermanos, onClose, onDone, notify, prov
             payload.numero_hes = numeroHes;
             payload.archivo_oc_url = up.url;
             payload.archivo_oc_nombre = nombreArchivo;
+            // La fila que de verdad se ve/abre en el listado es la cuota 1
+            // (OrdenesList arma la fila resumen del grupo a partir de ella,
+            // ver filasAgrupadas) -- si se aprobo otra cuota, se propaga el
+            // link del PDF recien subido tambien ahi para que quede al dia
+            // (el PUT normal de abajo ya actualiza "orden", que puede ser
+            // una cuota distinta a la 1).
             if (esGrupo) {
               const primera = hermanos.find((h) => h.cuota_numero === 1) || hermanos[0];
               if (primera.id !== orden.id) {
