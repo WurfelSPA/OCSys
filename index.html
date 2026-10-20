@@ -1364,8 +1364,12 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, proyectos, refres
 
       if (estado === "Pendiente aprobación") {
         const proveedor = proveedores.find((p) => p.id === form.proveedor_id);
-        for (const ordenFila of ordenesCreadas) {
-          await generarYAdjuntarPdf(ordenFila, proveedor, empresa);
+        if (ordenesCreadas.length > 1) {
+          await generarYAdjuntarPdf(ordenesCreadas[0], proveedor, empresa, ordenesCreadas);
+        } else {
+          for (const ordenFila of ordenesCreadas) {
+            await generarYAdjuntarPdf(ordenFila, proveedor, empresa);
+          }
         }
       }
 
@@ -1633,7 +1637,7 @@ function NuevaOC({ proveedores, catalogos, refreshProveedores, proyectos, refres
   );
 }
 
-function OrdenAccionModal({ orden, tipo, onClose, onDone, notify, proveedores, empresa, currentUser }) {
+function OrdenAccionModal({ orden, tipo, hermanos, onClose, onDone, notify, proveedores, empresa, currentUser }) {
   const isAprobar = tipo === "aprobar";
   const isFacturar = tipo === "facturar";
   const isPagar = tipo === "pagar";
@@ -1746,15 +1750,29 @@ function OrdenAccionModal({ orden, tipo, onClose, onDone, notify, proveedores, e
             // Desaprobar), se reutiliza el mismo -- solo se pide uno nuevo
             // la primera vez que se aprueba.
             const numeroHes = orden.numero_hes || (await api("ordenes?siguiente_hes=1&empresa_id=" + orden.empresa_id, { timeoutMs: 15000 })).numero_hes;
-            const pdfBlob = await generarPdfOC({ ...orden, numero_hes: numeroHes, aprobado_por: aprobadoPor }, proveedor, orden.cuotas || [], empresa);
+            const esGrupo = Array.isArray(hermanos) && hermanos.length > 1;
+            const hermanosConEstaAprobada = esGrupo
+              ? hermanos.map((h) => h.id === orden.id ? { ...h, estado: "Aprobada", fecha_asignacion: new Date().toISOString() } : h)
+              : undefined;
+            const nombreArchivo = (esGrupo ? orden.numero_oc.replace(/-\d+$/, "") : orden.numero_oc) + ".pdf";
+            const pdfBlob = await generarPdfOC({ ...orden, numero_hes: numeroHes, aprobado_por: aprobadoPor }, proveedor, orden.cuotas || [], empresa, hermanosConEstaAprobada);
             const pdfBase64 = await fileToBase64(new File([pdfBlob], "OC.pdf", { type: "application/pdf" }));
             const up = await api("upload", {
               method: "POST", headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ filename: orden.numero_oc + ".pdf", base64: pdfBase64 }),
+              body: JSON.stringify({ filename: nombreArchivo, base64: pdfBase64 }),
             });
             payload.numero_hes = numeroHes;
             payload.archivo_oc_url = up.url;
-            payload.archivo_oc_nombre = orden.numero_oc + ".pdf";
+            payload.archivo_oc_nombre = nombreArchivo;
+            if (esGrupo) {
+              const primera = hermanos.find((h) => h.cuota_numero === 1) || hermanos[0];
+              if (primera.id !== orden.id) {
+                await api("ordenes?id=" + primera.id, {
+                  method: "PUT", headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ archivo_oc_url: up.url, archivo_oc_nombre: nombreArchivo }),
+                });
+              }
+            }
           }
         }
       } else if (isFacturar) {
@@ -1977,9 +1995,7 @@ function EditarOrdenModal({ orden, proveedores, catalogos, proyectos, refreshPro
         const ordenesCreadas = respuesta.ordenes;
         sePartioEnCuotas = true;
         if (proveedor) {
-          for (const fila of ordenesCreadas) {
-            await generarYAdjuntarPdf(fila, proveedor, empresa);
-          }
+          await generarYAdjuntarPdf(ordenesCreadas[0], proveedor, empresa, ordenesCreadas);
         }
         notify(respuesta.correoError ? "warn" : "ok",
           "OC generada en " + ordenesCreadas.length + " cuotas (" + ordenesCreadas.map((o) => o.numero_oc).join(", ") + ")"
