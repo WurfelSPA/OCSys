@@ -856,7 +856,10 @@ async function generarPdfOC(orden, proveedor, cuotas, empresa, hermanos) {
 
   // El N° HES solo se muestra en OC nativas de OCSys (sin numero_oc_acquisys)
   // -- las importadas de Acquisys quedan igual que siempre, sin este dato.
-  if (!orden.numero_oc_acquisys && orden.numero_hes) {
+  // En una OC en cuotas cada cuota tiene su propio HES (columna "HES" de la
+  // tabla de abajo) -- mostrar aqui el de una sola cuota (la que dispara este
+  // render puntual) seria enganoso, como si fuera el HES de toda la OC.
+  if (!orden.numero_oc_acquisys && orden.numero_hes && !hermanos) {
     doc.setFontSize(12); doc.setTextColor(140);
     doc.text("N° HES: " + orden.numero_hes, left, 88.5);
   }
@@ -922,6 +925,7 @@ async function generarPdfOC(orden, proveedor, cuotas, empresa, hermanos) {
           moneda + " " + fmtMontoPdf(h.monto_neto, moneda),
           h.estado === "Pendiente aprobación" ? "Pendiente" : "Emitida",
           h.fecha_asignacion ? fmtDate(h.fecha_asignacion.slice(0, 10)) : "—",
+          h.numero_hes || "—",
         ])
     : orden.cuota_total
     ? [[
@@ -933,11 +937,11 @@ async function generarPdfOC(orden, proveedor, cuotas, empresa, hermanos) {
   doc.autoTable({
     startY: 140, margin: { left, right: 210 - right },
     head: hermanos
-      ? [["Cuota", "Observación", "Porcentaje", "Monto", "Estado", "Fecha Emisión"]]
+      ? [["Cuota", "Observación", "Porcentaje", "Monto", "Estado", "Fecha Emisión", "HES"]]
       : [["Días de Pago", "Observación", "Porcentaje", "Monto"]],
     body: rows,
     foot: hermanos
-      ? [["Precio Total Neto", "", "", moneda + " " + fmtMontoPdf(montoTotalGrupo, moneda), "", ""]]
+      ? [["Precio Total Neto", "", "", moneda + " " + fmtMontoPdf(montoTotalGrupo, moneda), "", "", ""]]
       : [["Precio Total Neto", "", "", moneda + " " + fmtMontoPdf(orden.monto_neto, moneda)]],
     theme: "plain",
     styles: { fontSize: 9, textColor: 40 },
