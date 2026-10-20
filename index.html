@@ -2257,7 +2257,7 @@ function EditarGrupoModal({ grupo, proveedores, catalogos, proyectos, refreshPro
 }
 
 // Que accion corresponde al clic en el circulo de una cuota, segun su estado
-// real -- "Anulada"/"Completada" no tienen accion pendiente (null = el
+// real -- "Borrador"/"Completada" no tienen accion pendiente (null = el
 // circulo no reacciona al clic en ese caso).
 function tipoAccionCuota(estado) {
   if (estado === "Pendiente aprobación") return "aprobar";
