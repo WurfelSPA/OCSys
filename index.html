@@ -854,10 +854,15 @@ async function generarPdfOC(orden, proveedor, cuotas, empresa, hermanos) {
   doc.setFont(undefined, "bold"); doc.text("Descripción", left, 119);
   doc.setFont(undefined, "normal"); doc.text(orden.descripcion || "—", left, 123.5, { maxWidth: 110 });
 
-  // Una OC dividida en cuotas (filas independientes, cada una con su propio
-  // monto/HES/factura) no trae el detalle de TODAS las cuotas en "cuotas"
-  // (eso quedaria vacio, ver _cuotas.js) -- se arma una sola fila mostrando
-  // nada mas la posicion de ESTA fila (ej. "1/6"), nunca el resto.
+  // 3 casos, en este orden de prioridad:
+  // 1) "hermanos" (las filas hijas ya cargadas) -- se arma la tabla completa
+  //    del grupo, con Estado y Fecha Emision de cada cuota.
+  // 2) sin "hermanos" pero "orden.cuota_total" si viene -- es una fila de un
+  //    grupo dividido en cuotas (cada una con su propio monto/HES/factura)
+  //    pero sin sus hermanas a mano (ej. SincronizarAcquisys); "cuotas"
+  //    quedaria vacio (ver _cuotas.js), asi que se arma una sola fila
+  //    mostrando nada mas la posicion de ESTA fila (ej. "1/6"), nunca el resto.
+  // 3) ninguno de los anteriores -- OC de 1 sola cuota con su jsonb "cuotas".
   const montoTotalGrupo = hermanos
     ? hermanos.reduce((sum, h) => sum + (Number(h.monto_neto) || 0), 0)
     : Number(orden.monto_neto) || 0;
