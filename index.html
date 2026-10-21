@@ -866,7 +866,10 @@ async function generarPdfOC(orden, proveedor, cuotas, empresa, hermanos) {
 
   // Linea con Centro de Costo / Cuenta Contable / Proyecto, entre el N° de OC
   // y el N° HES -- para identificar la imputacion sin tener que abrir OCFast.
-  let lineaImputacion = "";
+  // Arranca con los codigos crudos (siempre disponibles en "orden") y se
+  // reemplaza por las descripciones resueltas si la consulta a catalogos
+  // funciona -- asi nunca queda en blanco si esa consulta falla.
+  let lineaImputacion = [orden.centro_costo_codigo, orden.cuenta_contable_codigo, orden.proyectos?.nombre].filter(Boolean).join(" - ");
   try {
     const [catalogosResp, proyectoNombre] = await Promise.all([
       api("catalogos?all=1", { timeoutMs: 15000 }),
@@ -878,8 +881,9 @@ async function generarPdfOC(orden, proveedor, cuotas, empresa, hermanos) {
     ]);
     const cc = (catalogosResp.centrosCosto || []).find((c) => c.codigo === orden.centro_costo_codigo);
     const cta = (catalogosResp.cuentasContables || []).find((c) => c.codigo === orden.cuenta_contable_codigo);
-    lineaImputacion = [cc?.descripcion, cta?.descripcion, proyectoNombre].filter(Boolean).join(" - ");
-  } catch (e) { /* si falla la consulta de catalogos, se omite esta linea */ }
+    const resuelto = [cc?.descripcion, cta?.descripcion, proyectoNombre || orden.proyectos?.nombre].filter(Boolean).join(" - ");
+    if (resuelto) lineaImputacion = resuelto;
+  } catch (e) { /* si falla la consulta de catalogos, se mantiene el fallback con los codigos crudos */ }
 
   if (lineaImputacion) {
     doc.setFontSize(9); doc.setTextColor(90);
