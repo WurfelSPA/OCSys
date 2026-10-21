@@ -2844,7 +2844,13 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
       render: (o) => {
         if (o.activo === false) return o.proveedores ? o.proveedores.razon_social : "—";
         const proyectoNombre = o.proyectos ? o.proyectos.nombre : "—";
-        const texto = (o.centro_costo_codigo || "—") + " - " + (o.cuenta_contable_codigo || "—") + " - " + proyectoNombre;
+        const centroCostoDesc = o.centro_costo_codigo
+          ? ((catalogos.centrosCosto || []).find((x) => x.codigo === o.centro_costo_codigo)?.descripcion || o.centro_costo_codigo)
+          : "—";
+        const cuentaContableDesc = o.cuenta_contable_codigo
+          ? ((catalogos.cuentasContables || []).find((x) => x.codigo === o.cuenta_contable_codigo)?.descripcion || o.cuenta_contable_codigo)
+          : "—";
+        const texto = centroCostoDesc + " - " + cuentaContableDesc + " - " + proyectoNombre;
         const tooltip = [
           o.centro_costo_codigo ? centroCostoLabel(o.centro_costo_codigo) : "Sin centro de costo",
           o.cuenta_contable_codigo ? cuentaContableLabel(o.cuenta_contable_codigo) : "Sin cuenta contable",
