@@ -38,6 +38,11 @@
 [data-empresa="3"]{
   --acc:#1a1f26;--acc2:#1ec65a;--accl:#10131a;--accbg:#e8f9ee;
 }
+/* San Miguel SPA: tonos naranjos (sin logo, solo texto en el header) -- el
+   4to color de acento, distinto de los azules/verdes/negro ya usados. */
+[data-empresa="4"]{
+  --acc:#C2500A;--acc2:#F08A24;--accl:#8F3B06;--accbg:#FDEEE0;
+}
 html,body,#root{height:100%;font-family:'Inter',sans-serif;font-variant-numeric:tabular-nums;background:var(--bg);color:var(--tx);font-size:13px}
 ::-webkit-scrollbar{width:4px;height:4px}
 ::-webkit-scrollbar-thumb{background:var(--bdr2);border-radius:4px}
@@ -818,6 +823,9 @@ const EMPRESA_PDF_INFO = {
   1: { logo: "/logo.jpg", correoDte: "dte@patagonica.cl" },
   2: { logo: "/logo-campomar.jpg", correoDte: "contabilidad@patagonica.cl" },
   3: { logo: "/logo-evox.jpg", correoDte: "contabilidad@patagonica.cl" },
+  // San Miguel SPA no tiene logo todavia -- header y PDF quedan solo con
+  // texto (ver guardas de "info.logo" mas abajo).
+  4: { logo: null, correoDte: "contabilidad@patagonica.cl" },
 };
 
 async function generarPdfOC(orden, proveedor, cuotas, empresa, hermanos) {
@@ -829,10 +837,12 @@ async function generarPdfOC(orden, proveedor, cuotas, empresa, hermanos) {
   const nombreEmpresa = empresa?.nombre || "Patagónica Inmobiliaria";
   const rutEmpresa = empresa?.rut || "96.673.250-4";
 
-  try {
-    const logoData = await loadImageAsDataURL(info.logo);
-    doc.addImage(logoData, "JPEG", left, 14, 32, 8);
-  } catch (e) { /* si no carga el logo, se sigue sin él */ }
+  if (info.logo) {
+    try {
+      const logoData = await loadImageAsDataURL(info.logo);
+      doc.addImage(logoData, "JPEG", left, 14, 32, 8);
+    } catch (e) { /* si no carga el logo, se sigue sin él */ }
+  }
 
   doc.setFontSize(9); doc.setTextColor(40);
   doc.text(nombreEmpresa, left, 30);
@@ -5715,7 +5725,9 @@ function App({ currentUser, onLogout }) {
     h("div", { className: "app-content" },
     notif && h("div", { className: "notif notif-" + (notif.type === "ok" ? "ok" : notif.type === "warn" ? "warn" : "err") }, notif.msg),
     h("div", { className: "header" },
-      h("img", { src: (EMPRESA_PDF_INFO[empresaId] || EMPRESA_PDF_INFO[1]).logo, alt: empresaActual ? empresaActual.nombre : "Patagónica" }),
+      (EMPRESA_PDF_INFO[empresaId] || EMPRESA_PDF_INFO[1]).logo
+        ? h("img", { src: (EMPRESA_PDF_INFO[empresaId] || EMPRESA_PDF_INFO[1]).logo, alt: empresaActual ? empresaActual.nombre : "Patagónica" })
+        : h("div", { style: { fontSize: 18, fontWeight: 800, color: "var(--acc)", letterSpacing: 0.5 } }, empresaActual ? empresaActual.nombre : "Empresa"),
       h("img", { src: "/logo-OCFast.png", alt: "OCFast" }),
       h("div", { style: { flex: 1, display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" } },
         h("div", { className: "sub" }, "Órdenes de Compra" + (empresaActual ? " — " + empresaActual.nombre + " · RUT " + empresaActual.rut : "")),
