@@ -864,6 +864,29 @@ async function generarPdfOC(orden, proveedor, cuotas, empresa, hermanos) {
   doc.setFontSize(20); doc.setTextColor(140);
   doc.text("Orden de Compra #" + (orden.numero_oc_acquisys || numeroOcBase), left, 82);
 
+  // Linea con Centro de Costo / Cuenta Contable / Proyecto, entre el N° de OC
+  // y el N° HES -- para identificar la imputacion sin tener que abrir OCFast.
+  let lineaImputacion = "";
+  try {
+    const [catalogosResp, proyectoNombre] = await Promise.all([
+      api("catalogos?all=1", { timeoutMs: 15000 }),
+      orden.proyectos?.nombre
+        ? Promise.resolve(orden.proyectos.nombre)
+        : orden.proyecto_id
+        ? api("proyectos?all=1").then((d) => (d.proyectos || []).find((p) => p.id === orden.proyecto_id)?.nombre || "")
+        : Promise.resolve(""),
+    ]);
+    const cc = (catalogosResp.centrosCosto || []).find((c) => c.codigo === orden.centro_costo_codigo);
+    const cta = (catalogosResp.cuentasContables || []).find((c) => c.codigo === orden.cuenta_contable_codigo);
+    lineaImputacion = [cc?.descripcion, cta?.descripcion, proyectoNombre].filter(Boolean).join(" - ");
+  } catch (e) { /* si falla la consulta de catalogos, se omite esta linea */ }
+
+  if (lineaImputacion) {
+    doc.setFontSize(9); doc.setTextColor(90);
+    doc.text(doc.splitTextToSize(lineaImputacion, right - left), left, 87.5);
+  }
+  const offsetRef = lineaImputacion ? 5 : 0;
+
   // El N° HES solo se muestra en OC nativas de OCSys (sin numero_oc_acquisys)
   // -- las importadas de Acquisys quedan igual que siempre, sin este dato.
   // En una OC en cuotas cada cuota tiene su propio HES (columna "HES" de la
@@ -871,18 +894,18 @@ async function generarPdfOC(orden, proveedor, cuotas, empresa, hermanos) {
   // render puntual) seria enganoso, como si fuera el HES de toda la OC.
   if (!orden.numero_oc_acquisys && orden.numero_hes && !hermanos) {
     doc.setFontSize(12); doc.setTextColor(140);
-    doc.text("N° HES: " + orden.numero_hes, left, 88.5);
+    doc.text("N° HES: " + orden.numero_hes, left, 88.5 + offsetRef);
   }
 
   doc.setFontSize(9); doc.setTextColor(40);
   doc.setFont(undefined, "bold");
-  doc.text("Representante de Compra", left, 92);
-  doc.text("Fecha de pedido", 90, 92);
-  doc.text("Moneda", 150, 92);
+  doc.text("Representante de Compra", left, 92 + offsetRef);
+  doc.text("Fecha de pedido", 90, 92 + offsetRef);
+  doc.text("Moneda", 150, 92 + offsetRef);
   doc.setFont(undefined, "normal");
-  doc.text(orden.creado_por || "—", left, 96.5);
-  doc.text(orden.fecha, 90, 96.5);
-  doc.text(moneda, 150, 96.5);
+  doc.text(orden.creado_por || "—", left, 96.5 + offsetRef);
+  doc.text(orden.fecha, 90, 96.5 + offsetRef);
+  doc.text(moneda, 150, 96.5 + offsetRef);
 
   // Si viene "hermanos" (grupo de cuotas), este box de resumen debe reflejar
   // la suma del grupo completo -- igual que el footer "Precio Total Neto" de
@@ -900,13 +923,13 @@ async function generarPdfOC(orden, proveedor, cuotas, empresa, hermanos) {
     ? montoNetoGrupo + montoIvaGrupo
     : Number(orden.monto_total) || 0;
 
-  doc.setDrawColor(210); doc.line(150, 100, right, 100);
-  doc.setTextColor(150); doc.text("Base Imponible", 150, 105);
-  doc.setTextColor(40); doc.text(fmtMontoPdf(montoNetoGrupo, moneda), right, 105, { align: "right" });
+  doc.setDrawColor(210); doc.line(150, 100 + offsetRef, right, 100 + offsetRef);
+  doc.setTextColor(150); doc.text("Base Imponible", 150, 105 + offsetRef);
+  doc.setTextColor(40); doc.text(fmtMontoPdf(montoNetoGrupo, moneda), right, 105 + offsetRef, { align: "right" });
   doc.setFont(undefined, "bold");
-  doc.text("IVA 19%", 150, 111); doc.text(fmtMontoPdf(montoIvaGrupo, moneda), right, 111, { align: "right" });
-  doc.setDrawColor(210); doc.line(150, 114, right, 114);
-  doc.text("Total", 150, 119); doc.text(fmtMontoPdf(montoTotalGrupoHeader, moneda), right, 119, { align: "right" });
+  doc.text("IVA 19%", 150, 111 + offsetRef); doc.text(fmtMontoPdf(montoIvaGrupo, moneda), right, 111 + offsetRef, { align: "right" });
+  doc.setDrawColor(210); doc.line(150, 114 + offsetRef, right, 114 + offsetRef);
+  doc.text("Total", 150, 119 + offsetRef); doc.text(fmtMontoPdf(montoTotalGrupoHeader, moneda), right, 119 + offsetRef, { align: "right" });
   doc.setFont(undefined, "normal");
 
   // Titulo/Descripcion pueden ser varias lineas largas (ej. OC con el
@@ -915,11 +938,11 @@ async function generarPdfOC(orden, proveedor, cuotas, empresa, hermanos) {
   // montaba encima de la tabla de cuotas de mas abajo. Ahora se mide cuanto
   // ocupa cada bloque (splitTextToSize) y el resto se corre hacia abajo.
   const ALTO_LINEA = 4.5;
-  doc.setFont(undefined, "bold"); doc.text("Ref. Interna", left, 106);
+  doc.setFont(undefined, "bold"); doc.text("Ref. Interna", left, 106 + offsetRef);
   doc.setFont(undefined, "normal");
   const lineasTitulo = doc.splitTextToSize(orden.titulo || "—", 110);
-  doc.text(lineasTitulo, left, 110.5);
-  const yDescripcionLabel = 110.5 + lineasTitulo.length * ALTO_LINEA + 4;
+  doc.text(lineasTitulo, left, 110.5 + offsetRef);
+  const yDescripcionLabel = 110.5 + offsetRef + lineasTitulo.length * ALTO_LINEA + 4;
   doc.setFont(undefined, "bold"); doc.text("Descripción", left, yDescripcionLabel);
   doc.setFont(undefined, "normal");
   const lineasDescripcion = doc.splitTextToSize(orden.descripcion || "—", 110);
