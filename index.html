@@ -254,6 +254,19 @@ function estadoPill(estado) {
 
 const ESTADOS_OCSYS_ORDEN = ["Borrador", "Pendiente aprobación", "Aprobada", "Facturada", "Completada"];
 
+// Bancos e instituciones financieras que operan en Chile y se usan para
+// transferencias a proveedores (orden: bancos tradicionales primero, luego
+// no-bancarias). No es necesariamente exhaustivo -- si un proveedor ya tenia
+// guardado un banco que no esta en esta lista, se agrega como opcion extra
+// para no perder el dato (ver ProveedorModal).
+const BANCOS_CHILE = [
+  "Banco de Chile", "Banco Internacional", "Banco Estado", "Scotiabank Chile",
+  "Banco de Crédito e Inversiones (BCI)", "Banco BICE", "HSBC Bank Chile",
+  "Banco Santander Chile", "Banco Itaú Chile", "Banco Security",
+  "Banco Falabella", "Banco Ripley", "Banco Consorcio", "Banco BTG Pactual Chile",
+  "Coopeuch", "Caja Los Andes", "Tenpo", "Mercado Pago",
+];
+
 async function api(path, opts) {
   const { timeoutMs, ...rest } = opts || {};
   let timer, signal = rest.signal;
@@ -600,13 +613,21 @@ function ProveedorModal({ regiones, catalogosListos, onClose, onCreated, notify,
 
       h("div", { className: "section-lbl" }, "Datos Bancarios"),
       h("div", { className: "grid3" },
-        h(Field, { label: "Banco *" }, h("input", { value: form.banco, onChange: set("banco") })),
+        h(Field, { label: "Banco *" },
+          h("select", { value: form.banco, onChange: set("banco") },
+            h("option", { value: "" }, "Selecciona"),
+            form.banco && !BANCOS_CHILE.includes(form.banco) && h("option", { value: form.banco }, form.banco + " (guardado)"),
+            BANCOS_CHILE.map((b) => h("option", { key: b, value: b }, b)),
+          )),
         h(Field, { label: "Tipo de Cuenta *" },
           h("select", { value: form.tipo_cuenta, onChange: set("tipo_cuenta") },
             h("option", { value: "" }, "Selecciona"),
             h("option", { value: "Cuenta Corriente" }, "Cuenta Corriente"),
             h("option", { value: "Cuenta Vista" }, "Cuenta Vista"),
             h("option", { value: "Cuenta de Ahorro" }, "Cuenta de Ahorro"),
+            h("option", { value: "Cuenta RUT" }, "Cuenta RUT"),
+            form.tipo_cuenta && !["Cuenta Corriente", "Cuenta Vista", "Cuenta de Ahorro", "Cuenta RUT"].includes(form.tipo_cuenta)
+              && h("option", { value: form.tipo_cuenta }, form.tipo_cuenta + " (guardado)"),
           )),
         h(Field, { label: "Número de Cuenta *" }, h("input", { value: form.numero_cuenta, onChange: set("numero_cuenta") })),
       ),
