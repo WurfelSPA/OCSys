@@ -734,45 +734,45 @@ function ProveedorMultiPicker({ proveedores, value, onChange }) {
 
 const quitarAcentos = (s) => s.normalize("NFD").replace(/[̀-ͯ]/g, "");
 
-function SearchSelect({ options, value, onChange, placeholder, disabled }) {
-  const [query, setQuery] = useState("");
-  const [open, setOpen] = useState(false);
-  const selected = options.find((o) => o.value === value);
+function filtrarOpciones(options, textoCrudo) {
+  const q = quitarAcentos(textoCrudo.trim().toLowerCase());
+  // Sin busqueda se muestra la lista completa (la caja ya es desplazable) --
+  // el tope de 40 solo aplica mientras se filtra, para no mostrar de mas si
+  // el texto escrito calza con demasiadas cuentas.
+  if (!q) return options;
+  return options.filter((o) => quitarAcentos(o.label.toLowerCase()).includes(q)).slice(0, 40);
+}
 
-  const filtered = useMemo(() => {
-    const q = quitarAcentos(query.trim().toLowerCase());
-    // Sin busqueda se muestra la lista completa (la caja ya es desplazable) --
-    // el tope de 40 solo aplica mientras se filtra, para no mostrar de mas si
-    // el texto escrito calza con demasiadas cuentas.
-    if (!q) return options;
-    return options.filter((o) => quitarAcentos(o.label.toLowerCase()).includes(q)).slice(0, 40);
-  }, [options, query]);
+function SearchSelect({ options, value, onChange, placeholder, disabled }) {
+  // "query" y "filtered" viven en UN solo estado (no dos useState separados)
+  // y se calculan juntos en cada evento -- asi nunca pueden quedar
+  // desincronizados entre si (ej. si el navegador autocompleta el input por
+  // su cuenta sin pasar por onChange, antes el input mostraba el texto nuevo
+  // pero la lista seguia filtrada con el texto viejo).
+  const [estado, setEstado] = useState({ open: false, query: "", filtered: options });
+  const selected = options.find((o) => o.value === value);
+  const buscar = (texto) => setEstado({ open: true, query: texto, filtered: filtrarOpciones(options, texto) });
 
   return h("div", { className: "ac-wrap" },
     h("input", {
-      value: open ? query : (selected ? selected.label : ""),
+      value: estado.open ? estado.query : (selected ? selected.label : ""),
       placeholder: placeholder || "Escribe para buscar...",
       disabled,
-      // "off" evita que el navegador autocomplete el campo con texto
-      // recordado de otra sesion -- eso deja el DOM mostrando el texto
-      // tipeado pero sin disparar el onChange de React, asi que el filtro
-      // se queda pegado con el "query" anterior (vacio) mientras el input
-      // ya muestra lo nuevo: se ve como que "no filtra".
       autoComplete: "off",
-      onFocus: () => { setOpen(true); setQuery(""); },
-      onBlur: () => setTimeout(() => setOpen(false), 150),
-      onChange: (e) => { setQuery(e.target.value); if (!e.target.value) onChange(""); },
+      onFocus: () => buscar(""),
+      onBlur: () => setTimeout(() => setEstado((s) => ({ ...s, open: false })), 150),
+      onChange: (e) => { buscar(e.target.value); if (!e.target.value) onChange(""); },
     }),
-    open && h("div", { className: "ac-list" },
+    estado.open && h("div", { className: "ac-list" },
       h("div", {
         className: "ac-item", style: { color: "var(--txm)", fontStyle: "italic" },
-        onMouseDown: () => { onChange(""); setQuery(""); setOpen(false); },
+        onMouseDown: () => { onChange(""); setEstado({ open: false, query: "", filtered: options }); },
       }, "— Seleccionar (limpiar) —"),
-      filtered.length === 0
+      estado.filtered.length === 0
         ? h("div", { className: "ac-empty" }, "Sin resultados")
-        : filtered.map((o) => h("div", {
+        : estado.filtered.map((o) => h("div", {
             key: o.value, className: "ac-item",
-            onMouseDown: () => { onChange(o.value); setQuery(""); setOpen(false); },
+            onMouseDown: () => { onChange(o.value); setEstado({ open: false, query: "", filtered: options }); },
           }, o.label)),
     )
   );
