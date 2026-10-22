@@ -732,18 +732,20 @@ function ProveedorMultiPicker({ proveedores, value, onChange }) {
   );
 }
 
+const quitarAcentos = (s) => s.normalize("NFD").replace(/[̀-ͯ]/g, "");
+
 function SearchSelect({ options, value, onChange, placeholder, disabled }) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const selected = options.find((o) => o.value === value);
 
   const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    const q = quitarAcentos(query.trim().toLowerCase());
     // Sin busqueda se muestra la lista completa (la caja ya es desplazable) --
     // el tope de 40 solo aplica mientras se filtra, para no mostrar de mas si
     // el texto escrito calza con demasiadas cuentas.
     if (!q) return options;
-    return options.filter((o) => o.label.toLowerCase().includes(q)).slice(0, 40);
+    return options.filter((o) => quitarAcentos(o.label.toLowerCase()).includes(q)).slice(0, 40);
   }, [options, query]);
 
   return h("div", { className: "ac-wrap" },
@@ -751,6 +753,12 @@ function SearchSelect({ options, value, onChange, placeholder, disabled }) {
       value: open ? query : (selected ? selected.label : ""),
       placeholder: placeholder || "Escribe para buscar...",
       disabled,
+      // "off" evita que el navegador autocomplete el campo con texto
+      // recordado de otra sesion -- eso deja el DOM mostrando el texto
+      // tipeado pero sin disparar el onChange de React, asi que el filtro
+      // se queda pegado con el "query" anterior (vacio) mientras el input
+      // ya muestra lo nuevo: se ve como que "no filtra".
+      autoComplete: "off",
       onFocus: () => { setOpen(true); setQuery(""); },
       onBlur: () => setTimeout(() => setOpen(false), 150),
       onChange: (e) => { setQuery(e.target.value); if (!e.target.value) onChange(""); },
