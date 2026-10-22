@@ -252,6 +252,8 @@ function estadoPill(estado) {
   return h("span", { className: "pill " + (map[estado] || "pill-pend") }, estado || "Pendiente");
 }
 
+const ESTADOS_OCSYS_ORDEN = ["Borrador", "Pendiente aprobación", "Aprobada", "Facturada", "Completada"];
+
 async function api(path, opts) {
   const { timeoutMs, ...rest } = opts || {};
   let timer, signal = rest.signal;
@@ -2451,6 +2453,9 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
   const [editando, setEditando] = useState(null);
   const [editandoGrupo, setEditandoGrupo] = useState(null);
   const [search, setSearch] = useState("");
+  const [filtroProveedorId, setFiltroProveedorId] = useState("");
+  const [filtroEstadoLocal, setFiltroEstadoLocal] = useState("");
+  const [filtroProyectoId, setFiltroProyectoId] = useState("");
   const [eliminadas, setEliminadas] = useState([]);
   const [actualizando, setActualizando] = useState(false);
   // El orden se dispara desde el propio encabezado de columna (flechas ▲/▼,
@@ -2723,13 +2728,43 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
       : normalizarEstadoCategoria(o.estado) === filtroEstadoCategoria));
   }, [ordenesConVisible, filtroEstadoCategoria]);
 
+  // Filtros locales de la pagina (Proveedor/Estado/Proyecto, selector junto
+  // al boton "Actualizar") -- a diferencia de "filtroEstadoCategoria" (que
+  // viene del Dashboard y acota TODA la lista), estos los elige el usuario
+  // aqui mismo y solo filtran, nunca ordenan (el orden es cosa del
+  // encabezado de columna, ver sortKey/sortDir mas arriba).
+  const ordenesFiltradasLocal = useMemo(() => {
+    let base = ordenesFiltradas;
+    if (filtroProveedorId) base = base.filter((o) => o.proveedor_id === filtroProveedorId);
+    if (filtroProyectoId) base = base.filter((o) => o.proyecto_id === filtroProyectoId);
+    if (filtroEstadoLocal) {
+      // Igual que filtroEstadoCategoria: una OC en cuotas se incluye COMPLETA
+      // si al menos una cuota calza con el estado elegido -- nunca un grupo a
+      // medias (ver comentario de filtroEstadoCategoria mas arriba).
+      const basesQueCalzan = new Set(
+        base.filter((o) => o.cuota_total && o.estado === filtroEstadoLocal).map((o) => o.numero_oc_base)
+      );
+      base = base.filter((o) => (o.cuota_total ? basesQueCalzan.has(o.numero_oc_base) : o.estado === filtroEstadoLocal));
+    }
+    return base;
+  }, [ordenesFiltradas, filtroProveedorId, filtroProyectoId, filtroEstadoLocal]);
+
+  // Opciones del selector de Estado: orden natural del flujo (Borrador ->
+  // ... -> Completada) primero, y cualquier otro valor legado (ej. de
+  // Acquisys) despues, solo si de verdad aparece en esta empresa.
+  const estadosDisponibles = useMemo(() => {
+    const presentes = new Set(ordenesConVisible.map((o) => o.estado).filter(Boolean));
+    const extras = [...presentes].filter((e) => !ESTADOS_OCSYS_ORDEN.includes(e)).sort();
+    return [...ESTADOS_OCSYS_ORDEN.filter((e) => presentes.has(e)), ...extras];
+  }, [ordenesConVisible]);
+
   // Reordena ANTES de agrupar (no despues) -- asi el orden elegido decide
   // que grupo/OC aparece primero, y las cuotas de una misma OC se mantienen
   // juntas e internamente ordenadas 1/2, 2/2... como siempre (ver mas abajo).
   const ordenesParaAgrupar = useMemo(() => {
     const opt = OPCIONES_ORDEN.find((op) => op.key === sortKey);
-    if (!opt) return ordenesFiltradas;
-    const copia = [...ordenesFiltradas];
+    if (!opt) return ordenesFiltradasLocal;
+    const copia = [...ordenesFiltradasLocal];
     copia.sort((a, b) => {
       let va = opt.getVal(a), vb = opt.getVal(b);
       if (va === null || va === undefined) va = "";
@@ -2741,7 +2776,7 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
       return 0;
     });
     return copia;
-  }, [ordenesFiltradas, sortKey, sortDir, OPCIONES_ORDEN]);
+  }, [ordenesFiltradasLocal, sortKey, sortDir, OPCIONES_ORDEN]);
 
   // Agrupa las cuotas de una misma OC en una sola fila resumen (colapsada por
   // defecto); al expandirla se insertan las filas individuales justo debajo,
@@ -3001,7 +3036,34 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
     h("div", { className: "card" },
       h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: filtroEstadoCategoria ? 4 : 14, flexWrap: "wrap", gap: 10 } },
         h("h2", { style: { marginBottom: 0 } }, "Órdenes de Compra"),
-        h("div", { style: { display: "flex", alignItems: "center", gap: 8 } },
+        h("div", { style: { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" } },
+          h("select", {
+            value: filtroProveedorId, onChange: (e) => setFiltroProveedorId(e.target.value),
+            style: { fontSize: 12, padding: "6px 8px", width: "auto", maxWidth: 180 },
+          },
+            h("option", { value: "" }, "Proveedor (todos)"),
+            (proveedores || [])
+              .slice()
+              .sort((a, b) => a.razon_social.localeCompare(b.razon_social))
+              .map((p) => h("option", { key: p.id, value: p.id }, p.razon_social)),
+          ),
+          h("select", {
+            value: filtroEstadoLocal, onChange: (e) => setFiltroEstadoLocal(e.target.value),
+            style: { fontSize: 12, padding: "6px 8px", width: "auto" },
+          },
+            h("option", { value: "" }, "Estado (todos)"),
+            estadosDisponibles.map((e) => h("option", { key: e, value: e }, e)),
+          ),
+          h("select", {
+            value: filtroProyectoId, onChange: (e) => setFiltroProyectoId(e.target.value),
+            style: { fontSize: 12, padding: "6px 8px", width: "auto", maxWidth: 180 },
+          },
+            h("option", { value: "" }, "Proyecto (todos)"),
+            (proyectos || [])
+              .slice()
+              .sort((a, b) => a.nombre.localeCompare(b.nombre))
+              .map((p) => h("option", { key: p.id, value: p.id }, p.nombre)),
+          ),
           h("button", {
             className: "btn-ghost", style: { padding: "6px 14px", fontSize: 12 },
             onClick: actualizar, disabled: actualizando,
@@ -3011,7 +3073,7 @@ function OrdenesList({ ordenes, refreshOrdenes, notify, currentUser, proveedores
       filtroEstadoCategoria && h("div", { className: "hint", style: { marginBottom: 14 } },
         "Mostrando solo: ",
         h("b", null, filtroEstadoCategoria),
-        " (" + ordenesFiltradas.length + ") — ",
+        " (" + ordenesFiltradasLocal.length + ") — ",
         h("a", { className: "link", style: { cursor: "pointer" }, onClick: onLimpiarFiltroEstado }, "Ver todas las órdenes"),
       ),
       h(DataTable, {
